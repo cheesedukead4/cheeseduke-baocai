@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>檔期包材管理系統</title>
+<meta name="description" content="檔期包材、禮盒配方、庫存與補貨管理">
+<meta name="theme-color" content="#16233f">
+<meta name="application-name" content="包材管理">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="包材管理">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/legacy.css">
+<link rel="stylesheet" href="css/app.css">
+<script src="config.js"></script>
+<script src="js/cloud-sync.js"></script>
+<script src="js/app-shell.js" defer></script>
+</head>
+<body>
+
+<div id="appSplash" class="app-splash" role="status" aria-live="polite">
+  <img src="icons/icon.svg" alt="" width="64" height="64">
+  <strong>檔期包材管理系統</strong>
+  <span id="appSplashMsg">正在載入資料…</span>
+</div>
+
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar" aria-label="主選單">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="34" height="34">
+      <div><strong>檔期包材管理</strong><span>Packaging Planner</span></div>
+    </div>
+
+    <nav id="nav">
+      <div class="nav-group">
+        <button class="navbtn active" data-page="dashboard"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>首頁</span></button>
+      </div>
+      <div class="nav-label">主檔資料<i class="lock-hint">需管理員</i></div>
+      <div class="nav-group">
+        <button class="admin-nav navbtn" data-page="materials"><svg viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg><span>包材資料</span></button>
+        <button class="admin-nav navbtn" data-page="singles"><svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="6" rx="3"/><path d="M8 9v6M16 9v6"/></svg><span>單條資料</span></button>
+        <button class="admin-nav navbtn" data-page="products"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M12 8v13M3 12h18M12 8c-2-4-6-4-6-1.5S10 8 12 8c2 0 6-.5 6-1.5S14 4 12 8"/></svg><span>禮盒資料</span></button>
+      </div>
+      <div class="nav-label">規劃與庫存</div>
+      <div class="nav-group">
+        <button class="admin-nav navbtn" data-page="campaigns"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>檔期需求</span></button>
+        <button class="admin-nav navbtn" data-page="initialStock"><svg viewBox="0 0 24 24"><path d="M3 9 12 4l9 5v11H3z"/><path d="M7 20v-7h10v7M7 16h10"/></svg><span>初始庫存</span></button>
+        <button class="admin-nav navbtn" data-page="replenish"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><span>缺料／補貨</span></button>
+      </div>
+      <div class="nav-label">資料工具</div>
+      <div class="nav-group">
+        <button class="admin-nav navbtn" data-page="importcenter"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>資料匯入中心</span></button>
+        <button class="admin-nav navbtn" data-page="backup"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.5"/><path d="M4 5.5v13c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-13M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5"/></svg><span>備份／還原</span></button>
+        <button id="orderHistoryNavBtn" class="admin-nav navbtn" data-page="orderHistory"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>過去訂單紀錄</span></button>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div id="pwaInstallBar" class="install-card" style="display:none">
+        <div><b>安裝成 App</b><span>從桌面或主畫面直接開啟</span></div>
+        <button id="pwaInstallBtn" type="button">安裝</button>
+      </div>
+      <button id="adminLoginBtn" class="btn gray side-btn" onclick="adminLogin()"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>管理員登入</span></button>
+      <button id="adminLogoutBtn" class="btn gray side-btn" onclick="adminLogout()" style="display:none"><svg viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l-5-5 5-5M5 12h11"/></svg><span>管理員登出</span></button>
+    </div>
+  </aside>
+  <div class="sidebar-scrim" id="sidebarScrim"></div>
+
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="開啟選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="topbar-title">
+        <h1 id="appPageTitle">首頁</h1>
+        <p id="appPageSub">庫存、需求與可用量總覽</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="admin-badge">管理員模式</span>
+        <button class="sync-chip" id="syncChip" type="button" title="雲端同步設定"><i class="dot"></i><span id="syncChipText">本機模式</span></button>
+      </div>
+    </header>
+
+    <div class="app-content">
+<div id="materialEditMask" class="edit-modal-mask" onclick="if(event.target===this)closeMaterialModal()">
+ <div class="edit-modal">
+  <h3>編輯包材資料</h3>
+  <div class="edit-modal-grid">
+   <label>包材編號<input id="emCode"></label>
+   <label>包材名稱<input id="emName"></label>
+   <label>分類<select id="emCategory"><option value="單條">單條</option><option value="禮盒">禮盒</option><option value="盒子">盒子</option></select></label>
+   <label>單位<input id="emUnit" placeholder="個／盒／張"></label>
+   <label>安全庫存<input id="emSafety" type="number" min="0"></label>
+  </div>
+  <div class="edit-modal-actions">
+   <button class="btn gray" onclick="closeMaterialModal()">取消</button>
+   <button class="btn green" onclick="saveMaterialModal()">儲存修改</button>
+  </div>
+ </div>
+</div>
+
+
+<div id="genericEditMask" class="data-edit-mask" onclick="if(event.target===this)closeGenericEdit()">
+<div class="data-edit-modal">
+<h3 id="genericEditTitle">編輯資料</h3>
+<div id="genericEditFields" class="data-edit-grid"></div>
+<div class="data-edit-actions"><button class="btn gray" onclick="closeGenericEdit()">取消</button><button class="btn green" onclick="saveGenericEdit()">儲存修改</button></div>
+</div></div>
+
+<main>
+
+
+<section id="dashboard" class="page active">
+<div class="home-sheet">
+  <div class="home-topbar">
+    <div><h2>檔期包材管理總覽</h2><p>首頁依庫存、需求與可用量集中呈現；資料由各管理分頁自動彙整。</p></div>
+    <div class="home-links">
+      <button onclick="goPage('initialStock')">初始庫存</button>
+      <button onclick="goPage('campaigns')">檔期需求</button>
+    </div>
+  </div>
+
+  
+<div class="home-switch">
+  <button class="home-switch-btn active" data-home-tab="material" onclick="switchHomeTable('material',this)">包材庫存</button>
+  <button class="home-switch-btn" data-home-tab="single" onclick="switchHomeTable('single',this)">單條內容物</button>
+  <button class="home-switch-btn" data-home-tab="gift" onclick="switchHomeTable('gift',this)">禮盒品項</button>
+  <button class="home-switch-btn" data-home-tab="folding" onclick="switchHomeTable('folding',this)">折盒統計</button>
+  <button class="home-switch-btn" data-home-tab="salesForecast" onclick="switchHomeTable('salesForecast',this)">業績預估</button>
+</div>
+<div class="sheet-block home-table-panel active" data-home-panel="material">
+    <div class="sheet-caption">單位：個　｜　包材庫存（未折盒、已折盒自動帶入「初始庫存」）</div>
+    <div class="tablewrap"><table class="sheet-table">
+      <thead><tr>
+        <th class="sort-action-col">拖曳</th><th class="code-col">包材編號</th><th class="name-col">包材品名</th><th>總庫存</th><th>未折盒</th><th>已折盒</th><th>已裝盒</th>
+        <th>待裝盒</th><th>剩餘可用量</th><th>最低水位（自行輸入）</th><th>水位狀態</th>
+      </tr></thead>
+      <tbody id="homeMaterialBody"></tbody>
+    </table></div>
+  </div>
+
+  <div class="sheet-block home-table-panel" data-home-panel="single">
+    <div class="sheet-caption">單位：個　｜　單條內容物（自動帶入「單條資料」）</div>
+    <div class="tablewrap"><table class="sheet-table">
+      <thead><tr>
+        <th class="sort-action-col">拖曳</th><th class="code-col">單條編號</th><th class="name-col">單條內容物</th><th>總需求</th><th>現貨</th><th>已裝盒</th><th>預購單</th>
+        <th>待裝盒</th><th>銷售預估</th><th>可販售</th>
+      </tr></thead>
+      <tbody id="homeSingleBody"></tbody>
+    </table></div>
+  </div>
+
+  <div class="sheet-block home-table-panel" data-home-panel="gift">
+    <div class="sheet-caption">單位：盒　｜　禮盒品項（僅顯示後台勾選「本期上架」的品項）</div>
+    <div class="tablewrap"><table class="gift-home-table sheet-table">
+      <thead><tr>
+        <th class="sort-action-col">拖曳</th><th class="code-col">禮盒編號</th><th class="name-col">禮盒品項</th><th>現貨</th><th>待進貨</th><th>預購單</th><th>銷售預估</th>
+        <th>可販售</th><th>包裝需求</th><th>單條尚可組裝盒數</th>
+      </tr></thead>
+      <tbody id="homeGiftBody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+  <div class="sheet-block home-table-panel" data-home-panel="folding">
+  <div class="sheet-caption">每日折盒統計｜每日自動建立全部包材品項・跨日自動封存｜數量即時連動包材庫存</div>
+  <div class="fold-daily-toolbar">
+    <strong>作業日期：<span id="foldTodayLabel"></span></strong>
+    <span class="fold-save-note" id="foldSaveNote">修改後自動儲存</span>
+    <button type="button" class="btn gray" onclick="renderFoldingRecords()">重新載入</button>
+  </div>
+  <div class="fold-link-note">
+    庫存連動：進貨量 → 增加未折盒；折盒量 → 未折盒轉為已折盒；使用量 → 扣除已折盒；NG／其他NG → 扣除庫存。
+  </div>
+  <div class="tablewrap">
+    <table class="sheet-table folding-table">
+      <thead><tr>
+        <th>日期</th><th>類別</th><th>品項</th><th>進貨量</th><th>使用量</th>
+        <th>折盒量</th><th>折盒NG</th><th>使用NG</th><th>淨異動</th>
+      </tr></thead>
+      <tbody id="homeFoldingBody"></tbody>
+    </table>
+  </div>
+  <details class="fold-history">
+    <summary>歷史封存紀錄</summary>
+    <div class="fold-history-filter">
+      <label>日期 <select id="foldHistoryDate" onchange="renderFoldingHistory()"></select></label>
+    </div>
+    <div class="tablewrap">
+      <table class="sheet-table folding-table">
+        <thead><tr>
+          <th>日期</th><th>類別</th><th>品項</th><th>進貨量</th><th>使用量</th>
+          <th>折盒量</th><th>折盒NG</th><th>使用NG</th><th>淨異動</th>
+        </tr></thead>
+        <tbody id="foldHistoryBody"></tbody>
+      </table>
+    </div>
+  </details>
+</div>
+</section>
+<section id="materials" class="page">
+<div class="panel"><h2>包材資料</h2><p class="small">此頁僅管理包裝材料；產品與禮盒內容物組成請至「產品資料」頁面管理。</p>
+<div class="formgrid">
+<label><span>包材編號</span><input id="mCode"></label><label><span>包材名稱</span><input id="mName"></label>
+<label><span>分類</span><select id="mCategory"><option value="單條">單條</option><option value="禮盒">禮盒</option><option value="盒子">盒子</option></select></label><label><span>單位</span><input id="mUnit" placeholder="個／盒／張"></label><label><span>安全庫存</span><input id="mSafety" type="number" min="0" value="0"></label>
+</div><div class="toolbar" style="margin-top:12px"><button class="btn primary" onclick="saveMaterial()">新增包材</button><button class="btn gray" onclick="clearMaterialForm()">清除</button></div>
+<div class="tablewrap"><table><thead><tr><th>編號</th><th>包材名稱</th><th>分類</th><th>單位</th><th class="num">安全庫存</th><th>操作</th></tr></thead><tbody id="matBody"></tbody></table></div>
+</div>
+</section>
+
+
+<section id="singles" class="page">
+<div class="panel">
+<h2>單條資料</h2>
+<p class="small">管理可作為禮盒內容物的單條產品。此處資料會直接提供「禮盒資料 → 產品配方」選擇使用。</p>
+<div class="formgrid">
+<label><span>單條編號</span><input id="sgCode"></label>
+<label><span>單條名稱</span><input id="sgName"></label>
+</div>
+<div class="toolbar" style="margin-top:12px">
+<button class="btn primary" onclick="saveSingle()">新增單條</button>
+<button class="btn gray" onclick="clearSingleForm()">清除</button>
+</div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>編號</th><th>單條名稱</th><th>操作</th></tr></thead>
+<tbody id="singleBody"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+
+<section id="products" class="page">
+<div class="panel collapsible-panel" id="giftEditorPanel">
+<div class="collapse-head"><h2>新增／編輯禮盒＋配方</h2><button class="collapse-btn" onclick="togglePanel('giftEditorPanel',this)">收合</button></div>
+<div class="collapse-body">
+<p class="small">新增禮盒時一併建立完整配方；最多可設定 8 組「單條內容物／包材」。按一次儲存即可同時建立禮盒與配方。</p>
+<div class="formgrid">
+<label><span>禮盒編號</span><input id="pCode"></label>
+<label><span>禮盒名稱</span><input id="pName"></label>
+<label><span>售價（元）</span><input id="pPrice" type="number" min="0" step="1" placeholder="請輸入售價"></label>
+<label><span>本期是否上架</span><span class="gift-season-checks"><label><input id="giftCurrentListed" type="checkbox"> 本期上架（勾選後顯示於首頁禮盒品項）</label></span></label>
+</div>
+<h3 style="margin:18px 0 8px">禮盒配方</h3>
+<div class="recipe-six-grid" id="giftFormulaGrid">
+
+<div class="recipe-row" data-gift-formula-row="1">
+<label><span>配方類型</span><select id="gfType1" onchange="updateGiftFormulaItem(1)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem1"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty1" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="2" style="display:none">
+<label><span>配方類型</span><select id="gfType2" onchange="updateGiftFormulaItem(2)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem2"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty2" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="3" style="display:none">
+<label><span>配方類型</span><select id="gfType3" onchange="updateGiftFormulaItem(3)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem3"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty3" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="4" style="display:none">
+<label><span>配方類型</span><select id="gfType4" onchange="updateGiftFormulaItem(4)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem4"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty4" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="5" style="display:none">
+<label><span>配方類型</span><select id="gfType5" onchange="updateGiftFormulaItem(5)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem5"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty5" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="6" style="display:none">
+<label><span>配方類型</span><select id="gfType6" onchange="updateGiftFormulaItem(6)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem6"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty6" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="7" style="display:none">
+<label><span>配方類型</span><select id="gfType7" onchange="updateGiftFormulaItem(7)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem7"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty7" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+<div class="recipe-row" data-gift-formula-row="8" style="display:none">
+<label><span>配方類型</span><select id="gfType8" onchange="updateGiftFormulaItem(8)"><option value="product">單條內容物</option><option value="material">包材</option></select></label>
+<label><span>品項</span><select id="gfItem8"><option value="">請選擇</option></select></label>
+<label><span>數量</span><input id="gfQty8" type="number" min="0" step="0.01" placeholder="請輸入數量"></label>
+</div>
+</div>
+<div class="toolbar" style="margin-top:10px">
+<button type="button" class="btn gray" id="giftAddFormulaBtn" onclick="addGiftFormulaRow()">＋ 新增配方項目</button>
+<span id="giftFormulaCount" class="small">目前 1 項（最多 8 項）</span>
+</div>
+<div class="toolbar" style="margin-top:14px">
+<button class="btn primary" onclick="saveGiftWithFormula()">儲存禮盒＋配方</button>
+<button class="btn gray" onclick="clearGiftWithFormula()">清除</button>
+</div>
+</div>
+</div>
+
+<div class="panel collapsible-panel" id="giftListPanel">
+<div class="collapse-head"><h2>已建立好的禮盒資料</h2><button class="collapse-btn" onclick="togglePanel('giftListPanel',this)">收合</button></div>
+<div class="collapse-body">
+<p class="small">每個禮盒一列，直接顯示單條內容物及完整包材配方。</p>
+<div class="tablewrap gift-list-no-scroll">
+<table class="gift-list-fit">
+<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
+<tbody id="prodBody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="panel">
+<h2>禮盒展開後－單條需求</h2>
+<p class="small">依目前「檔期需求」與上方「產品內容物組成」自動計算，各禮盒會展開成實際單條需求量。</p>
+<div id="singleDemandProduct"></div>
+</div>
+</section>
+
+<section id="campaigns" class="page">
+<div class="panel"><h2>建立檔期需求</h2>
+<div class="formgrid"><label><span>檔期名稱</span><input id="cName" placeholder="例：中秋檔期"></label><label><span>日期</span><input id="cDate" type="date"></label><label><span>產品</span><select id="cProduct"></select></label><label><span>需求數量</span><input id="cQty" type="number" min="0" value="0"></label></div>
+<div class="toolbar" style="margin-top:12px"><button class="btn primary" onclick="saveCampaign()">新增需求</button></div>
+<div class="tablewrap"><table><thead><tr><th>檔期</th><th>日期</th><th>產品</th><th class="num">數量</th><th>操作</th></tr></thead><tbody id="campBody"></tbody></table></div>
+</div></section>
+
+
+<section id="initialStock" class="page">
+<div class="panel">
+<h2>初始庫存</h2>
+<p class="small">品項由「包材資料」自動帶入；數字預設鎖定。需要調整時先按「編輯」，修改「未折盒／已折盒」後按「儲存」。整體總庫存＝未折盒＋已折盒。</p>
+<div class="toolbar">
+<button id="initialEditBtn" class="btn gray" onclick="setInitialStockEdit(true)">編輯</button>
+<button id="initialSaveBtn" class="btn primary" onclick="saveAllInitialStock()" style="display:none">儲存</button>
+<span id="initialLockStatus" class="initial-lock-status">🔒 數字已鎖定</span>
+</div>
+<div class="tablewrap initial-sheet-wrap" style="margin-top:14px">
+<table class="initial-sheet">
+<thead><tr>
+<th>品名</th>
+<th>整體總庫存</th>
+<th>未折盒</th>
+<th>已折盒</th>
+</tr></thead>
+<tbody id="initialStockBody"></tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="replenish" class="page"><div class="panel"><h2>缺料／建議補貨</h2><p class="small">需求量會依「檔期產品數量 × 產品包材配方」自動展開。</p>
+<div class="tablewrap"><table><thead><tr><th>包材</th><th class="num">目前庫存</th><th class="num">檔期需求</th><th class="num">安全庫存</th><th class="num">需求後庫存</th><th class="num">建議補貨</th><th>狀態</th></tr></thead><tbody id="repBody2"></tbody></table></div></div></section>
+
+
+<section id="importcenter" class="page">
+<div class="panel">
+<h2>資料匯入中心</h2>
+<p class="small">可從 CSV、JSON，或將 Excel / Google Sheet 另存為 CSV 後匯入。先預覽，再指定資料類型與欄位對應，不會直接覆蓋現有資料。</p>
+<div class="toolbar">
+<label class="btn primary">選擇 CSV／JSON 檔案
+<input id="extFile" type="file" accept=".csv,.json,text/csv,application/json" hidden onchange="readExternalFile(this)">
+</label>
+<select id="extTarget" onchange="buildMapping()">
+<option value="materials">匯入到：包材資料</option>
+<option value="products">匯入到：產品資料</option>
+<option value="campaigns">匯入到：檔期需求</option>
+<option value="stock">匯入到：庫存異動</option>
+</select>
+<select id="extMode"><option value="append">追加資料</option><option value="replace">取代該類全部資料</option></select>
+</div>
+<div id="extInfo" class="small">尚未選擇檔案</div>
+</div>
+
+<div class="panel">
+<h2>欄位對應</h2>
+<div id="mappingArea" class="formgrid"><div class="empty">載入檔案後即可設定欄位</div></div>
+<div class="toolbar" style="margin-top:12px">
+<button class="btn green" onclick="commitExternalImport()">確認匯入</button>
+<button class="btn gray" onclick="clearExternalImport()">清除預覽</button>
+</div>
+</div>
+
+<div class="panel">
+<h2>資料預覽</h2>
+<div id="externalPreview" class="tablewrap"><div class="empty">尚無預覽資料</div></div>
+</div>
+
+<div class="panel">
+<h2>從其他線上來源取得資料</h2>
+<p class="small">若資料來自 Google Sheet，可先「檔案 → 下載 → CSV」後使用上方匯入。一般網址/API 若允許跨網域存取，也可貼入公開 CSV/JSON 網址。</p>
+<div class="toolbar">
+<input id="remoteUrl" style="min-width:360px" placeholder="貼上公開 CSV 或 JSON 網址">
+<button class="btn orange" onclick="fetchRemoteData()">從網址拉取</button>
+</div>
+<div class="small">注意：部分網站會阻擋瀏覽器跨網域讀取（CORS）；遇到阻擋時請改用下載檔案後匯入。</div>
+</div>
+</section>
+
+<section id="backup" class="page"><div class="panel"><h2>資料備份／還原</h2>
+<p>啟用雲端同步後，所有人共用同一份資料；未啟用時資料只存在這台裝置。仍建議定期匯出 JSON 備份。</p><p class="small">從舊版 HTML 搬資料：在舊版開啟「備份／還原 → 匯出 JSON 備份」，再於此處「匯入 JSON」，就會自動上傳到雲端。</p>
+<div class="toolbar"><button class="btn primary" onclick="exportData()">匯出 JSON 備份</button><label class="btn gray">匯入 JSON<input id="importFile" type="file" accept=".json" hidden onchange="importData(this)"></label><button class="btn red" onclick="wipeAll()">清空全部資料</button></div>
+</div></section>
+
+<section id="orderHistory" class="page">
+  <div class="panel">
+    <h2>過去訂單紀錄</h2>
+    <div class="muted">管理員可保存已結束的檔期／訂單紀錄，供日後查詢。此處資料不會影響目前庫存計算。</div>
+    <div class="order-search-panel" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 14px">
+      <select id="histFilterDate" onchange="renderOrderHistory()"><option value="">全部日期</option></select>
+      <select id="histFilterOrderNo" onchange="renderOrderHistory()"><option value="">全部訂單／檔期編號</option></select>
+      <select id="histFilterProduct" onchange="renderOrderHistory()"><option value="">全部品號／品名</option></select>
+      <select id="histFilterCustomer" onchange="renderOrderHistory()"><option value="">全部客戶</option></select>
+      <select id="histFilterChannel" onchange="renderOrderHistory()"><option value="">全部通路</option></select>
+      <select id="histFilterDepartment" onchange="renderOrderHistory()"><option value="">全部接單部門</option></select>
+      <select id="histFilterOrgDepartment" onchange="renderOrderHistory()"><option value="">全部部門</option></select>
+      <button type="button" class="btn gray" onclick="clearOrderHistoryFilters()">清除篩選</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-bottom:4px">
+      <strong>年份：</strong>
+      <select id="orderHistoryYear" onchange="setOrderYear(this.value)" style="padding:7px 10px;border:1px solid #bbb;border-radius:5px">
+        <option value="all">全部年份</option>
+        <option value="2025">2025年</option>
+        <option value="2026">2026年</option>
+      </select>
+      <span style="width:12px"></span>
+      <strong>檔期篩選：</strong>
+      <button type="button" class="btn gray order-season-btn active" data-season="all" onclick="setOrderSeason('all',this)">全部</button>
+      <button type="button" class="btn gray order-season-btn" data-season="newyear" onclick="setOrderSeason('newyear',this)">過年</button>
+      <button type="button" class="btn gray order-season-btn" data-season="midautumn" onclick="setOrderSeason('midautumn',this)">中秋</button>
+    </div>
+    <input id="orderHistorySearch" placeholder="全文搜尋" style="min-width:320px" oninput="renderOrderHistory()">
+      <span id="orderHistoryCount" class="muted"></span>
+    </div>
+    <div style="overflow:auto">
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th>日期</th><th>單號</th><th>來源單號</th><th>品號</th><th>品名</th><th>客戶</th><th>通路</th><th>數量</th><th>接單部門</th><th>部門</th>
+          </tr>
+        </thead>
+        <tbody id="orderHistoryBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
+<div class="sheet-block home-table-panel" data-home-panel="salesForecast">
+<div class="sheet-caption">業績預估</div>
+<div class="forecast-top"><label>檔期名稱 <input id="forecast-campaign-name" placeholder="例如：2026中秋" oninput="saveSalesForecastDebounced()"></label><label>搜尋品項 <select id="forecast-product-search" onchange="filterSalesForecastProducts()"><option value="">全部品項</option></select></label><button type="button" class="btn gray" onclick="document.getElementById('forecast-product-search').value='';filterSalesForecastProducts()">清除搜尋</button><span id="forecast-search-count" aria-live="polite"></span></div>
+<div class="tablewrap"><table class="sheet-table forecast-summary-table"><colgroup><col style="width:12%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:10.5%"><col style="width:4%"></colgroup><thead><tr><th>部門別</th><th>東橋</th><th>A11</th><th>京站</th><th>官網</th><th>通路</th><th>公關贈</th><th>執行長</th><th>大公國</th><th>總計</th></tr></thead><tbody>
+<tr><th>預估業績總額</th><td id="sf-summary-dongqiao"></td><td id="sf-summary-a11"></td><td id="sf-summary-jingzhan"></td><td id="sf-summary-web"></td><td id="sf-summary-channel"></td><td id="sf-summary-pr"></td><td id="sf-summary-ceo"></td><td id="sf-summary-grandduchy"></td><td id="sf-summary-total"></td></tr>
+<tr><th>去年業績</th><td><input class="sf-lastyear" data-sf-last="dongqiao" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="a11" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="jingzhan" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="web" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="channel" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="pr" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="ceo" oninput="updateSalesForecastLastYear(this)"></td><td><input class="sf-lastyear" data-sf-last="grandduchy" oninput="updateSalesForecastLastYear(this)"></td><td id="sf-lastyear-total"></td></tr>
+</tbody></table></div><div id="salesForecastBody"></div></div>
+
+</main>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div id="adminModal">
+  <div class="admin-box">
+    <h3>管理員登入</h3>
+    <input id="adminPassword" type="password" placeholder="請輸入管理員密碼" onkeydown="if(event.key==='Enter')adminSubmit()">
+    <div id="adminError"></div>
+    <div class="actions">
+      <button class="btn gray" onclick="adminClose()">取消</button>
+      <button class="btn primary" onclick="adminSubmit()">登入</button>
+    </div>
+  </div>
+</div>
+    </div>
+  </div>
+</div>
+
+<!-- 雲端同步設定 -->
+<div class="cms-modal" id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudModalTitle">
+  <div class="cms-modal-box">
+    <div class="cms-modal-head">
+      <h3 id="cloudModalTitle">雲端同步設定</h3>
+      <button class="icon-btn" type="button" data-close aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="cloudStatusBox" class="cloud-status"></div>
+    <label class="field"><span>雲端網址（Apps Script 網頁應用程式網址）</span><input id="cloudUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+    <label class="field"><span>團隊通行碼</span><input id="cloudToken" type="password" placeholder="由管理者提供" autocomplete="off"></label>
+    <label class="field"><span>你的名字（顯示誰修改了資料）</span><input id="cloudName" placeholder="例：小美" autocomplete="off"></label>
+    <p class="field-help">同一個團隊的所有裝置填入相同網址與通行碼，就會看到同一份資料。設定只存在這台裝置。</p>
+    <div id="cloudTestMsg" class="field-msg" aria-live="polite"></div>
+    <div class="cms-modal-actions">
+      <button type="button" class="btn gray" id="cloudDisableBtn">停用雲端</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn gray" id="cloudTestBtn">測試連線</button>
+      <button type="button" class="btn primary" id="cloudSaveBtn">儲存並同步</button>
+    </div>
+  </div>
+</div>
+
+<!-- 同時修改衝突 -->
+<div class="cms-modal" id="conflictModal" role="dialog" aria-modal="true" aria-labelledby="conflictTitle">
+  <div class="cms-modal-box">
+    <div class="cms-modal-head"><h3 id="conflictTitle">有人同時修改了相同資料</h3></div>
+    <p>你和其他同事在同一時間改了下列資料的<b>同一個欄位</b>，請選擇要保留哪一個版本。其他沒有重疊的修改都已自動合併。</p>
+    <ul id="conflictList" class="conflict-list"></ul>
+    <div class="cms-modal-actions">
+      <button type="button" class="btn gray" id="conflictRemoteBtn">使用雲端版本</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn primary" id="conflictLocalBtn">保留我的修改</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+<noscript><p style="padding:24px">此系統需要啟用 JavaScript。</p></noscript>
+</body>
+</html>
