@@ -127,6 +127,73 @@
     reader.readAsText(f, 'utf-8');
   }
 
+  // ---------- 保護：「匯入 JSON」不會無聲刪掉過去訂單 ----------
+  // 原系統的 importData 會整份取代資料；舊版備份常常沒有過去訂單，直接取代會讓所有人的訂單從雲端消失。
+  var ORDER_FLAGS = ['orderHistoryImportVersion', 'orderHistoryImportJan2026', 'orderHistoryAllCOVersion'];
+  function guardedImportData(el) {
+    var f = el && el.files && el.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var incoming;
+      try { incoming = JSON.parse(reader.result); } catch (e) { alert('檔案格式錯誤'); el.value = ''; return; }
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) { alert('檔案格式錯誤'); el.value = ''; return; }
+      var current = db;
+      var curList = Array.isArray(current.orderHistory) ? current.orderHistory : [];
+      var note = '';
+      var keepCurrent = false;
+      if (curList.length && !Array.isArray(incoming.orderHistory)) {
+        keepCurrent = true;
+        note = '\n備份裡沒有過去訂單，已保留目前的 ' + curList.length.toLocaleString() + ' 筆過去訂單。';
+      } else if (curList.length && incoming.orderHistory.length < curList.length) {
+        keepCurrent = !confirm('這份備份只有 ' + incoming.orderHistory.length.toLocaleString() + ' 筆過去訂單，目前有 ' + curList.length.toLocaleString() + ' 筆。\n\n' +
+          '按「確定」：用備份取代，過去訂單會變成 ' + incoming.orderHistory.length.toLocaleString() + ' 筆（會同步給所有人）。\n' +
+          '按「取消」：保留目前的 ' + curList.length.toLocaleString() + ' 筆過去訂單，其他資料仍照備份還原。');
+        if (keepCurrent) note = '\n已保留目前的 ' + curList.length.toLocaleString() + ' 筆過去訂單。';
+      }
+      if (keepCurrent) {
+        incoming.orderHistory = curList;
+        ORDER_FLAGS.forEach(function (k) { if (current[k] !== undefined) incoming[k] = current[k]; });
+      }
+      db = incoming;
+      try { if (typeof ensureHomeOrder === 'function') ensureHomeOrder(); } catch (e) {}
+      persist();
+      el.value = '';
+      alert('匯入完成' + note);
+    };
+    reader.readAsText(f);
+  }
+
+  // 過去訂單是空的時候，告訴使用者去哪裡匯入
+  function emptyOrdersHint() {
+    var body = document.getElementById('orderHistoryBody');
+    var d; try { d = db; } catch (e) { return; }
+    if (!body || (Array.isArray(d.orderHistory) && d.orderHistory.length)) return;
+    body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;white-space:normal">' +
+      '還沒有過去訂單。舊版的過去訂單寫在舊版 HTML 檔裡，請到「備份／還原」頁，用「從舊版 HTML 匯入過去訂單」加入。' +
+      '<div style="margin-top:10px"><button type="button" class="btn primary" id="goOldOrdersImport">前往匯入</button></div></td></tr>';
+    document.getElementById('goOldOrdersImport').onclick = function () {
+      var b = document.querySelector('#nav .navbtn[data-page="backup"]');
+      if (b) b.click();
+      setTimeout(function () { var p = document.getElementById('oldOrdersPanel'); if (p) p.scrollIntoView({ behavior: 'smooth' }); }, 50);
+    };
+  }
+
+  // 原系統的程式由 app-shell 在頁面載入後才載入，完成時會再觸發一次 load 事件；在那之後才包裝它的函式
+  function installGuards() {
+    if (typeof root.importData === 'function' && !root.importData.__cmsGuarded) {
+      guardedImportData.__cmsGuarded = true;
+      root.importData = guardedImportData;
+    }
+    if (typeof root.renderOrderHistory === 'function' && !root.renderOrderHistory.__cmsGuarded) {
+      var originalRender = root.renderOrderHistory;
+      var wrapped = function () { var r = originalRender.apply(this, arguments); emptyOrdersHint(); return r; };
+      wrapped.__cmsGuarded = true;
+      root.renderOrderHistory = wrapped;
+    }
+  }
+  root.addEventListener('load', installGuards);
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountPanel, { once: true });
   else mountPanel();
 })(typeof window !== 'undefined' ? window : this);
