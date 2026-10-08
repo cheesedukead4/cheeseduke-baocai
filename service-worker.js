@@ -1,10 +1,10 @@
 /* 離線快取：網站檔案先走網路（確保拿到最新版），4 秒沒回應或失敗才用快取。雲端資料請求不經過快取。 */
-var CACHE = 'cms-app-v2';
+var CACHE = 'cms-app-v3';
 var NET_TIMEOUT_MS = 4000;
 var ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './css/legacy.css', './css/app.css',
-  './js/cloud-sync.js', './js/app-shell.js',
+  './js/cloud-sync.js', './js/app-shell.js', './js/old-orders-import.js',
   './js/legacy-1.js', './js/legacy-2.js', './js/legacy-3.js', './js/legacy-4.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
