@@ -20,7 +20,11 @@
     materials: '包材資料', products: '禮盒資料', recipes: '禮盒配方', components: '單條資料',
     campaigns: '檔期需求', stock: '庫存異動', initialStock: '初始庫存', homeOrder: '首頁排序',
     foldingRecords: '每日折盒統計', foldingArchive: '折盒封存紀錄', salesForecastV5: '業績預估',
-    orderHistory: '過去訂單紀錄'
+    orderHistory: '過去訂單紀錄', seasons: '檔期設定',
+    codeMap: '訂單品號對照', deptMap: '通路／部門對照', orderImports: '訂單匯入紀錄', pendingOrders: '待確認訂單',
+    movements: '包材快速異動', stocktakes: '盤點紀錄',
+    packRecords: '裝盒回報', appSettings: '系統設定',
+    packagingRecoveryOnce: '配方補回（已執行）', historicalGiftsOnce: '歷史禮盒補回（已執行）', giftCodeMigrationOnce: '禮盒編號校正（已執行）'
   };
 
   var nativeGet = Storage.prototype.getItem;

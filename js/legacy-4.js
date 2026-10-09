@@ -414,6 +414,7 @@ function ensureAllHistoricalCOOrders(){
 
 function ensureHistoricalGiftProducts(){
  if(!Array.isArray(db.products)) db.products=[];
+ if(db.historicalGiftsOnce==='v1')return; // 只在第一次搬資料時補回，之後刪掉的歷史禮盒不會再出現
  let changed=false;
  HISTORICAL_GIFT_PRODUCTS.forEach(p=>{
    if(!db.products.some(x=>String(x.code||'').trim()===p.code)){
@@ -421,9 +422,8 @@ function ensureHistoricalGiftProducts(){
      changed=true;
    }
  });
- if(changed){
-   try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('禮盒資料儲存空間不足',e);}
- }
+ db.historicalGiftsOnce='v1';
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('禮盒資料儲存空間不足',e);}
 }
 
 
@@ -694,6 +694,7 @@ function applyRequestedListedProductsOnce(){
 
 const RECOVERED_PACKAGING_RECIPES = {"CO-43":[{"name":"金鑽盒","qty":1.0},{"name":"金鑽蓋","qty":1.0}],"CO-83":[{"name":"金鑽盒","qty":1.0},{"name":"金鑽蓋","qty":1.0}],"CO-80":[{"name":"金鑽盒","qty":1.0},{"name":"金鑽蓋","qty":1.0}],"CO-42":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-67":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-84":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-89":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-73":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-99":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-A6":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-A2":[{"name":"濃蛋捲盒","qty":1.0},{"name":"濃蛋捲袖套","qty":1.0}],"CO-A3":[{"name":"濃蛋捲盒","qty":1.0},{"name":"濃蛋捲袖套","qty":1.0}],"CO-A4":[{"name":"濃蛋捲盒","qty":1.0},{"name":"濃蛋捲袖套","qty":1.0}],"CO-62":[{"name":"金鑽盒","qty":1.0}],"CO-64":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-66":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-68":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-69":[{"name":"金鑽盒","qty":1.0}],"CO-72":[{"name":"金鑽盒","qty":1.0}],"CO-74":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-76":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-77":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-78":[{"name":"袖套盒","qty":1.0},{"name":"袖套","qty":1.0}],"CO-81":[{"name":"金鑽盒","qty":1.0}],"CO-98":[{"name":"金鑽盒","qty":1.0}]};
 function restoreMissingPackagingRecipesOnce(){
+ if(db.packagingRecoveryOnce==='v1')return db.packagingRecoveryInfo||{added:0,created:0,unresolved:[],expected:0}; // 只在第一次搬資料時補回，之後保留使用者修改的配方
  if(!Array.isArray(db.recipes))db.recipes=[];
  if(!Array.isArray(db.materials))db.materials=[];
  if(!Array.isArray(db.products))db.products=[];
@@ -720,7 +721,8 @@ function restoreMissingPackagingRecipesOnce(){
    });
  });
  db.packagingRecoveryInfo={added,created,unresolved,expected:Object.values(RECOVERED_PACKAGING_RECIPES).reduce((n,a)=>n+a.length,0)};
- if(added||created){try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('包材配方無法儲存到瀏覽器',e);}}
+ db.packagingRecoveryOnce='v1';
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('包材配方無法儲存到瀏覽器',e);}
  return db.packagingRecoveryInfo;
 }
 

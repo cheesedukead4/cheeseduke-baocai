@@ -1,16 +1,17 @@
-/* 離線快取：網站檔案先走網路（確保拿到最新版），4 秒沒回應或失敗才用快取。雲端資料請求不經過快取。 */
-var CACHE = 'cms-app-v4';
+/* 離線快取：網站檔案先走網路（略過瀏覽器的 HTTP 快取，確保拿到最新版；檔案沒變時伺服器只回 304），4 秒沒回應或失敗才用快取。雲端資料請求不經過快取。 */
+var CACHE = 'cms-app-v10';
 var NET_TIMEOUT_MS = 4000;
 var ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
-  './css/legacy.css', './css/app.css',
+  './css/legacy.css', './css/app.css', './css/ext.css',
   './js/cloud-sync.js', './js/app-shell.js', './js/old-orders-import.js',
+  './js/ext/ext-core.js', './js/ext/page-season.js', './js/ext/page-legacy-forecast.js', './js/ext/page-orders.js', './js/ext/page-floor.js', './js/ext/page-system.js', './js/ext/home-dash.js', './js/ext/order-singles.js',
   './js/legacy-1.js', './js/legacy-2.js', './js/legacy-3.js', './js/legacy-4.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () { return self.skipWaiting(); }));
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS.map(function (u) { return new Request(u, { cache: 'reload' }); })); }).then(function () { return self.skipWaiting(); }));
 });
 
 self.addEventListener('activate', function (e) {
@@ -35,7 +36,7 @@ self.addEventListener('fetch', function (e) {
   var nav = req.mode === 'navigate';
   if (url.search && !nav) return;
   e.respondWith(cachedFor(req, nav).then(function (hit) {
-    var net = fetch(req).then(function (res) {
+    var net = fetch(req, { cache: 'no-cache' }).then(function (res) {
       if (res && res.ok && !res.redirected && !url.search) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(req, copy); });

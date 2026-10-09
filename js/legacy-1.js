@@ -73,6 +73,7 @@ function saveGenericEdit(){
 
 
 function applyGiftCodeMigration(){
+ if(db.giftCodeMigrationOnce==='v1')return; // 只在第一次搬資料時執行，之後保留使用者修改的編號
  const codeMap={"鳳費5入": "CO-43", "鳳費8入": "CO-42", "草費+乳酪費8入": "CO-67", "乳酪費5入": "CO-80", "草費5入": "CO-83", "草費8入": "CO-84", "鳳費+草費8入": "CO-89", "柑費8入": "CO-73", "鳳費+乳酪費8入": "CO-99", "乳酪蛋捲10入": "CO-A2", "花生蛋捲10入": "CO-A3", "蛋捲乳5+花5": "CO-A4", "鳳+乳+草費3入": "CO-A5", "乳酪費8入": "CO-A6", "鳳費+乳費4入": "CO-A7"};
  let changed=false;
  db.products.forEach(p=>{
@@ -80,7 +81,8 @@ function applyGiftCodeMigration(){
      p.code=codeMap[p.name]; changed=true;
    }
  });
- if(changed)localStorage.setItem(KEY,JSON.stringify(db));
+ db.giftCodeMigrationOnce='v1';
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){}
 }
 
 

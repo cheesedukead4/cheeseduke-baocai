@@ -52,7 +52,7 @@
     return a ? a.dataset.page : 'dashboard';
   }
   function updateTitle(page) {
-    var info = PAGES[page] || [page, ''];
+    var info = PAGES[page] || (window.CMSX && CMSX.pageInfo(page)) || [page, ''];
     $('appPageTitle').textContent = info[0];
     $('appPageSub').textContent = info[1];
     document.title = (page === 'dashboard' ? '' : info[0] + '｜') + '檔期包材管理系統';
@@ -233,7 +233,7 @@
   function restorePage() {
     var p = null;
     try { p = sessionStorage.getItem(PAGE_KEY); } catch (e) {}
-    if (p && p !== 'dashboard' && PAGES[p]) {
+    if (p && p !== 'dashboard' && (PAGES[p] || (window.CMSX && CMSX.pageInfo(p)))) {
       var b = document.querySelector('#nav .navbtn[data-page="' + p + '"]');
       var needsAdmin = b && b.classList.contains('admin-nav') && !document.body.classList.contains('admin-mode');
       if (b && !needsAdmin) b.click();
