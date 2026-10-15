@@ -18,6 +18,8 @@
 <link rel="stylesheet" href="css/app.css">
 <script src="config.js"></script>
 <script src="js/cloud-sync.js"></script>
+<script src="js/calc-rules.js"></script>
+<script src="js/stock-calc.js"></script>
 <script src="js/app-shell.js" defer></script>
 <script src="js/old-orders-import.js" defer></script>
 <script src="js/ext/ext-core.js" defer></script>
@@ -28,6 +30,8 @@
 <script src="js/ext/page-system.js" defer></script>
 <script src="js/ext/home-dash.js" defer></script>
 <script src="js/ext/order-singles.js" defer></script>
+<script src="js/ext/calc-docs.js" defer></script>
+<script src="js/ext/page-rules.js" defer></script>
 <link rel="stylesheet" href="css/ext.css">
 </head>
 <body>
@@ -137,11 +141,10 @@
   <button class="home-switch-btn active" data-home-tab="material" onclick="switchHomeTable('material',this)">包材庫存</button>
   <button class="home-switch-btn" data-home-tab="single" onclick="switchHomeTable('single',this)">單條內容物</button>
   <button class="home-switch-btn" data-home-tab="gift" onclick="switchHomeTable('gift',this)">禮盒品項</button>
-  <button class="home-switch-btn" data-home-tab="folding" onclick="switchHomeTable('folding',this)">折盒統計</button>
   <button class="home-switch-btn" data-home-tab="salesDash" onclick="switchHomeTable('salesDash',this)">業績儀表板</button>
 </div>
 <div class="sheet-block home-table-panel active" data-home-panel="material">
-    <div class="sheet-caption">單位：個　｜　包材庫存（未折盒、已折盒自動帶入「初始庫存」）</div>
+    <div class="sheet-caption">單位：個　｜　包材庫存（未折盒、已折盒＝初始庫存＋快速輸入＋裝盒回報）</div>
     <div class="tablewrap"><table class="sheet-table">
       <thead><tr>
         <th class="sort-action-col">拖曳</th><th class="code-col">包材編號</th><th class="name-col">包材品名</th><th>總庫存</th><th>未折盒</th><th>已折盒</th><th>已裝盒</th>
@@ -163,7 +166,7 @@
   </div>
 
   <div class="sheet-block home-table-panel" data-home-panel="gift">
-    <div class="sheet-caption">單位：盒　｜　禮盒品項（僅顯示後台勾選「本期上架」的品項）</div>
+    <div class="sheet-caption">單位：盒　｜　禮盒品項（僅顯示後台勾選「本期上架」的品項）｜　包裝需求＝現貨＋待進貨－預購單－銷售預估，負數＝還要再裝的盒數；現貨還沒串接、待進貨先當 0</div>
     <div class="tablewrap"><table class="gift-home-table sheet-table">
       <thead><tr>
         <th class="sort-action-col">拖曳</th><th class="code-col">禮盒編號</th><th class="name-col">禮盒品項</th><th>現貨</th><th>待進貨</th><th>預購單</th><th>銷售預估</th>
@@ -210,7 +213,7 @@
   </details>
 </div>
 <div class="sheet-block home-table-panel" data-home-panel="salesDash">
-  <div class="sheet-caption">業績儀表板｜過去訂單依檔期、部門、品項彙總</div>
+  <div class="sheet-caption">業績儀表板｜今年和去年同檔期的訂單數量與金額比較，可看全公司或各部門</div>
   <div class="x-home-dash" id="homeSalesDash"></div>
 </div>
 </section>
@@ -239,7 +242,7 @@
 </div>
 <div class="tablewrap">
 <table>
-<thead><tr><th>編號</th><th>單條名稱</th><th>操作</th></tr></thead>
+<thead><tr><th>編號</th><th>單條名稱</th><th>售價</th><th>本期上架</th><th>操作</th></tr></thead>
 <tbody id="singleBody"></tbody>
 </table>
 </div>

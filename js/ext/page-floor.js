@@ -1,10 +1,11 @@
 /*
  * 現場作業
- *  - xQuickEntry 快速輸入（daily，beta，需管理員）：所有包材列在同一頁，五種數量一次填完送出 → movements
+ *  - xQuickEntry 快速輸入（daily，需管理員）：所有包材列在同一頁，進貨、折盒、折盒NG、使用NG 一次填完送出 → movements
  *  - xStocktake  盤點（daily，beta）：stocktakes
- *  - xPacking    裝盒回報（daily，beta）：同一頁填多個禮盒，一次送出 → packRecords
+ *  - xPacking    裝盒回報（daily）：同一頁填多個禮盒，一次送出 → packRecords
  * 同一次送出的紀錄共用 batchId；紀錄區依批次分組，可整批或單筆撤銷（voided=true，不刪除）。
- * 原系統資料（materials、products、recipes、components、homeOrder、包材庫存）只讀不改；三頁目前都還不會改到庫存。
+ * 2026-10-14 起包材庫存＝初始庫存＋快速輸入＋裝盒回報（算法在 js/stock-calc.js），快速輸入與裝盒回報送出後就會改變首頁庫存；
+ * 盤點確認目前還不會改庫存。原系統資料（materials、products、recipes、components、homeOrder）只讀不改。
  * 純計算函式放在 CMSX.floorCalc，方便測試，之後串接庫存時可以直接用。
  * 畫面原則：打字時不整頁重畫，只更新相關的小區塊；頁面被重畫（切頁、同事的雲端更新）時，
  * 包材／禮盒清單沒變就只更新紀錄區，輸入中的內容不動；清單變了才整頁重畫，並由記憶體還原輸入中的內容。
@@ -25,7 +26,8 @@
     foldNg: { label: '折盒NG', tone: 'bad' },
     useNg: { label: '使用NG', tone: 'bad' }
   };
-  var TYPE_KEYS = ['in', 'fold', 'use', 'foldNg', 'useNg'];
+  // 可以輸入的類型：「使用」已取消（裝盒用掉的包材改由裝盒回報自動換算扣除），舊的使用紀錄只顯示、不算進庫存
+  var TYPE_KEYS = ['in', 'fold', 'foldNg', 'useNg'];
   var TYPE_HINTS = { in: '廠商送來的未折盒', fold: '未折盒折好', use: '裝盒用掉已折盒', foldNg: '折壞', useNg: '裝壞' };
 
   // =====================================================================
@@ -53,14 +55,13 @@
   function hhmm(ms) { if (!ms) return ''; var d = new Date(Number(ms)); return isNaN(d.getTime()) ? '' : pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
   function typeLabel(k) { return TYPES[k] ? TYPES[k].label : (k || '未知'); }
 
-  // 一筆異動對庫存的影響（與原系統 materialLiveInventory 同一套）：
-  // 進貨＋未折；折盒 未折→已折；使用－已折；折盒NG－未折（原系統 ng）；使用NG－已折（原系統 otherNg）
+  // 一筆異動對庫存的影響（與 js/stock-calc.js 同一套）：
+  // 進貨＋未折；折盒 未折→已折；折盒NG－未折；使用NG－已折；「使用」不算（裝盒用量由裝盒回報扣）
   function movementEffect(type, qty) {
     var q = Math.max(0, round2(qty));
     switch (type) {
       case 'in': return { unfolded: q, folded: 0 };
       case 'fold': return { unfolded: -q, folded: q };
-      case 'use': return { unfolded: 0, folded: -q };
       case 'foldNg': return { unfolded: -q, folded: 0 };
       case 'useNg': return { unfolded: 0, folded: -q };
       default: return { unfolded: 0, folded: 0 };
@@ -76,7 +77,8 @@
   function summarizeMovements(list, date, materials) {
     var map = Object.create(null), keys = [];
     (list || []).forEach(function (m) {
-      if (!isObj(m) || m.voided === true || !TYPES[m.type] || (date && m.date !== date)) return;
+      // 只算現在可以輸入的四種；舊的「使用」紀錄不算進小計（也不算進庫存）
+      if (!isObj(m) || m.voided === true || TYPE_KEYS.indexOf(m.type) < 0 || (date && m.date !== date)) return;
       var q = round2(m.qty);
       if (!(q > 0)) return;
       var k = String(m.materialId), r = map[k];
@@ -163,7 +165,11 @@
       return { id: String(m.id), materialId: m.id, bookUnfolded: round2(s.unfolded), bookFolded: round2(s.folded), countUnfolded: null, countFolded: null };
     });
   }
-  // 單一品項的比對：差異＝實盤合計－帳面合計；兩欄都填了才算；|差異| > |帳面合計| × 5% 算「差異大」
+  // 「差異大」的門檻（%）：見「計算規則」，預設 5%
+  function diffPct() { return window.CMSRules ? CMSRules.get('stocktakeDiffPct') : 5; }
+  function diffPctText() { return fmt(diffPct(), 1) + '%'; }
+  // 單一品項的比對：差異＝實盤合計－帳面合計；兩欄都填了才算；|差異| > |帳面合計| × 門檻% 算「差異大」
+  // 寫成 |差異| × (100 ÷ 門檻) > |帳面合計|：門檻 5% 時和原本的 |差異| × 20 完全相同；門檻 0% 時任何差異都算差異大
   function itemCheck(it) {
     it = isObj(it) ? it : {};
     var book = round2(num(it.bookUnfolded) + num(it.bookFolded));
@@ -171,7 +177,7 @@
     if (!fu || !ff) return { book: book, done: false, partial: fu || ff, count: null, diff: null, big: false };
     var count = round2(num(it.countUnfolded) + num(it.countFolded));
     var diff = round2(count - book);
-    return { book: book, done: true, partial: false, count: count, diff: diff, big: Math.abs(diff) * 20 > Math.abs(book) };
+    return { book: book, done: true, partial: false, count: count, diff: diff, big: Math.abs(diff) * (100 / diffPct()) > Math.abs(book) };
   }
   function stocktakeStats(rec) {
     var items = Array.isArray(rec && rec.items) ? rec.items.filter(isObj) : [];
@@ -196,10 +202,13 @@
       });
   }
   // 某一天（date 空白＝全部）未撤銷的裝盒紀錄 → 盒數 × 配方／內容物
+  // 包材用量優先用紀錄裡送出當時的配方快照（materials，和 js/stock-calc.js 相同），沒有快照才用目前配方
   // → { total, count, byProduct: [{productId, boxes, count}], materials: [{materialId, qty}], singles: [{productId, qty}],
   //     noRecipe: [沒有包材配方的禮盒 id], noComponents: [沒有單條內容物的禮盒 id] }
   function packUsage(records, date, recipes, components) {
-    var boxes = Object.create(null), counts = Object.create(null), order = [], total = 0, count = 0;
+    var boxes = Object.create(null), counts = Object.create(null), viaRecipe = Object.create(null), order = [], total = 0, count = 0;
+    var mats = Object.create(null), matKeys = [], sgl = Object.create(null), sglKeys = [], noRecipe = [], noComponents = [];
+    function addMat(k, q) { k = String(k); if (!(k in mats)) { mats[k] = 0; matKeys.push(k); } mats[k] = round2(mats[k] + q); }
     (records || []).forEach(function (r) {
       if (!isObj(r) || r.voided === true || (date && r.date !== date)) return;
       var b = num(r.boxes);
@@ -207,18 +216,18 @@
       var k = String(r.productId);
       if (!(k in boxes)) { boxes[k] = 0; counts[k] = 0; order.push(k); }
       boxes[k] += b; counts[k]++; total += b; count++;
+      if (Array.isArray(r.materials) && r.materials.length) r.materials.forEach(function (m) { if (isObj(m)) addMat(m.materialId, b * num(m.qty)); });
+      else viaRecipe[k] = (viaRecipe[k] || 0) + b;
     });
-    var mats = Object.create(null), matKeys = [], sgl = Object.create(null), sglKeys = [], noRecipe = [], noComponents = [];
     order.forEach(function (pid) {
-      var b = boxes[pid], hit = false, hitC = false;
+      var b = viaRecipe[pid] || 0, hit = false, hitC = false;
       (recipes || []).forEach(function (r) {
         if (!isObj(r) || String(r.productId) !== pid) return;
         hit = true;
-        var k = String(r.materialId);
-        if (!(k in mats)) { mats[k] = 0; matKeys.push(k); }
-        mats[k] = round2(mats[k] + b * num(r.qty));
+        if (b) addMat(r.materialId, b * num(r.qty));
       });
-      if (!hit) noRecipe.push(pid);
+      if (!hit && (pid in viaRecipe)) noRecipe.push(pid);
+      b = boxes[pid];
       (components || []).forEach(function (c) {
         if (!isObj(c) || String(c.productId) !== pid) return;
         hitC = true;
@@ -377,12 +386,14 @@
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
   var qe = { date: '', note: '', vals: Object.create(null) };
 
+  // 舊的「使用」紀錄（欄位已取消）加註不算進庫存
+  function qeTypeText(t) { return t === 'use' ? '使用（舊資料，不算進庫存）' : typeLabel(t); }
   var QE_BATCH = {
     unit: '筆',
     count: function (shown) { return shown.length + ' 筆'; },
-    item: function (r) { return nameOfMaterial(r.materialId) + ' ' + typeLabel(r.type) + ' ' + fmt(r.qty, 2); },
+    item: function (r) { return nameOfMaterial(r.materialId) + ' ' + qeTypeText(r.type) + ' ' + fmt(r.qty, 2); },
     line: function (r) {
-      return esc(X.materialLabel(r.materialId)) + ' ' + X.ui.tag(typeLabel(r.type), r.voided === true ? 'muted' : (TYPES[r.type] ? TYPES[r.type].tone : 'muted')) +
+      return esc(X.materialLabel(r.materialId)) + ' ' + X.ui.tag(qeTypeText(r.type), r.voided === true || r.type === 'use' ? 'muted' : (TYPES[r.type] ? TYPES[r.type].tone : 'muted')) +
         ' <b>' + esc(fmt(r.qty, 2)) + '</b>';
     }
   };
@@ -410,7 +421,7 @@
     if (mats.length && el._xqeSig === sig && q$(el, '[data-box="qe-grid"]')) { bindQuickEntry(el); refreshQuickEntry(el); return; }
     el._xqeSig = sig;
     var d = effDate(qe.date);
-    var html = intro('所有包材都列在下面，每種包材有「進貨、折盒、使用、折盒NG、使用NG」五格。有做的才填數量，沒做的留白，全部填完按最下面的「全部送出」一次登記。');
+    var html = intro('所有包材都列在下面，每種包材有「進貨、折盒、折盒NG、使用NG」四格。有做的才填數量，沒做的留白，全部填完按最下面的「全部送出」一次登記。送出後會馬上算進首頁的包材庫存；裝盒用掉的包材不用在這裡填，由「裝盒回報」自動換算扣除。');
     if (!mats.length) {
       html += X.ui.card('填寫數量', X.ui.empty('還沒有包材資料，請先到「包材資料」建立包材。'));
     } else {
@@ -506,7 +517,7 @@
     }));
     box.innerHTML = X.ui.card('這一天的紀錄', body, stamp) +
       X.ui.card('這一天各包材小計', X.ui.table(cols, sums, { empty: '這一天還沒有登記' }) +
-        '<p class="small" style="margin:8px 0 0">已撤銷的不算；目前只做統計，還沒有算進庫存。</p>', stamp);
+        '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；折盒NG 扣未折盒；使用NG 扣已折盒）。</p>', stamp);
   }
 
   // 輸入時只記下數值、切換格子的顏色，並更新「已填 N 格」
@@ -545,6 +556,7 @@
     var date = di ? String(di.value || '') : effDate(qe.date);
     if (!dateOk(date)) { alert('請選擇正確的日期。'); focusEl(di); return; }
     var items = [], bad = [], rounded = 0, big = false;
+    var warnQty = window.CMSRules ? CMSRules.get('quickEntryWarnQty') : 100000; // 多打 0 的提醒門檻：見「計算規則」
     q$$(el, 'input[data-mv]').forEach(function (inp) {
       var p = parseQty(inp.value);
       if (p.empty) return;
@@ -553,7 +565,7 @@
       var row = inp.closest('[data-mid]'), m = row ? X.materialById(row.dataset.mid) : null;
       if (!m || !TYPES[inp.dataset.mv]) return;
       if (p.rounded) rounded++;
-      if (p.qty >= 100000) big = true;
+      if (p.qty >= warnQty) big = true;
       items.push({ m: m, type: inp.dataset.mv, qty: p.qty });
     });
     if (bad.length) {
@@ -569,7 +581,7 @@
     if (date !== X.today()) msg += '\n\n注意：日期不是今天。';
     if (note) msg += '\n備註：' + note;
     if (rounded) msg += '\n有 ' + rounded + ' 格填了小數，已四捨五入成整數。';
-    if (big) msg += '\n有數量超過 10 萬，請確認沒有多打 0。';
+    if (big) msg += '\n有數量在 ' + fmt(warnQty) + ' 以上，請確認沒有多打 0。';
     if (!confirm(msg + '\n\n確定送出嗎？')) return;
 
     var batchId = X.uid('mb'), at = Date.now(), by = X.userName();
@@ -592,7 +604,7 @@
   // =====================================================================
   var stv = { openId: '', filter: 'all', q: '' };
   var ST_STATUS = { draft: ['盤點中', 'warn'], confirmed: ['已確認', 'ok'] };
-  var ST_FILTERS = [['all', '全部'], ['todo', '未填完'], ['diff', '有差異'], ['big', '差異超過 5%']];
+  function stFilters() { return [['all', '全部'], ['todo', '未填完'], ['diff', '有差異'], ['big', '差異超過 ' + diffPctText()]]; }
 
   function findStocktake(arr, id) { return (arr || []).find(function (s) { return isObj(s) && sameId(s.id, id); }) || null; }
   function statusTag(s) { var t = ST_STATUS[s.status] || ST_STATUS.draft; return X.ui.tag(t[0], t[1]); }
@@ -637,7 +649,7 @@
       { label: '已填', num: true, render: function (r) { return esc(r.k.done + ' / ' + r.k.total); } },
       { label: '差異項目數', num: true, render: function (r) {
         if (!r.k.diff) return esc(r.k.done ? '0' : '—');
-        return '<b style="color:var(--bad)">' + esc(r.k.diff) + '</b>' + (r.k.big ? smallLine('超過 5%：' + r.k.big) : '');
+        return '<b style="color:var(--bad)">' + esc(r.k.diff) + '</b>' + (r.k.big ? smallLine('超過 ' + diffPctText() + '：' + r.k.big) : '');
       } },
       { label: '', render: function (r) {
         var draft = r.s.status !== 'confirmed';
@@ -657,7 +669,7 @@
       { label: '盤點日期', value: rec.date || '—', tone: 'info', sub: t[0] },
       { label: '已填', value: k.done + ' / ' + k.total + ' 項', tone: k.total && k.done === k.total ? 'ok' : 'warn' },
       { label: '有差異', value: k.diff + ' 項', tone: k.diff ? 'warn' : 'ok' },
-      { label: '差異超過 5%', value: k.big + ' 項', tone: k.big ? 'bad' : 'ok' }
+      { label: '差異超過 ' + diffPctText(), value: k.big + ' 項', tone: k.big ? 'bad' : 'ok' }
     ]);
   }
   function diffHtml(c) {
@@ -691,7 +703,7 @@
       : '輸入實際數到的數量，離開欄位就自動儲存。沒有的請填 0，兩欄都要填才能確認。帳面數是建立這份盤點時的庫存。';
     var filterBar = '<div class="toolbar" style="align-items:center">' +
       '<select data-act="st-filter" aria-label="篩選" style="min-height:40px;border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px;font:inherit">' +
-      ST_FILTERS.map(function (f) { return '<option value="' + f[0] + '"' + (stv.filter === f[0] ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select>' +
+      stFilters().map(function (f) { return '<option value="' + f[0] + '"' + (stv.filter === f[0] ? ' selected' : '') + '>' + esc(f[1]) + '</option>'; }).join('') + '</select>' +
       '<input type="search" data-act="st-search" placeholder="搜尋包材名稱或編號" value="' + esc(stv.q) + '" aria-label="搜尋包材" style="flex:1;min-width:150px;min-height:40px;border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px;font:inherit;box-sizing:border-box">' +
       '</div>';
     var cols = [
@@ -713,7 +725,7 @@
       '<button type="button" class="btn green" data-act="st-confirm" style="min-height:48px;min-width:150px;justify-content:center;font-weight:800">確認盤點</button>' +
       '<button type="button" class="btn red" data-act="st-del" data-id="' + esc(rec.id) + '" style="min-height:48px">刪除這份草稿</button></div>';
     html += X.ui.card('盤點明細', '<p class="small" style="margin:0 0 6px">' + esc(meta) + '</p>' +
-      '<p class="small" style="margin:0 0 10px">' + esc(tip) + ' 差異＝實盤合計－帳面合計，超過帳面合計 5% 的列會標紅。</p>' +
+      '<p class="small" style="margin:0 0 10px">' + esc(tip) + ' 差異＝實盤合計－帳面合計，超過帳面合計 ' + esc(diffPctText()) + ' 的列會標紅。</p>' +
       filterBar + '<p class="small" data-box="nohit" style="margin:0 0 8px;display:none">找不到符合的包材。</p>' + table + foot,
       ro ? '<button type="button" class="btn gray"' + LATER + '>設為庫存起算點</button>' : '<button type="button" class="btn gray"' + LATER + '>列印盤點單</button>');
     return html;
@@ -803,7 +815,7 @@
       renderStocktake(el);
       return;
     }
-    if (!confirm('確認後這份盤點就不能再修改。\n有差異 ' + k.diff + ' 項，其中超過 5% 的有 ' + k.big + ' 項。\n確定要確認嗎？')) return;
+    if (!confirm('確認後這份盤點就不能再修改。\n有差異 ' + k.diff + ' 項，其中超過 ' + diffPctText() + ' 的有 ' + k.big + ' 項。\n確定要確認嗎？')) return;
     rec.status = 'confirmed';
     rec.confirmedBy = X.userName();
     rec.confirmedAt = Date.now();
@@ -1003,7 +1015,8 @@
       html += '<p class="small" style="margin:0">選好禮盒、填好盒數後，這裡會即時算出要用掉的包材和單條。</p>';
     } else {
       var u = packUsage(res.items, '', X.recipes(), X.components());
-      html += usageWarn(u) + usageHtml(u, '選的禮盒都還沒有設定包材配方', '選的禮盒都沒有設定單條內容物');
+      html += usageWarn(u) + usageHtml(u, '選的禮盒都還沒有設定包材配方', '選的禮盒都沒有設定單條內容物', true) +
+        '<p class="small" style="margin:8px 0 0">送出後，這些包材用量會從首頁包材庫存的「已折盒」扣掉。</p>';
     }
     box.innerHTML = html;
   }
@@ -1014,21 +1027,28 @@
     if (u.noComponents.length) w += X.ui.banner('info', esc('這些禮盒沒有設定單條內容物，不會算到單條用量：' + u.noComponents.map(nameOfProduct).join('、')));
     return w;
   }
-  function usageHtml(u, emptyMat, emptySgl) {
+  // preview＝送出前的預覽：多一欄「送出後已折盒」（目前已折盒－這次用量），不夠時標紅
+  function usageHtml(u, emptyMat, emptySgl, preview) {
     var order = materialOrder(orderedMaterials());
     var matRows = u.materials.slice().sort(function (a, b) { return orderOf(order, String(a.materialId)) - orderOf(order, String(b.materialId)); });
+    var folded = function (r) { return num((X.materialStock(r.materialId) || {}).folded); };
+    var cols = [
+      { label: '包材', render: function (r) { return wrapText(X.materialLabel(r.materialId)); } },
+      { label: '用量', num: true, render: function (r) {
+        var m = X.materialById(r.materialId);
+        return '<b>' + esc(fmt(r.qty, 2)) + '</b>' + (m && m.unit ? ' <span class="small">' + esc(m.unit) + '</span>' : '');
+      } },
+      { label: '目前已折盒', num: true, render: function (r) {
+        var s = folded(r);
+        return preview && s < r.qty ? '<b style="color:var(--bad)">' + esc(fmt(s, 2)) + '</b>' : esc(fmt(s, 2));
+      } }
+    ];
+    if (preview) cols.push({ label: '送出後已折盒', num: true, render: function (r) {
+      var after = round2(folded(r) - r.qty);
+      return after < 0 ? '<b style="color:var(--bad)">' + esc(fmt(after, 2)) + '</b>' : esc(fmt(after, 2));
+    } });
     return '<div class="x-cols"><div><h3 class="x-pk-sub">包材用量</h3>' +
-      X.ui.table([
-        { label: '包材', render: function (r) { return wrapText(X.materialLabel(r.materialId)); } },
-        { label: '用量', num: true, render: function (r) {
-          var m = X.materialById(r.materialId);
-          return '<b>' + esc(fmt(r.qty, 2)) + '</b>' + (m && m.unit ? ' <span class="small">' + esc(m.unit) + '</span>' : '');
-        } },
-        { label: '已折盒（參考）', num: true, render: function (r) {
-          var s = num((X.materialStock(r.materialId) || {}).folded);
-          return s < r.qty ? '<b style="color:var(--bad)">' + esc(fmt(s, 2)) + '</b>' : esc(fmt(s, 2));
-        } }
-      ], matRows, { empty: emptyMat }) +
+      X.ui.table(cols, matRows, { empty: emptyMat }) +
       '</div><div><h3 class="x-pk-sub">單條用量</h3>' +
       X.ui.table([
         { label: '單條', render: function (r) { return wrapText(X.productLabel(r.productId)); } },
@@ -1055,7 +1075,7 @@
       { label: '回報筆數', num: true, render: function (r) { return esc(r.count); } }
     ], byProduct, { empty: '這一天還沒有裝盒回報' }) +
       (byProduct.length ? '<p class="small" style="margin:8px 0 0">合計 ' + byProduct.length + ' 種禮盒、' + esc(fmt(u.total)) + ' 盒（已撤銷的不算）。</p>' : '');
-    var usage = '<p class="small" style="margin:0 0 10px">目前只做換算顯示，還沒有扣庫存（後續階段串接）。已撤銷的紀錄不算。</p>' +
+    var usage = '<p class="small" style="margin:0 0 10px">這些包材用量已經從首頁包材庫存的「已折盒」扣掉（用送出當時的禮盒配方換算）。已撤銷的紀錄不算。單條用量目前只做換算顯示。</p>' +
       usageWarn(u) + usageHtml(u, '這一天沒有裝盒，或禮盒還沒有設定包材配方', '這一天沒有裝盒，或禮盒沒有設定單條內容物');
     box.innerHTML = X.ui.card('這一天的紀錄', body, stamp) + X.ui.card('這一天各禮盒合計', totals, stamp) + X.ui.card('這一天換算用量', usage, stamp);
   }
@@ -1090,13 +1110,21 @@
     }
     if (date !== X.today()) msg += '\n\n注意：日期不是今天。';
     if (note) msg += '\n備註：' + note;
-    if (res.items.some(function (it) { return it.boxes >= 10000; })) msg += '\n有禮盒一次超過 1 萬盒，請確認沒有多打 0。';
+    var warnBoxes = window.CMSRules ? CMSRules.get('packWarnBoxes') : 10000; // 多打 0 的提醒門檻：見「計算規則」
+    if (res.items.some(function (it) { return it.boxes >= warnBoxes; })) msg += '\n有禮盒一次在 ' + fmt(warnBoxes) + ' 盒以上，請確認沒有多打 0。';
     if (!confirm(msg + '\n\n確定送出嗎？')) return;
 
     var batchId = X.uid('pb'), at = Date.now(), by = X.userName();
     var ids = freshIds('pk', res.items.length, X.get('packRecords'));
     var recs = res.items.map(function (it, i) {
-      return { id: ids[i], batchId: batchId, date: date, productId: findGift(res.G, it.productId).id, boxes: it.boxes, by: by, at: at, note: note, voided: false };
+      var pid = findGift(res.G, it.productId).id;
+      var rec = { id: ids[i], batchId: batchId, date: date, productId: pid, boxes: it.boxes, by: by, at: at, note: note, voided: false };
+      // 存下送出當時每盒的包材用量（配方快照）：之後刪除禮盒或改配方，已送出的用量不會跟著變
+      // 還沒設包材配方就不存，之後補設配方時仍會依配方扣
+      var mats = X.recipes().filter(function (r) { return isObj(r) && sameId(r.productId, pid); })
+        .map(function (r) { return { materialId: r.materialId, qty: round2(num(r.qty)) }; });
+      if (mats.length) rec.materials = mats;
+      return rec;
     });
     if (!pushRecords('packRecords', recs)) return;
     // 送出成功：重設為 3 列空白、清空備註，紀錄區切到這次的日期
@@ -1114,7 +1142,7 @@
   // 註冊頁面
   // =====================================================================
   X.registerPage({
-    id: 'xQuickEntry', group: 'daily', order: 10, stage: 'beta', admin: true,
+    id: 'xQuickEntry', group: 'daily', order: 10, stage: 'ready', admin: true,
     title: '快速輸入', sub: '所有包材一頁填完，一次送出',
     icon: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7.5v7M8.5 11h7"/><path d="M10.5 18h3"/>',
     render: function (el) { renderQuickEntry(el); }
@@ -1126,7 +1154,7 @@
     render: function (el) { renderStocktake(el); }
   });
   X.registerPage({
-    id: 'xPacking', group: 'daily', order: 30, stage: 'beta',
+    id: 'xPacking', group: 'daily', order: 30, stage: 'ready',
     title: '裝盒回報', sub: '一次填多個禮盒，系統換算用掉的包材與單條',
     icon: '<path d="M3 8 12 4l9 4-9 4z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/><path d="m7.5 6 9 4"/>',
     render: function (el) { renderPacking(el); }

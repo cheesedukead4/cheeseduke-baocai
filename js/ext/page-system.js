@@ -190,22 +190,30 @@
           desc: c.materials.length ? '還沒有任何包材設定最低水位（「包材資料」的安全庫存），無法檢查。' : '還沒有包材資料，無法檢查。'
         };
       }
+      // 「計算規則」可以改成用剩餘可用量（目前庫存－待裝盒，和首頁「水位狀態」一樣）來比，也可以設定剛好等於水位也算不足
+      var R = window.CMSRules || null;
+      var useRemain = !!(R && R.get('lowStockBasis') === 'remain');
+      var eqLow = !!(R && R.get('safetyEqualIsLow'));
+      var basis = useRemain ? '剩餘可用量' : '目前庫存';
       var low = [];
       withMin.forEach(function (m) {
         var min = safetyOf(m);
         var total = X.num((X.materialStock(m.id) || {}).total);
-        if (total < min) low.push({ m: m, total: total, min: min });
+        if (useRemain) total -= X.num(R.materialDemand(m.id));
+        if (R ? R.isLow(total, min) : total < min) low.push({ m: m, total: total, min: min });
       });
       low.sort(function (a, b) { return (a.total / a.min) - (b.total / b.min); });
       var l = listOf(low, function (x) {
-        return mLabel(x.m) + '：目前庫存 ' + X.fmt(x.total, 2) + unitOf(x.m) + '，最低水位 ' + X.fmt(x.min, 2) + unitOf(x.m);
+        return mLabel(x.m) + '：' + basis + ' ' + X.fmt(x.total, 2) + unitOf(x.m) + '，最低水位 ' + X.fmt(x.min, 2) + unitOf(x.m);
       });
       return {
         level: low.length ? 'bad' : 'ok', count: low.length,
         countText: low.length + ' 項', countSub: '共 ' + withMin.length + ' 項有設水位',
         desc: low.length
-          ? '這些包材目前庫存（未折盒＋已折盒）比最低水位少，請盡快補貨。首頁的「水位狀態」還會再扣掉待裝盒的數量，所以首頁標「不足」的可能更多。'
-          : '有設最低水位的包材，目前庫存都在水位以上。',
+          ? (useRemain
+            ? '這些包材扣掉待裝盒後的剩餘可用量' + (eqLow ? '沒有高於' : '比') + '最低水位' + (eqLow ? '' : '少') + '（和首頁「水位狀態」同一套算法），請盡快補貨。'
+            : '這些包材目前庫存（未折盒＋已折盒）' + (eqLow ? '沒有高於最低水位' : '比最低水位少') + '，請盡快補貨。首頁的「水位狀態」還會再扣掉待裝盒的數量，所以首頁標「不足」的可能更多。')
+          : (useRemain ? '有設最低水位的包材，扣掉待裝盒後的剩餘可用量都在水位以上。' : '有設最低水位的包材，目前庫存都在水位以上。'),
         list: l.list, more: l.more, pill: low.length + ' 項包材低於最低水位'
       };
     },
@@ -224,6 +232,15 @@
       }
       var last = done.slice().sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); })[0];
       var ago = last.date ? X.daysBetween(last.date, c.today) : null;
+      // 「計算規則」設定了天數時，最近一次盤點太久以前就提醒（預設 0＝不看天數）
+      var maxAge = window.CMSRules ? CMSRules.get('stocktakeMaxAgeDays') : 0;
+      if (maxAge > 0 && ago != null && ago > maxAge) {
+        return {
+          level: 'warn', count: 1, countText: done.length + ' 次', countSub: '已確認',
+          desc: '最近一次確認的盤點是 ' + last.date + '（' + ago + ' 天前），超過設定的 ' + maxAge + ' 天，建議重新盤點。',
+          pill: '盤點已超過 ' + maxAge + ' 天'
+        };
+      }
       return {
         level: 'ok', count: 0, countText: done.length + ' 次', countSub: '已確認',
         desc: '最近一次：' + (last.date || '日期未填') + (ago != null && ago >= 0 ? '（' + (ago ? ago + ' 天前' : '今天') + '）' : '')
@@ -346,7 +363,9 @@
         var code = trim(r.productCode);
         if (code && ((code in first) ? ign[code] : ignNorm[normCode(code)])) return;
         var od = trim(r.orderDepartment), ch = trim(r.channel);
-        var dk = (od && odMap[od]) || (ch && chMap[ch]) || (!od && odMap['']) || (!ch && chMap['']) || '';
+        // 先看哪一個欄位見「計算規則」（預設先接單部門、再通路）
+        var dk = window.CMSRules ? CMSRules.resolveDept({ orderDepartment: od, channel: ch }, { orderDepartment: odMap, channel: chMap })
+          : ((od && odMap[od]) || (ch && chMap[ch]) || (!od && odMap['']) || (!ch && chMap['']) || '');
         if (ok[dk]) return;
         orderN++;
         var k = od + '\u0001' + ch;
@@ -362,7 +381,8 @@
         level: list.length ? 'warn' : 'ok', count: list.length,
         countText: list.length + ' 種', countSub: X.fmt(orderN) + ' 筆訂單',
         desc: list.length
-          ? '這些訂單的接單部門和通路都還沒設定對應的部門（共 ' + X.fmt(orderN) + ' 筆），部門業績會算到「未對照」。先看接單部門，對不到再看通路，設定其中一個就可以。'
+          ? '這些訂單的接單部門和通路都還沒設定對應的部門（共 ' + X.fmt(orderN) + ' 筆），部門業績會算到「未對照」。' +
+            (window.CMSRules && CMSRules.get('deptPriority') === 'channel' ? '先看通路，對不到再看接單部門' : '先看接單部門，對不到再看通路') + '，設定其中一個就可以。'
           : '每筆訂單都能從接單部門或通路對到部門。',
         list: l.list, more: l.more, pill: list.length + ' 種通路／部門未對照'
       };
@@ -375,9 +395,15 @@
     try { ctx = buildContext(X); } catch (e) { ctxErr = e; }
     return CHECK_DEFS.map(function (def) {
       var r;
+      // 「計算規則」可以把某一項改成紅燈、黃燈或不檢查（預設照原本）
+      var ov = window.CMSRules ? CMSRules.checkLevel(def.key) : 'default';
       try {
-        if (ctxErr) throw ctxErr;
-        r = RUN[def.key](ctx) || {};
+        if (ov === 'off') r = { level: 'skip', count: 0, countText: '—', desc: '已在「計算規則」設定為不檢查。' };
+        else {
+          if (ctxErr) throw ctxErr;
+          r = RUN[def.key](ctx) || {};
+          if ((ov === 'bad' || ov === 'warn') && (r.level === 'bad' || r.level === 'warn')) r.level = ov;
+        }
       } catch (e) {
         r = { level: 'warn', count: 1, countText: '—', desc: '檢查時發生錯誤：' + (e && e.message ? e.message : e), pill: def.title + '檢查失敗' };
       }
@@ -587,12 +613,12 @@
 
   // 權限分級規劃：各頁 × 三種角色
   var ROLES = [
-    { key: 'clerk', label: '店員碼', desc: '只能用「快速輸入」和首頁的折盒統計，其他頁面看不到。' },
+    { key: 'clerk', label: '店員碼', desc: '只能用「快速輸入」（進貨、折盒、NG）和看首頁，其他頁面看不到。' },
     { key: 'manager', label: '主管碼', desc: '所有功能都能用，包含設定與匯入。' },
     { key: 'accountant', label: '會計碼', desc: '所有數字都能看但不能改，看不到客戶姓名等資料。' }
   ];
   var PERM = {
-    full: ['可使用', 'ok'], fold: ['看首頁、可折盒', 'info'], read: ['只能看', 'info'],
+    full: ['可使用', 'ok'], fold: ['只能看首頁', 'info'], read: ['只能看', 'info'],
     readNoCustomer: ['只能看（不顯示客戶）', 'warn'], none: ['不能用', 'muted']
   };
   function permFor(pageId, role) {
@@ -684,7 +710,7 @@
   var TYPE_LABEL = { array: '清單（array）', map: '對照表（map）', object: '單一設定（object）' };
   var LEGACY_DATA = [
     ['products', '禮盒與單條'], ['materials', '包材'], ['recipes', '包材配方'], ['components', '禮盒內含單條'],
-    ['initialStock', '初始庫存'], ['foldingRecords', '折盒統計'], ['orderHistory', '過去訂單']
+    ['initialStock', '初始庫存'], ['foldingRecords', '舊折盒統計（已停用）'], ['orderHistory', '過去訂單']
   ];
 
   function datasetsHtml() {

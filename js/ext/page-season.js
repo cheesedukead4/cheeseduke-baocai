@@ -61,7 +61,8 @@
   function holidayHtml(s) {
     var d = daysToHoliday(s);
     if (d === null) return DASH;
-    if (d > 0) return X.ui.tag('還有 ' + d + ' 天', d <= 30 && s.status !== 'closed' ? 'warn' : 'muted');
+    var warnDays = window.CMSRules ? CMSRules.get('holidayWarnDays') : 30; // 幾天內標黃色：見「計算規則」
+    if (d > 0) return X.ui.tag('還有 ' + d + ' 天', d <= warnDays && s.status !== 'closed' ? 'warn' : 'muted');
     if (d === 0) return X.ui.tag('就是今天', 'bad');
     return '<span class="small">已過 ' + (-d) + ' 天</span>';
   }
@@ -229,28 +230,12 @@
   });
 
   // ================= (3) 業績儀表板 =================
-  var sd = { key: '' };
-
-  // 每筆訂單的「年份|檔期種類」，以及有哪些組合可選（新的在上，同一年中秋在前）
-  function orderKeys(rows) {
-    var keys = new Array(rows.length), seen = Object.create(null);
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i], y = String((r && r.date) || '').slice(0, 4);
-      keys[i] = '';
-      if (!/^\d{4}$/.test(y)) continue;
-      var k = X.orderSeasonKind(r);
-      if (k !== 'newyear' && k !== 'midautumn') continue;
-      keys[i] = y + '|' + k;
-      seen[keys[i]] = true;
-    }
-    var options = Object.keys(seen).sort(function (a, b) {
-      var ya = a.slice(0, 4), yb = b.slice(0, 4);
-      if (ya !== yb) return yb.localeCompare(ya);
-      return (a.slice(5) === 'midautumn' ? 0 : 1) - (b.slice(5) === 'midautumn' ? 0 : 1);
-    });
-    return { keys: keys, options: options };
-  }
-  function optionLabel(k) { return k === 'all' ? '全部（所有月份）' : k.slice(0, 4) + ' ' + (KIND[k.slice(5)] || ''); }
+  // 今年和去年同一個檔期（或全年）比較：訂單數量與金額，可以看全公司或單一部門。
+  // 金額＝數量 × 目前的售價（訂單資料沒有金額）：禮盒用「禮盒資料」的售價、單條用「單條資料」的售價（CMSX.productPrice，
+  // 禮盒沒填售價時是否改用內建備用售價見「計算規則」）。去年的金額也用目前的售價計算。
+  // 部門對照設成「不計算」的訂單不算進數量與金額。
+  var sd = { kind: '', year: '', dept: 'all' };
+  var SD_KINDS = [['midautumn', '中秋'], ['newyear', '過年'], ['year', '全年（1～12 月）']];
 
   // 對照表（只讀）：品號 → 對照、禮盒；接單部門／通路 → 部門
   function salesCtx() {
@@ -273,134 +258,239 @@
     return ctx;
   }
 
-  // 彙總（不讀取 customer 欄位）
-  function computeSales(rows, keys, sel, ctx) {
+  // 每筆訂單整理成：{ kind, sy（檔期年份）, y（日期年份）, date, p, code, name, q, price, dk（部門）, raw（未對照時的原始文字）, no }
+  // 品號設為「不計算」的略過（只計筆數）
+  function classifyOrders(rows, ctx) {
     var deptOk = Object.create(null);
     X.DEPTS.forEach(function (d) { deptOk[d.key] = true; });
     deptOk.none = true;
-    var res = { lines: 0, qty: 0, giftQty: 0, singleQty: 0, unmatchedQty: 0, ignoredLines: 0, orderCount: 0, dept: Object.create(null), items: Object.create(null), unCh: Object.create(null) };
-    var orderSet = Object.create(null);
+    var list = [], ignored = 0, priceOf = Object.create(null);
     for (var i = 0; i < rows.length; i++) {
-      if (sel !== 'all' && keys[i] !== sel) continue;
       var r = rows[i];
       if (!r) continue;
+      var date = String(r.date || ''), y = date.slice(0, 4);
+      if (!/^\d{4}$/.test(y)) continue;
       var code = normCode(r.productCode);
       var cm = code ? ctx.code[code] : null;
-      if (cm && cm.kind === 'ignore') { res.ignoredLines++; continue; }
-      var q = X.num(r.qty);
-      // 有手動對照就用手動對照；對到已刪除的品項算「未對照」（與「對照設定」「開檔檢查」相同），沒有手動對照才比對系統品號
+      if (cm && cm.kind === 'ignore') { ignored++; continue; }
+      // 有手動對照就用手動對照；對到已刪除的品項算「未對照」，沒有手動對照才比對系統品號
       var manualId = cm && cm.productId != null ? String(cm.productId).trim() : '';
       var p = manualId ? (ctx.byId[manualId] || null) : ((code ? ctx.byCode[code] : null) || null);
-      res.lines++;
-      res.qty += q;
-      var no = String(r.orderNo || r.sourceOrderNo || '').trim() || ('#' + i);
-      if (!orderSet[no]) { orderSet[no] = true; res.orderCount++; }
-      if (!p) res.unmatchedQty += q; else if (isSingle(p)) res.singleQty += q; else res.giftQty += q;
-
-      var od = String(r.orderDepartment || '').trim(), ch = String(r.channel || '').trim();
-      // 先看有寫的接單部門、再看有寫的通路；兩者都對不到時，才用「空白」的對照
-      var dk = (od && ctx.od[od]) || (ch && ctx.ch[ch]) || (!od && ctx.od['']) || (!ch && ctx.ch['']) || '';
-      if (!deptOk[dk]) {
-        dk = 'unmatched';
-        var raw = ch || od || '（空白）';
-        res.unCh[raw] = (res.unCh[raw] || 0) + q;
+      var price = 0;
+      if (p) {
+        var pk = String(p.id);
+        if (!(pk in priceOf)) priceOf[pk] = X.num(X.productPrice(p));
+        price = priceOf[pk];
       }
-      var g = res.dept[dk] || (res.dept[dk] = { qty: 0, lines: 0, orderCount: 0, orders: Object.create(null) });
-      g.qty += q;
-      g.lines++;
-      if (!g.orders[no]) { g.orders[no] = true; g.orderCount++; }
-
-      var ik = p ? 'p:' + p.id : 'c:' + (code || String(r.name || '').trim() || '（空白）');
-      var it = res.items[ik] || (res.items[ik] = {
-        qty: 0, p: p,
-        code: p ? (p.code || '') : String(r.productCode || '').trim(),
-        name: p ? (p.name || '') : String(r.name || '').trim()
+      var kind = X.orderSeasonKind(r);
+      var sy = (kind === 'newyear' || kind === 'midautumn') && window.CMSRules ? CMSRules.seasonYear(date, kind) : y;
+      var od = String(r.orderDepartment || '').trim(), ch = String(r.channel || '').trim();
+      // 預設先看接單部門、再看通路（順序見「計算規則」）；兩者都對不到時，才用「空白」的對照
+      var dk = window.CMSRules ? CMSRules.resolveDept({ orderDepartment: od, channel: ch }, { orderDepartment: ctx.od, channel: ctx.ch })
+        : ((od && ctx.od[od]) || (ch && ctx.ch[ch]) || (!od && ctx.od['']) || (!ch && ctx.ch['']) || '');
+      var raw = '';
+      if (!deptOk[dk]) { dk = 'unmatched'; raw = ch || od || '（空白）'; }
+      list.push({
+        kind: kind, sy: sy, y: y, date: date.slice(0, 10), p: p, q: X.num(r.qty), price: price, dk: dk, raw: raw,
+        code: p ? (p.code || '') : String(r.productCode || '').trim(), name: p ? (p.name || '') : String(r.name || '').trim(),
+        no: String(r.orderNo || r.sourceOrderNo || '').trim() || ('#' + i)
       });
-      it.qty += q;
     }
-    return res;
+    return { list: list, ignored: ignored };
   }
+
+  function inPeriod(o, kind, year) { return kind === 'year' ? o.y === year : (o.kind === kind && o.sy === year); }
+  function yearsOf(list, kind) {
+    var seen = Object.create(null);
+    list.forEach(function (o) { if (kind === 'year') seen[o.y] = true; else if (o.kind === kind) seen[o.sy] = true; });
+    return Object.keys(seen).sort().reverse();
+  }
+
+  // 「計算規則」開啟時（預設），公關贈、執行長的訂單金額不算營收
+  function nonRevenue() { return (!window.CMSRules || CMSRules.get('salesExcludeNonRevenue')) ? nonRevSet() : {}; }
+  // 彙總一段期間：dept＝'all'（全公司）或部門代號／'unmatched'；「不計算」部門不算進合計
+  function sumPeriod(list, kind, year, dept) {
+    var s = { qty: 0, amt: 0, nonRevAmt: 0, singleQty: 0, unmatchedQty: 0, unpricedQty: 0, noneQty: 0, orderCount: 0, orders: Object.create(null),
+      byDept: Object.create(null), items: Object.create(null), unCh: Object.create(null), minDate: '', maxDate: '' };
+    var nonRev = nonRevenue();
+    list.forEach(function (o) {
+      if (!inPeriod(o, kind, year)) return;
+      if (o.dk === 'none') { s.noneQty += o.q; return; }
+      if (dept !== 'all' && o.dk !== dept) return;
+      var amt = nonRev[o.dk] ? 0 : o.q * o.price;
+      if (nonRev[o.dk]) s.nonRevAmt += o.q * o.price;
+      s.qty += o.q; s.amt += amt;
+      if (!o.p) s.unmatchedQty += o.q; else if (isSingle(o.p)) s.singleQty += o.q;
+      if (o.p && !(o.price > 0)) s.unpricedQty += o.q; // 有對到品項、但沒有售價（品號未對照的另外算 unmatchedQty）
+      if (!s.orders[o.no]) { s.orders[o.no] = true; s.orderCount++; }
+      if (!s.minDate || o.date < s.minDate) s.minDate = o.date;
+      if (!s.maxDate || o.date > s.maxDate) s.maxDate = o.date;
+      var g = s.byDept[o.dk] || (s.byDept[o.dk] = { qty: 0, amt: 0 });
+      g.qty += o.q; g.amt += amt;
+      if (o.dk === 'unmatched') s.unCh[o.raw] = (s.unCh[o.raw] || 0) + o.q;
+      var ik = o.p ? 'p:' + o.p.id : 'c:' + (o.code || o.name || '（空白）');
+      var it = s.items[ik] || (s.items[ik] = { key: ik, p: o.p, code: o.code, name: o.name, price: o.price, qty: 0, amt: 0 });
+      it.qty += o.q; it.amt += amt;
+    });
+    return s;
+  }
+
+  function money(v) { return '$' + X.fmt(Math.round(X.num(v))); }
+  function shortRange(s) {
+    if (!s.minDate) return '沒有訂單';
+    var f = function (d) { return d.slice(5).replace('-', '/'); };
+    return s.minDate.slice(0, 4) + ' 年 ' + f(s.minDate) + '～' + f(s.maxDate);
+  }
+  // 成長：今年比去年；去年是 0 時，今年有就顯示「新增」
+  function growth(cur, prev) {
+    if (!(prev > 0)) return cur > 0 ? X.ui.tag('新增', 'info') : DASH;
+    var g = Math.round((cur - prev) / prev * 1000) / 10;
+    var color = g > 0 ? 'var(--ok)' : (g < 0 ? 'var(--bad)' : 'var(--text-2)');
+    return '<b style="color:' + color + '">' + (g > 0 ? '+' : '') + g + '%</b>';
+  }
+  function growthText(cur, prev) {
+    if (!(prev > 0)) return cur > 0 ? '去年沒有，今年新增' : '';
+    var g = Math.round((cur - prev) / prev * 1000) / 10;
+    return '比去年 ' + (g > 0 ? '+' : '') + g + '%';
+  }
+  function periodLabel(kind, year) { return year + ' ' + (kind === 'year' ? '全年' : (KIND[kind] || '')); }
 
   function renderSalesDash(el) {
     var rows = X.orders();
-    var html = intro('彙總過去訂單的盒數，可依檔期查看各部門與各品項的數量（不顯示客戶資料）。');
+    var html = intro('比較今年和去年同一個檔期的訂單數量與金額，可以看全公司或單一部門（不顯示客戶資料）。金額＝數量 × 目前的售價。');
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
     if (!rows.length) { el.innerHTML = html + X.ui.empty('還沒有過去訂單資料。'); return; }
 
     var t0 = now();
-    var ok = orderKeys(rows);
-    if (sd.key !== 'all' && ok.options.indexOf(sd.key) < 0) sd.key = ok.options[0] || 'all';
-    var res = computeSales(rows, ok.keys, sd.key, salesCtx());
+    var c = classifyOrders(rows, salesCtx());
+    var list = c.list;
+    // 預設檔期：進行中檔期的種類；沒有就選有資料的第一種
+    if (!sd.kind) {
+      var act = X.activeSeason();
+      sd.kind = act && (act.kind === 'newyear' || act.kind === 'midautumn') && yearsOf(list, act.kind).length ? act.kind
+        : (SD_KINDS.map(function (k) { return k[0]; }).find(function (k) { return yearsOf(list, k).length; }) || 'year');
+    }
+    var years = yearsOf(list, sd.kind);
+    if (years.indexOf(sd.year) < 0) sd.year = years[0] || '';
+    var deptOpts = [{ key: 'all', label: '全公司' }].concat(X.DEPTS.map(function (d) { return { key: d.key, label: d.label }; }), [{ key: 'unmatched', label: '未對照的訂單' }]);
+    if (!deptOpts.some(function (d) { return d.key === sd.dept; })) sd.dept = 'all';
+    var lastYear = sd.year ? String(Number(sd.year) - 1) : '';
+    var cur = sumPeriod(list, sd.kind, sd.year, sd.dept);
+    var prev = sumPeriod(list, sd.kind, lastYear, sd.dept);
     var ms = Math.round(now() - t0);
-    var unCh = Object.keys(res.unCh).sort(function (a, b) { return res.unCh[b] - res.unCh[a]; });
+    var deptName = (deptOpts.find(function (d) { return d.key === sd.dept; }) || {}).label;
 
-    html += '<div class="x-actions" style="margin-bottom:12px;align-items:flex-end">' +
-      '<label class="x-field" style="flex:1 1 200px;max-width:280px"><span>檔期</span><select data-act="pick">' +
-      ['all'].concat(ok.options).map(function (k) { return '<option value="' + esc(k) + '"' + (k === sd.key ? ' selected' : '') + '>' + esc(optionLabel(k)) + '</option>'; }).join('') +
-      '</select></label><span class="small" style="padding-bottom:10px">過年＝1～2 月訂單、中秋＝8～10 月訂單（沿用原系統規則）</span></div>';
+    var sel = function (act, opts, value, label, width) {
+      return '<label class="x-field" style="flex:1 1 ' + (width || 150) + 'px;max-width:260px"><span>' + esc(label) + '</span><select data-act="' + act + '">' +
+        opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === value ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></label>';
+    };
+    html += '<div class="x-actions" style="margin-bottom:8px;align-items:flex-end">' +
+      sel('kind', SD_KINDS, sd.kind, '比較檔期') +
+      sel('year', years.length ? years.map(function (y) { return [y, y + ' 年 vs ' + (Number(y) - 1) + ' 年']; }) : [['', '沒有資料']], sd.year, '年份') +
+      sel('dept', deptOpts.map(function (d) { return [d.key, d.label]; }), sd.dept, '部門') + '</div>';
+    html += '<p class="small" style="margin:0 0 12px">' +
+      esc((sd.kind === 'year' ? '全年＝訂單日期的年份。' : (window.CMSRules ? CMSRules.seasonRuleText() : '過年＝1～2 月訂單、中秋＝8～10 月訂單') + '（可在「計算規則」修改）。') +
+        '今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + '；去年（' + periodLabel(sd.kind, lastYear) + '）：' + shortRange(prev) + '。') +
+      (prev.minDate && cur.minDate && (prev.minDate.slice(5) !== cur.minDate.slice(5) || prev.maxDate.slice(5) !== cur.maxDate.slice(5)) ? ' <b>兩年的訂單日期範圍不一樣，比較時請留意。</b>' : '') + '</p>';
 
     html += X.ui.kpis([
-      { label: '訂單筆數', value: X.fmt(res.orderCount), tone: 'info', sub: '不重複單號；明細 ' + X.fmt(res.lines) + ' 筆' },
-      { label: '總盒數', value: X.fmt(res.qty), tone: 'ok', sub: res.ignoredLines ? '已略過「不計算」品號 ' + X.fmt(res.ignoredLines) + ' 筆' : '' },
-      { label: '對到禮盒的比例', value: pct(res.giftQty, res.qty), tone: 'muted', sub: '單條 ' + X.fmt(res.singleQty) + ' 盒、未對照 ' + X.fmt(res.unmatchedQty) + ' 盒' },
-      { label: '未對照的通路數', value: X.fmt(unCh.length), tone: unCh.length ? 'warn' : 'ok', sub: unCh.length ? '請到「對照設定」的通路、接單部門分頁設定' : '全部都已對照' }
+      { label: deptName + '｜訂單數量', value: X.fmt(cur.qty), tone: 'info', sub: '去年 ' + X.fmt(prev.qty) + (growthText(cur.qty, prev.qty) ? '，' + growthText(cur.qty, prev.qty) : '') + (cur.singleQty ? '；含單條 ' + X.fmt(cur.singleQty) + ' 條' : '') },
+      { label: deptName + '｜金額', value: money(cur.amt), tone: 'ok', sub: '去年 ' + money(prev.amt) + (growthText(cur.amt, prev.amt) ? '，' + growthText(cur.amt, prev.amt) : '') +
+        (cur.nonRevAmt ? '；公關贈、執行長 ' + money(cur.nonRevAmt) + ' 不算營收' : '') },
+      { label: '訂單筆數（不重複單號）', value: X.fmt(cur.orderCount), tone: 'muted', sub: '去年 ' + X.fmt(prev.orderCount) },
+      { label: '沒有售價的數量', value: X.fmt(cur.unpricedQty), tone: (cur.unpricedQty || cur.unmatchedQty) ? 'warn' : 'ok',
+        sub: [cur.unpricedQty ? '這些沒算到金額，請到禮盒／單條資料填售價' : '',
+          cur.unmatchedQty ? '另有品號未對照的 ' + X.fmt(cur.unmatchedQty) + ' 也沒算到金額，請到「對照設定」對照品號' : ''].filter(Boolean).join('；') || '全部都有售價' }
     ]);
 
-    // 依部門
-    var deptRows = X.DEPTS.map(function (d) { return { label: d.label, g: res.dept[d.key] }; });
-    if (res.dept.none) deptRows.push({ label: '不計算', g: res.dept.none, tone: 'muted' });
-    if (res.dept.unmatched) deptRows.push({ label: '未對照', g: res.dept.unmatched, tone: 'warn' });
-    deptRows.push({ label: '合計', total: true, g: { qty: res.qty, orderCount: res.orderCount } });
-    var deptCols = [
-      { label: '部門', render: function (x) { return x.total ? '<strong>合計</strong>' : (x.tone ? X.ui.tag(x.label, x.tone) : esc(x.label)); } },
-      { label: '盒數', num: true, render: function (x) { var v = x.g ? X.fmt(x.g.qty) : '0'; return x.total ? '<strong>' + v + '</strong>' : v; } },
-      { label: '佔比', num: true, render: function (x) { return x.total ? '' : pct(x.g ? x.g.qty : 0, res.qty); } },
-      { label: '訂單數', num: true, render: function (x) { return x.g ? X.fmt(x.g.orderCount) : '0'; } }
-    ];
-    var deptCard = X.ui.card('依部門', X.ui.table(deptCols, deptRows) +
-      '<p class="small" style="margin:10px 0 0">先用「接單部門」對照，對不到再用「通路」；兩者都沒有設定對照的歸到「未對照」。對照在「對照設定」頁修改。</p>');
+    // 依部門（全公司時才顯示）
+    if (sd.dept === 'all') {
+      var nr = nonRevenue();
+      var deptRows = X.DEPTS.map(function (d) { return { label: d.label, a: cur.byDept[d.key], b: prev.byDept[d.key], nonRev: !!nr[d.key] }; });
+      if (cur.byDept.unmatched || prev.byDept.unmatched) deptRows.push({ label: '未對照', tone: 'warn', a: cur.byDept.unmatched, b: prev.byDept.unmatched });
+      deptRows.push({ label: '合計', total: true, a: { qty: cur.qty, amt: cur.amt }, b: { qty: prev.qty, amt: prev.amt } });
+      var q = function (g) { return g ? g.qty : 0; }, m = function (g) { return g ? g.amt : 0; };
+      var bold = function (x, v) { return x.total ? '<strong>' + v + '</strong>' : v; };
+      html += X.ui.card('依部門（' + periodLabel(sd.kind, sd.year) + ' vs ' + periodLabel(sd.kind, lastYear) + '）', X.ui.table([
+        { label: '部門', render: function (x) { return x.total ? '<strong>合計</strong>' : (x.tone ? X.ui.tag(x.label, x.tone) : esc(x.label)); } },
+        { label: '今年數量', num: true, render: function (x) { return bold(x, X.fmt(q(x.a))); } },
+        { label: '去年數量', num: true, render: function (x) { return bold(x, X.fmt(q(x.b))); } },
+        { label: '數量成長', num: true, render: function (x) { return growth(q(x.a), q(x.b)); } },
+        { label: '今年金額', num: true, render: function (x) { return x.nonRev ? X.ui.tag('不算營收', 'muted') : bold(x, money(m(x.a))); } },
+        { label: '去年金額', num: true, render: function (x) { return x.nonRev ? X.ui.tag('不算營收', 'muted') : bold(x, money(m(x.b))); } },
+        { label: '金額成長', num: true, render: function (x) { return x.nonRev ? DASH : growth(m(x.a), m(x.b)); } }
+      ], deptRows) +
+        '<p class="small" style="margin:10px 0 0">' + (window.CMSRules && CMSRules.get('deptPriority') === 'channel' ? '先用「通路」對照，對不到再用「接單部門」' : '先用「接單部門」對照，對不到再用「通路」') +
+        '；兩者都沒有設定對照的歸到「未對照」。部門對照設成「不計算」的訂單不算進合計' + (cur.noneQty ? '（今年數量 ' + X.fmt(cur.noneQty) + '）' : '') + '。' +
+        (Object.keys(nr).length ? '公關贈、執行長的數量照算，金額不算營收（可在「計算規則」修改）。' : '') + '對照在「對照設定」頁修改。</p>');
+    }
 
-    // 依品項前 15 名
-    var items = Object.keys(res.items).map(function (k) { return res.items[k]; })
-      .sort(function (a, b) { return b.qty - a.qty; }).slice(0, 15);
-    items.forEach(function (x, i) { x.rank = i + 1; });
-    var itemCols = [
+    // 依品項（今年金額排序，前 N 名，見「計算規則」）
+    var topN = window.CMSRules ? CMSRules.get('salesTopN') : 15;
+    var keys = Object.create(null);
+    Object.keys(cur.items).concat(Object.keys(prev.items)).forEach(function (k) { keys[k] = true; });
+    var items = Object.keys(keys).map(function (k) {
+      var a = cur.items[k], b = prev.items[k], base = a || b;
+      return { p: base.p, code: base.code, name: base.name, price: base.price, qa: a ? a.qty : 0, qb: b ? b.qty : 0, ma: a ? a.amt : 0, mb: b ? b.amt : 0 };
+    }).sort(function (x, y) { return (y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb); });
+    var shown = items.slice(0, topN);
+    shown.forEach(function (x, i) { x.rank = i + 1; });
+    html += X.ui.card('依品項（今年金額前 ' + topN + ' 名）', X.ui.table([
       { label: '#', num: true, render: function (x) { return String(x.rank); } },
       { label: '品號', render: function (x) { return x.code ? esc(x.code) : DASH; } },
       { label: '名稱', render: function (x) { return esc(x.name || '（沒有名稱）'); } },
       { label: '類別', render: function (x) { return !x.p ? X.ui.tag('未對照', 'warn') : (isSingle(x.p) ? X.ui.tag('單條', 'muted') : X.ui.tag('禮盒', 'info')); } },
-      { label: '盒數', num: true, render: function (x) { return X.fmt(x.qty); } },
-      { label: '佔比', num: true, render: function (x) { return pct(x.qty, res.qty); } }
-    ];
-    var itemCard = X.ui.card('依品項（前 15 名）', X.ui.table(itemCols, items, { empty: '這個檔期沒有訂單' }) +
-      '<p class="small" style="margin:10px 0 0">品號先看「對照設定」的品號對照，沒有設定的再直接比對禮盒／單條資料的品號（不分大小寫、忽略空白）。</p>');
-    html += '<div class="x-cols">' + deptCard + itemCard + '</div>';
+      { label: '售價', num: true, render: function (x) { return !x.p ? DASH : (x.price > 0 ? money(x.price) : X.ui.tag('沒有售價', 'warn')); } },
+      { label: '今年數量', num: true, render: function (x) { return X.fmt(x.qa); } },
+      { label: '去年數量', num: true, render: function (x) { return X.fmt(x.qb); } },
+      { label: '成長', num: true, render: function (x) { return growth(x.qa, x.qb); } },
+      { label: '今年金額', num: true, render: function (x) { return money(x.ma); } },
+      { label: '去年金額', num: true, render: function (x) { return money(x.mb); } }
+    ], shown, { empty: '這兩年都沒有訂單' }) +
+      (items.length > topN ? '<p class="small" style="margin:10px 0 0">另外還有 ' + (items.length - topN) + ' 個品項未列出（顯示幾名可在「計算規則」修改）。</p>' : '') +
+      '<p class="small" style="margin:6px 0 0">品號先看「對照設定」的品號對照，沒有設定的再直接比對禮盒／單條資料的品號（不分大小寫、忽略空白）。售價用目前「禮盒資料」「單條資料」填的售價；禮盒沒填售價時，是否改用內建備用售價見「計算規則」。</p>');
 
-    if (unCh.length) {
-      var chRows = unCh.slice(0, 10).map(function (k) { return { name: k, qty: res.unCh[k] }; });
-      html += X.ui.card('還沒對照部門的通路（前 10 名）', X.ui.table([
+    // 沒有售價的品項
+    var unpriced = items.filter(function (x) { return x.p && !(x.price > 0) && (x.qa || x.qb); });
+    if (unpriced.length) {
+      html += X.ui.card('沒有售價的品項（金額沒算到）', X.ui.table([
+        { label: '品號', render: function (x) { return x.code ? esc(x.code) : DASH; } },
+        { label: '名稱', render: function (x) { return esc(x.name); } },
+        { label: '類別', render: function (x) { return isSingle(x.p) ? X.ui.tag('單條', 'muted') : X.ui.tag('禮盒', 'info'); } },
+        { label: '今年數量', num: true, render: function (x) { return X.fmt(x.qa); } },
+        { label: '去年數量', num: true, render: function (x) { return X.fmt(x.qb); } }
+      ], unpriced) + '<p class="small" style="margin:10px 0 0">禮盒到「禮盒資料」、單條到「單條資料」填售價後，這裡的金額就會更新。</p>');
+    }
+
+    var unCh = Object.keys(cur.unCh).sort(function (a, b) { return cur.unCh[b] - cur.unCh[a]; });
+    if (sd.dept === 'all' && unCh.length) {
+      var chRows = unCh.slice(0, 10).map(function (k) { return { name: k, qty: cur.unCh[k] }; });
+      html += X.ui.card('還沒對照部門的通路（今年，前 10 名）', X.ui.table([
         { label: '訂單上的通路／接單部門', render: function (x) { return esc(x.name); } },
-        { label: '盒數', num: true, render: function (x) { return X.fmt(x.qty); } }
-      ], chRows) + (unCh.length > 10 ? '<p class="small" style="margin:10px 0 0">另外還有 ' + (unCh.length - 10) + ' 個未列出。</p>' : ''));
+        { label: '數量', num: true, render: function (x) { return X.fmt(x.qty); } }
+      ], chRows) + (unCh.length > 10 ? '<p class="small" style="margin:10px 0 0">另外還有 ' + (unCh.length - 10) + ' 個未列出。請到「對照設定」的通路、接單部門分頁設定。</p>' : ''));
     }
 
     html += X.ui.card('預估 vs 實際', X.ui.empty('之後會把「業績預估」填的預估和這裡的實際訂單放在一起，依部門、品項比較達成率。'),
       '<button type="button" class="btn gray"' + LATER + '>比較預估與實際</button>');
-    html += '<p class="small" style="margin:4px 0 0">共 ' + X.fmt(rows.length) + ' 筆訂單明細，計算 ' + ms + ' 毫秒。</p>';
+    html += '<p class="small" style="margin:4px 0 0">共 ' + X.fmt(rows.length) + ' 筆訂單明細' + (c.ignored ? '（品號設為「不計算」的 ' + X.fmt(c.ignored) + ' 筆不算）' : '') + '，計算 ' + ms + ' 毫秒。</p>';
     el.innerHTML = html;
 
     el.onchange = function (e) {
       var t = e.target;
-      if (t && t.dataset && t.dataset.act === 'pick') { sd.key = t.value || 'all'; renderSalesDash(el); }
+      if (!t || !t.dataset) return;
+      if (t.dataset.act === 'kind') { sd.kind = t.value; sd.year = ''; renderSalesDash(el); }
+      else if (t.dataset.act === 'year') { sd.year = t.value; renderSalesDash(el); }
+      else if (t.dataset.act === 'dept') { sd.dept = t.value; renderSalesDash(el); }
     };
   }
 
   X.registerPage({
-    id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '過去訂單的檔期、部門、品項彙總', stage: 'skeleton',
+    id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '今年和去年同檔期的訂單數量與金額比較', stage: 'ready',
     icon: '<path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5a9 9 0 0 1 5.5 5.5H15z"/>',
     render: function (el) { renderSalesDash(el); },
-    _fn: { orderKeys: orderKeys, salesCtx: salesCtx, computeSales: computeSales, state: sd }
+    _fn: { classifyOrders: classifyOrders, salesCtx: salesCtx, sumPeriod: sumPeriod, yearsOf: yearsOf, state: sd }
   });
 })(window.CMSX);

@@ -703,6 +703,7 @@ function makeDailyFoldingRows(date){
  }));
 }
 function syncTodayFoldingRows(){
+ if(window.CMSStock)return; // 2026-10-14 起首頁折盒統計已取消（改用快速輸入），不再每天建立折盒列
  ensureFoldingRecords();
  const today=localDateKey();
 
@@ -789,6 +790,7 @@ function updateFoldSaveNote(){
  if(note)note.textContent='修改後自動儲存';
 }
 function renderFoldingRecords(){
+ if(window.CMSStock)return; // 折盒統計已取消
  syncTodayFoldingRows();
  const today=localDateKey();
  const label=document.getElementById('foldTodayLabel');
@@ -864,6 +866,8 @@ function foldingTotalsForMaterial(materialId){
    },{incoming:0,usage:0,folded:0,ng:0,otherNg:0});
 }
 function materialLiveInventory(materialId){
+ // 2026-10-14 起改用「初始庫存＋快速輸入＋裝盒回報」計算（見 js/stock-calc.js）；以下是舊的折盒統計算法，只在新算法沒載入時使用
+ if(window.CMSStock)return CMSStock.material(materialId);
  const init=(Array.isArray(db.initialStock)?db.initialStock:[])
    .find(x=>String(x.itemId)===String(materialId) && (!x.itemType || x.itemType==='material')) || {};
  const baseUnfolded=Number(init.unfolded)||0;
@@ -890,7 +894,8 @@ function refreshMaterialInventoryCells(materialId){
 
  targets.forEach(m=>{
    const live=materialLiveInventory(m.id);
-   const demand=(db.campaigns||[]).reduce((sum,c)=>{
+   // 待裝盒：2026-10-15 起＝各禮盒還要再裝的盒數 × 配方（見 js/stock-calc.js materialToPack）；以下是舊算法（檔期需求 × 配方）
+   const demand=window.CMSStock?CMSStock.materialToPack(m.id):(db.campaigns||[]).reduce((sum,c)=>{
      const q=Number(c.qty)||0;
      const per=(db.recipes||[]).filter(r=>
        String(r.productId)===String(c.productId) &&
@@ -907,10 +912,11 @@ function refreshMaterialInventoryCells(materialId){
    setByData('data-home-folded-id',m.id,live.folded);
    setByData('data-home-remain-id',m.id,remain);
 
+   const low=window.CMSRules?CMSRules.isLow(remain,safety):remain<safety; // 水位判斷：見「計算規則」
    document.querySelectorAll('[data-home-status-id]').forEach(el=>{
      if(String(el.getAttribute('data-home-status-id'))===String(m.id)){
-       el.textContent=remain<safety?'不足':'正常';
-       el.className=`sheet-status ${remain<safety?'bad':'good'}`;
+       el.textContent=low?'不足':'正常';
+       el.className=`sheet-status ${low?'bad':'good'}`;
      }
    });
  });
@@ -928,7 +934,8 @@ function renderDashboard(){
  const singles=orderedHomeItems('single',products.filter(p=>String(p.category||'').trim()==='單條'));
  const gifts=orderedHomeItems('gift',products.filter(p=>String(p.category||'').trim()!=='單條' && p.isListedCurrent===true));
 
- const matDemand=(mid)=>(db.campaigns||[]).reduce((sum,c)=>{
+ // 待裝盒：2026-10-15 起＝各禮盒還要再裝的盒數 × 配方（見 js/stock-calc.js materialToPack）；以下是舊算法（檔期需求 × 配方）
+ const matDemand=(mid)=>window.CMSStock?CMSStock.materialToPack(mid):(db.campaigns||[]).reduce((sum,c)=>{
    const q=Number(c.qty)||0;
    const per=(db.recipes||[]).filter(r=>String(r.productId)===String(c.productId)&&String(r.materialId)===String(mid))
      .reduce((s,r)=>s+(Number(r.qty)||0),0);
@@ -937,14 +944,18 @@ function renderDashboard(){
 
  matBody.innerHTML=materials.length?materials.map((m,i)=>{
    const live=materialLiveInventory(m.id);
-   const stock=live.total, demand=matDemand(m.id), remain=stock-demand, safety=Number(m.safety)||0;
+   const stock=live.total, demand=matDemand(m.id), safety=Number(m.safety)||0;
+   const remain=window.CMSStock?Math.round((stock-demand)*100)/100:stock-demand;
+   const low=window.CMSRules?CMSRules.isLow(remain,safety):remain<safety; // 水位判斷：見「計算規則」
    const unfolded=live.unfolded;
    const folded=live.folded;
+   // 已裝盒＝各禮盒現貨 × 配方用量（禮盒現貨還沒串接時顯示「—」）
+   const packed=window.CMSStock?CMSStock.materialPacked(m.id):null;
    return `<tr><td class="sort-action-col">${dragHandle('material',m.id)}</td>
     <td class="code-col">${m.code||''}</td><td class="name-cell">${m.name||''}</td>
-    <td data-home-total-id="${m.id}">${stock}</td><td class="linked-stock-cell" data-home-unfolded-id="${m.id}">${unfolded}</td><td class="linked-stock-cell" data-home-folded-id="${m.id}">${folded}</td><td class="manual-cell">—</td>
+    <td data-home-total-id="${m.id}">${stock}</td><td class="linked-stock-cell" data-home-unfolded-id="${m.id}">${unfolded}</td><td class="linked-stock-cell" data-home-folded-id="${m.id}">${folded}</td><td class="${packed==null?'manual-cell':''}">${packed==null?'—':packed}</td>
     <td>${demand}</td><td data-home-remain-id="${m.id}" class="${remain<0?'neg':''}">${remain}</td><td>${safety}</td>
-    <td><span data-home-status-id="${m.id}" class="sheet-status ${remain<safety?'bad':'good'}">${remain<safety?'不足':'正常'}</span></td></tr>`;
+    <td><span data-home-status-id="${m.id}" class="sheet-status ${low?'bad':'good'}">${low?'不足':'正常'}</span></td></tr>`;
  }).join(''):'<tr><td colspan="11" class="empty">尚無包材資料</td></tr>';
 
  singleHome.innerHTML=singles.length?singles.map((p,i)=>{
@@ -962,6 +973,14 @@ function renderDashboard(){
 
  giftHome.innerHTML=gifts.length?gifts.map((p,i)=>{
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
+   if(window.CMSStock){
+     // 包裝需求＝現貨＋待進貨－預購單－銷售預估（見 js/stock-calc.js）；負數＝還要再裝這麼多盒
+     const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id), need=CMSStock.giftPackNeed(p.id);
+     return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
+    <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
+    <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'現貨的資料來源還沒串接，先當 0':''}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td>${CMSStock.giftPreorder(p.id)}</td>
+    <td>${fc}</td><td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
+   }
    return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td>
@@ -990,7 +1009,8 @@ function render(){
    return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="7"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
  }).join(''):'<tr><td colspan="7" class="empty">尚無禮盒資料</td></tr>';
  let singleProducts=db.products.filter(x=>x.category==='單條');
- singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=3 class=empty>尚無單條資料</td></tr>';
+ // 單條也有售價（業績儀表板算金額用）與本期上架，存法和禮盒一樣（updateGiftListPrice／updateGiftListPublished 依品項 id 存）
+ singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=5 class=empty>尚無單條資料</td></tr>';
  initGiftFormulaRows();
  opts(cProduct,db.products.filter(x=>x.category!=='單條'),'name');if(window.rMaterial)opts(rMaterial,db.materials,'name');if(document.getElementById('sMaterial'))updateStockItemOptions();
 (document.getElementById('recipeBody')||{innerHTML:''}).innerHTML=db.recipes.length?db.recipes.map(x=>`<tr><td>${prodName(x.productId)}</td><td>${matName(x.materialId)}</td><td class=num>${x.qty}</td><td><button onclick="del('recipes','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=4 class=empty>尚無配方</td></tr>';

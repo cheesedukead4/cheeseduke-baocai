@@ -1,11 +1,12 @@
 /* 離線快取：網站檔案先走網路（略過瀏覽器的 HTTP 快取，確保拿到最新版；檔案沒變時伺服器只回 304），4 秒沒回應或失敗才用快取。雲端資料請求不經過快取。 */
-var CACHE = 'cms-app-v10';
+var CACHE = 'cms-app-v11';
 var NET_TIMEOUT_MS = 4000;
 var ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './css/legacy.css', './css/app.css', './css/ext.css',
-  './js/cloud-sync.js', './js/app-shell.js', './js/old-orders-import.js',
+  './js/cloud-sync.js', './js/calc-rules.js', './js/stock-calc.js', './js/app-shell.js', './js/old-orders-import.js',
   './js/ext/ext-core.js', './js/ext/page-season.js', './js/ext/page-legacy-forecast.js', './js/ext/page-orders.js', './js/ext/page-floor.js', './js/ext/page-system.js', './js/ext/home-dash.js', './js/ext/order-singles.js',
+  './js/ext/calc-docs.js', './js/ext/page-rules.js',
   './js/legacy-1.js', './js/legacy-2.js', './js/legacy-3.js', './js/legacy-4.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];

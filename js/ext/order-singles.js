@@ -46,8 +46,8 @@
       if (isSingle(p)) return { type: 'single', product: p, parts: [{ single: p, qty: 1 }] };
       var list = comps[String(p.id)];
       if (list && list.length) return { type: 'gift', product: p, parts: list };
-      // 沒有單條內容物、但名稱和某個單條一樣（例如 CO-46 巧費）→ 當作那個單條
-      var same = singleByName[norm(p.name)];
+      // 沒有單條內容物、但名稱和某個單條一樣（例如 CO-46 巧費）→ 當作那個單條（可在「計算規則」關閉）
+      var same = (!window.CMSRules || CMSRules.get('singlesSameName')) ? singleByName[norm(p.name)] : null;
       if (same) return { type: 'asSingle', product: p, parts: [{ single: same, qty: 1 }] };
       return { type: 'noComp', product: p };
     };
@@ -62,7 +62,9 @@
     });
     return function (r) {
       var od = String(r.orderDepartment || '').trim(), ch = String(r.channel || '').trim();
-      var d = (od && map.orderDepartment[od]) || (ch && map.channel[ch]) || (!od && map.orderDepartment[''] ) || (!ch && map.channel['']);
+      // 預設先看接單部門、再看通路（順序見「計算規則」）
+      var d = window.CMSRules ? CMSRules.resolveDept({ orderDepartment: od, channel: ch }, map)
+        : ((od && map.orderDepartment[od]) || (ch && map.channel[ch]) || (!od && map.orderDepartment[''] ) || (!ch && map.channel['']));
       if (d === 'none') return null;
       if (d) return X.deptLabel(d);
       return od || ch || '（空白）';
@@ -72,7 +74,9 @@
   function seasonKey(r) {
     var y = String(r.date || '').slice(0, 4);
     if (!/^\d{4}$/.test(y)) return '';
-    return y + '|' + X.orderSeasonKind(r);
+    var k = X.orderSeasonKind(r);
+    if (window.CMSRules) y = CMSRules.seasonYear(r.date, k); // 過年檔期的 7～12 月預購算隔年
+    return y + '|' + k;
   }
   function seasonLabel(k) { if (k === 'all') return '全部'; var a = k.split('|'); return a[0] + ' ' + (KIND[a[1]] || a[1]); }
   function sortSeasonKeys(keys) {
@@ -160,7 +164,7 @@
     html += '<div class="toolbar" style="align-items:center"><label class="small" style="font-weight:700">檔期 ' +
       '<select data-act="season" style="min-height:40px;margin-left:6px;border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px;font:inherit">' +
       keys.slice().reverse().concat(['all']).map(function (k) { return '<option value="' + esc(k) + '"' + (k === sel ? ' selected' : '') + '>' + esc(seasonLabel(k)) + '</option>'; }).join('') +
-      '</select></label><span class="small">過年＝1～2 月、中秋＝8～10 月（沿用原系統規則）</span></div>';
+      '</select></label><span class="small">' + esc(window.CMSRules ? CMSRules.seasonRuleText() : '過年＝1～2 月、中秋＝8～10 月') + '（可在「計算規則」修改）</span></div>';
     html += X.ui.kpis([
       { label: '換算後單條總數', value: X.fmt(grand) + ' 條', tone: 'info', sub: seasonLabel(sel) },
       { label: '可換算的訂單', value: c.rows ? Math.round(converted / c.rows * 1000) / 10 + '%' : '—', tone: (c.noComp + c.unmapped) ? 'warn' : 'ok', sub: X.fmt(converted) + ' / ' + X.fmt(c.rows) + ' 筆（全部檔期）' },
@@ -196,7 +200,8 @@
     html += X.ui.card('依接單部門（' + seasonLabel(sel) + '）', X.ui.table([{ label: '部門', render: function (r) { return esc(r.dept); } }].concat(topSids.map(function (sid) {
       return { label: data.singles[sid].name, num: true, render: function (r) { return r[sid] ? X.fmt(r[sid]) : '<span class="small">0</span>'; } };
     })).concat([{ label: '合計', num: true, render: function (r) { return '<b>' + X.fmt(r.total) + '</b>'; } }]), deptRows, { empty: '沒有資料' }) +
-      '<p class="small" style="margin:10px 0 0">部門先看「接單部門」；在「對照設定」把接單部門或通路對到 8 個部門後，這裡會合併顯示。</p>');
+      '<p class="small" style="margin:10px 0 0">' + (window.CMSRules && CMSRules.get('deptPriority') === 'channel' ? '部門先看「通路」' : '部門先看「接單部門」') +
+      '；在「對照設定」把接單部門或通路對到 8 個部門後，這裡會合併顯示。</p>');
 
     var noComp = Object.keys(data.problems.noComp).map(function (k) { return data.problems.noComp[k]; });
     var unmapped = Object.keys(data.problems.unmapped).map(function (k) { return data.problems.unmapped[k]; });

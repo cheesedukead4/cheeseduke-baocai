@@ -72,8 +72,19 @@
       label: '裝盒回報', type: 'array',
       fields: {
         id: '唯一代號', date: '裝盒日期 YYYY-MM-DD', productId: '禮盒 id', boxes: '裝了幾盒', by: '回報者', at: '回報時間（毫秒）', note: '備註', voided: '是否已撤銷 true/false',
-        batchId: '同一次送出的批次代號（同一批共用）'
+        batchId: '同一次送出的批次代號（同一批共用）', materials: '[{ materialId, qty }] 送出當時每盒的包材用量（配方快照；庫存優先用它扣）'
       }
+    },
+    calcRules: {
+      label: '計算規則', type: 'object',
+      fields: {
+        '（參數代號）': '各參數的設定值；有哪些參數、預設值與合法範圍見 js/calc-rules.js 的 DEFS，沒設定的一律用預設值',
+        _meta: '{ by: 最後修改者, at: 最後修改時間（毫秒） }'
+      }
+    },
+    calcRulesLog: {
+      label: '計算規則修改紀錄', type: 'array',
+      fields: { id: '唯一代號', at: '修改時間（毫秒）', by: '修改者', key: '參數代號', label: '參數名稱', from: '原本的值（文字）', to: '改成的值（文字）' }
     },
     appSettings: {
       label: '系統設定', type: 'object',

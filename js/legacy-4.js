@@ -189,7 +189,9 @@ function renderOrderHistory(){
  let rows=[...db.orderHistory].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  rows=rows.filter(r=>orderMatchesSeason(r,orderHistorySeason));
  if(orderHistoryYear!=='all'){
-   rows=rows.filter(r=>String(r.date||'').startsWith(orderHistoryYear+'-'));
+   // 選「過年」時，過年檔期裡 7～12 月的預購訂單算隔年（見「計算規則」的過年月份）
+   if(orderHistorySeason==='newyear'&&window.CMSRules) rows=rows.filter(r=>CMSRules.seasonYear(r.date,'newyear')===orderHistoryYear);
+   else rows=rows.filter(r=>String(r.date||'').startsWith(orderHistoryYear+'-'));
  }
  
  const fDate=((document.getElementById('histFilterDate')||{}).value||'').trim();
@@ -215,13 +217,14 @@ if(q){
      r.date,r.orderNo,r.sourceOrderNo,r.productCode,r.name,r.customer,r.channel,r.orderDepartment,r.department
    ].some(v=>String(v||'').toLowerCase().includes(q)));
  }
+ const maxRows=window.CMSRules?CMSRules.get('orderHistoryMaxRows'):200; // 最多顯示幾筆：見「計算規則」
  const count=document.getElementById('orderHistoryCount');
  if(count){
    const seasonName=orderHistorySeason==='newyear'?'過年':orderHistorySeason==='midautumn'?'中秋':'全部檔期';
    const yearName=orderHistoryYear==='all'?'全部年份':orderHistoryYear+'年';
-   count.textContent=`${yearName}・${seasonName}｜共 ${rows.length.toLocaleString()} 筆｜目前顯示前 ${Math.min(rows.length,200)} 筆`;
+   count.textContent=`${yearName}・${seasonName}｜共 ${rows.length.toLocaleString()} 筆｜目前顯示前 ${Math.min(rows.length,maxRows)} 筆`;
  }
- const visible=rows.slice(0,200);
+ const visible=rows.slice(0,maxRows);
  body.innerHTML=visible.length?visible.map(r=>`<tr>
    <td>${escHist(r.date)}</td><td>${escHist(r.orderNo)}</td><td>${escHist(r.sourceOrderNo||'')}</td>
    <td>${escHist(r.productCode||'')}</td><td>${escHist(r.name)}</td><td>${escHist(r.customer)}</td>
@@ -280,11 +283,9 @@ function orderMatchesSeason(r,season){
  const d=String(r.date||'');
  const m=Number((d.match(/^\d{4}-(\d{2})/)||[])[1]||0);
 
- // 過年：1、2月訂單
- if(season==='newyear') return m===1 || m===2;
-
- // 中秋：8、9、10月訂單
- if(season==='midautumn') return m===8 || m===9 || m===10;
+ // 過年、中秋各包含哪些月份：見「計算規則」（預設過年 1、2 月，中秋 8、9、10 月）
+ if(season==='newyear') return window.CMSRules ? CMSRules.monthIn('newyear',m) : (m===1 || m===2);
+ if(season==='midautumn') return window.CMSRules ? CMSRules.monthIn('midautumn',m) : (m===8 || m===9 || m===10);
 
  return true;
 }
@@ -294,7 +295,12 @@ function orderMatchesSeason(r,season){
 function refreshOrderYearOptions(){
  const sel=document.getElementById('orderHistoryYear');
  if(!sel || !Array.isArray(db.orderHistory))return;
- const years=[...new Set(db.orderHistory.map(r=>String(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
+ // 過年檔期的 7～12 月預購算隔年的過年（見「計算規則」），所以也要列出那個隔年，選「過年」時才選得到
+ const years=[...new Set(db.orderHistory.flatMap(r=>{
+   const ys=[String(r.date||'').slice(0,4)];
+   if(window.CMSRules&&orderMatchesSeason(r,'newyear'))ys.push(CMSRules.seasonYear(r.date,'newyear'));
+   return ys;
+ }).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
  const current=orderHistoryYear;
  sel.innerHTML='<option value="all">全部年份</option>'+years.map(y=>`<option value="${y}">${y}年</option>`).join('');
  sel.value=years.includes(current)?current:'all';
@@ -485,6 +491,8 @@ function updateSalesForecastLastYear(el){ensureSalesForecast();db.salesForecastV
 function sfUnitPrice(product){
  const direct=Number(product?.price);
  if(Number.isFinite(direct)&&direct>0)return direct;
+ // 「計算規則」關掉內建備用售價時，只用禮盒資料填的售價
+ if(window.CMSRules&&!CMSRules.get('useBuiltinPrices'))return 0;
  const code=String(product?.code||'').trim();
  if(typeof EXCEL_GIFT_IMPORT_20261008!=='undefined'){
    const excel=EXCEL_GIFT_IMPORT_20261008.find(x=>x.code===code);
