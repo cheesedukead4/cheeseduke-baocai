@@ -13,7 +13,7 @@
   var LOG_MAX = 300;     // 修改紀錄最多保留幾筆
   var LOG_SHOW = 30;     // 頁面上顯示最近幾筆
   var GROUP_TITLES = {
-    orders: '檔期歸屬與過去訂單', stock: '庫存與水位', stocktake: '盤點', daily: '每日作業（快速輸入、裝盒）',
+    orders: '檔期歸屬與過去訂單', stock: '庫存與水位', stocktake: '盤點', daily: '每日作業（快速輸入）',
     price: '售價', sales: '業績與部門', singles: '換算成單條', season: '檔期設定', checklist: '開檔檢查'
   };
   var GROUP_ORDER = ['orders', 'stock', 'stocktake', 'daily', 'price', 'sales', 'singles', 'season', 'checklist'];

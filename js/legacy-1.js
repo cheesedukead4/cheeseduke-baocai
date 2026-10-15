@@ -866,7 +866,7 @@ function foldingTotalsForMaterial(materialId){
    },{incoming:0,usage:0,folded:0,ng:0,otherNg:0});
 }
 function materialLiveInventory(materialId){
- // 2026-10-14 起改用「初始庫存＋快速輸入＋裝盒回報」計算（見 js/stock-calc.js）；以下是舊的折盒統計算法，只在新算法沒載入時使用
+ // 2026-10-14 起改用「初始庫存＋快速輸入」計算（見 js/stock-calc.js）；以下是舊的折盒統計算法，只在新算法沒載入時使用
  if(window.CMSStock)return CMSStock.material(materialId);
  const init=(Array.isArray(db.initialStock)?db.initialStock:[])
    .find(x=>String(x.itemId)===String(materialId) && (!x.itemType || x.itemType==='material')) || {};

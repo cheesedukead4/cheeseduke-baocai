@@ -77,7 +77,7 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 .x-qe-datetag .btn,.x-pk-datetag .btn{padding:3px 9px;font-size:12px;line-height:1.4}
 .x-qe-legend{display:none}
 .x-qe-grid{display:flex;flex-direction:column}
-.x-qe-headrow,.x-qe-row{display:grid;grid-template-columns:minmax(170px,1.7fr) repeat(4,minmax(64px,1fr));gap:8px;align-items:center}
+.x-qe-headrow,.x-qe-row{display:grid;grid-template-columns:minmax(170px,1.7fr) repeat(5,minmax(64px,1fr));gap:8px;align-items:center}
 .x-qe-headrow{position:sticky;top:calc(var(--topbar-h) + env(safe-area-inset-top, 0px));z-index:3;background:var(--surface-2);border:1px solid var(--line);border-radius:10px 10px 0 0;padding:8px 10px}
 .x-qe-headrow>div{font-size:12.5px;font-weight:800;color:var(--text-2);line-height:1.3}
 .x-qe-headrow small{display:block;font-size:11.5px;font-weight:600;color:var(--text-3)}
@@ -158,7 +158,7 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
   .x-qe-legend b{color:var(--text)}
   .x-qe-headrow{display:none}
   .x-qe-grid{gap:8px}
-  .x-qe-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;border:1px solid var(--line);border-radius:12px;padding:10px}
+  .x-qe-row{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;border:1px solid var(--line);border-radius:12px;padding:10px}
   .x-qe-row:last-child{border-radius:12px}
   .x-qe-name{grid-column:1/-1}
   .x-qe-lab{display:block;font-size:11.5px;font-weight:700;color:var(--text-2);text-align:center;margin-bottom:3px;white-space:nowrap}

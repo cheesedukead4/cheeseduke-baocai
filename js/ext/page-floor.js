@@ -1,10 +1,11 @@
 /*
  * 現場作業
- *  - xQuickEntry 快速輸入（daily，需管理員）：所有包材列在同一頁，進貨、折盒、折盒NG、使用NG 一次填完送出 → movements
+ *  - xQuickEntry 快速輸入（daily，需管理員）：所有包材列在同一頁，進貨、折盒、使用、折盒NG、使用NG 一次填完送出 → movements
  *  - xStocktake  盤點（daily，beta）：stocktakes
- *  - xPacking    裝盒回報（daily）：同一頁填多個禮盒，一次送出 → packRecords
+ *  - 裝盒回報（xPacking）2026-10-15 取消：頁面不再註冊（選單看不到），以前的 packRecords 紀錄保留但不再扣庫存；
+ *    下面「頁面三」的程式先保留，之後要恢復只要把最下面的 registerPage 加回去，並在 js/stock-calc.js 把裝盒用量算回庫存。
  * 同一次送出的紀錄共用 batchId；紀錄區依批次分組，可整批或單筆撤銷（voided=true，不刪除）。
- * 2026-10-14 起包材庫存＝初始庫存＋快速輸入＋裝盒回報（算法在 js/stock-calc.js），快速輸入與裝盒回報送出後就會改變首頁庫存；
+ * 包材庫存＝初始庫存＋快速輸入（算法在 js/stock-calc.js），快速輸入送出後就會改變首頁庫存；
  * 盤點確認目前還不會改庫存。原系統資料（materials、products、recipes、components、homeOrder）只讀不改。
  * 純計算函式放在 CMSX.floorCalc，方便測試，之後串接庫存時可以直接用。
  * 畫面原則：打字時不整頁重畫，只更新相關的小區塊；頁面被重畫（切頁、同事的雲端更新）時，
@@ -26,8 +27,8 @@
     foldNg: { label: '折盒NG', tone: 'bad' },
     useNg: { label: '使用NG', tone: 'bad' }
   };
-  // 可以輸入的類型：「使用」已取消（裝盒用掉的包材改由裝盒回報自動換算扣除），舊的使用紀錄只顯示、不算進庫存
-  var TYPE_KEYS = ['in', 'fold', 'foldNg', 'useNg'];
+  // 可以輸入的類型（2026-10-15 起「使用」恢復：裝盒回報取消，用掉的已折盒在這裡登記）
+  var TYPE_KEYS = ['in', 'fold', 'use', 'foldNg', 'useNg'];
   var TYPE_HINTS = { in: '廠商送來的未折盒', fold: '未折盒折好', use: '裝盒用掉已折盒', foldNg: '折壞', useNg: '裝壞' };
 
   // =====================================================================
@@ -56,12 +57,13 @@
   function typeLabel(k) { return TYPES[k] ? TYPES[k].label : (k || '未知'); }
 
   // 一筆異動對庫存的影響（與 js/stock-calc.js 同一套）：
-  // 進貨＋未折；折盒 未折→已折；折盒NG－未折；使用NG－已折；「使用」不算（裝盒用量由裝盒回報扣）
+  // 進貨＋未折；折盒 未折→已折；使用－已折；折盒NG－未折；使用NG－已折
   function movementEffect(type, qty) {
     var q = Math.max(0, round2(qty));
     switch (type) {
       case 'in': return { unfolded: q, folded: 0 };
       case 'fold': return { unfolded: -q, folded: q };
+      case 'use': return { unfolded: 0, folded: -q };
       case 'foldNg': return { unfolded: -q, folded: 0 };
       case 'useNg': return { unfolded: 0, folded: -q };
       default: return { unfolded: 0, folded: 0 };
@@ -77,7 +79,7 @@
   function summarizeMovements(list, date, materials) {
     var map = Object.create(null), keys = [];
     (list || []).forEach(function (m) {
-      // 只算現在可以輸入的四種；舊的「使用」紀錄不算進小計（也不算進庫存）
+      // 只算可以輸入的五種類型
       if (!isObj(m) || m.voided === true || TYPE_KEYS.indexOf(m.type) < 0 || (date && m.date !== date)) return;
       var q = round2(m.qty);
       if (!(q > 0)) return;
@@ -386,14 +388,13 @@
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
   var qe = { date: '', note: '', vals: Object.create(null) };
 
-  // 舊的「使用」紀錄（欄位已取消）加註不算進庫存
-  function qeTypeText(t) { return t === 'use' ? '使用（舊資料，不算進庫存）' : typeLabel(t); }
+  function qeTypeText(t) { return typeLabel(t); }
   var QE_BATCH = {
     unit: '筆',
     count: function (shown) { return shown.length + ' 筆'; },
     item: function (r) { return nameOfMaterial(r.materialId) + ' ' + qeTypeText(r.type) + ' ' + fmt(r.qty, 2); },
     line: function (r) {
-      return esc(X.materialLabel(r.materialId)) + ' ' + X.ui.tag(qeTypeText(r.type), r.voided === true || r.type === 'use' ? 'muted' : (TYPES[r.type] ? TYPES[r.type].tone : 'muted')) +
+      return esc(X.materialLabel(r.materialId)) + ' ' + X.ui.tag(qeTypeText(r.type), r.voided === true ? 'muted' : (TYPES[r.type] ? TYPES[r.type].tone : 'muted')) +
         ' <b>' + esc(fmt(r.qty, 2)) + '</b>';
     }
   };
@@ -421,7 +422,7 @@
     if (mats.length && el._xqeSig === sig && q$(el, '[data-box="qe-grid"]')) { bindQuickEntry(el); refreshQuickEntry(el); return; }
     el._xqeSig = sig;
     var d = effDate(qe.date);
-    var html = intro('所有包材都列在下面，每種包材有「進貨、折盒、折盒NG、使用NG」四格。有做的才填數量，沒做的留白，全部填完按最下面的「全部送出」一次登記。送出後會馬上算進首頁的包材庫存；裝盒用掉的包材不用在這裡填，由「裝盒回報」自動換算扣除。');
+    var html = intro('所有包材都列在下面，每種包材有「進貨、折盒、使用、折盒NG、使用NG」五格。有做的才填數量，沒做的留白，全部填完按最下面的「全部送出」一次登記。送出後會馬上算進首頁的包材庫存（「使用」扣已折盒）。');
     if (!mats.length) {
       html += X.ui.card('填寫數量', X.ui.empty('還沒有包材資料，請先到「包材資料」建立包材。'));
     } else {
@@ -517,7 +518,7 @@
     }));
     box.innerHTML = X.ui.card('這一天的紀錄', body, stamp) +
       X.ui.card('這一天各包材小計', X.ui.table(cols, sums, { empty: '這一天還沒有登記' }) +
-        '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；折盒NG 扣未折盒；使用NG 扣已折盒）。</p>', stamp);
+        '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；使用、使用NG 扣已折盒；折盒NG 扣未折盒）。</p>', stamp);
   }
 
   // 輸入時只記下數值、切換格子的顏色，並更新「已填 N 格」
@@ -1110,7 +1111,7 @@
     }
     if (date !== X.today()) msg += '\n\n注意：日期不是今天。';
     if (note) msg += '\n備註：' + note;
-    var warnBoxes = window.CMSRules ? CMSRules.get('packWarnBoxes') : 10000; // 多打 0 的提醒門檻：見「計算規則」
+    var warnBoxes = (window.CMSRules && CMSRules.def('packWarnBoxes')) ? CMSRules.get('packWarnBoxes') : 10000; // 多打 0 的提醒門檻：見「計算規則」
     if (res.items.some(function (it) { return it.boxes >= warnBoxes; })) msg += '\n有禮盒一次在 ' + fmt(warnBoxes) + ' 盒以上，請確認沒有多打 0。';
     if (!confirm(msg + '\n\n確定送出嗎？')) return;
 
@@ -1153,10 +1154,5 @@
     icon: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11.5 2 2 4-4"/><path d="M9 17h6"/>',
     render: function (el) { renderStocktake(el); }
   });
-  X.registerPage({
-    id: 'xPacking', group: 'daily', order: 30, stage: 'ready',
-    title: '裝盒回報', sub: '一次填多個禮盒，系統換算用掉的包材與單條',
-    icon: '<path d="M3 8 12 4l9 4-9 4z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/><path d="m7.5 6 9 4"/>',
-    render: function (el) { renderPacking(el); }
-  });
+  // 裝盒回報頁（xPacking）2026-10-15 取消，不再註冊；程式保留在上面「頁面三」
 })(window.CMSX);

@@ -46,6 +46,23 @@
   }
   window.cmsToast = toast;
 
+  // ---------- 新版通知 ----------
+  // 網站更新後，一直開著的裝置不會自己換成新版：畫面切回前景時（以及每 30 分鐘）檢查有沒有新版，
+  // 新版裝好後提示重新整理。不自動重新整理，避免填到一半的內容不見。
+  (function watchUpdate() {
+    if (!('serviceWorker' in navigator)) return;
+    var hadController = !!navigator.serviceWorker.controller, prompted = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; } // 第一次裝好離線快取，不是新版
+      if (prompted) return;
+      prompted = true;
+      toast('App 有新版本了，請按「重新整理」換成新版後再繼續使用。', { label: '重新整理', run: function () { location.reload(); } }, 600000);
+    });
+    function check() { navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); }
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); });
+    setInterval(check, 30 * 60 * 1000);
+  })();
+
   // ---------- 頁面標題與選單 ----------
   function currentPage() {
     var a = document.querySelector('#nav .navbtn.active');

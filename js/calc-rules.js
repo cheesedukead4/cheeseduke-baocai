@@ -80,12 +80,6 @@
       uses: ['快速輸入送出前的確認視窗']
     },
     {
-      key: 'packWarnBoxes', group: 'daily', type: 'number', default: 10000, min: 1, max: 100000000, step: 1, integer: true, unit: '盒',
-      label: '裝盒回報：單一禮盒盒數達到多少，送出前提醒「是否多打 0」',
-      help: '只會提醒，不會擋。',
-      uses: ['裝盒回報送出前的確認視窗']
-    },
-    {
       key: 'useBuiltinPrices', group: 'price', type: 'bool', default: true,
       label: '禮盒沒填售價時，改用系統內建的備用售價',
       help: '內建備用售價是寫在程式裡的 14 個品號價格（例如 CO-43 480 元）和 2026/10/08 匯入的 Excel 售價。開啟（原本的做法）時，「禮盒資料」把售價清空，還是會用舊價。關閉後只用「禮盒資料」填的售價，沒填就是 0，開檔檢查會列出沒有售價的禮盒，業績儀表板也會把它列在「沒有售價的品項」。',

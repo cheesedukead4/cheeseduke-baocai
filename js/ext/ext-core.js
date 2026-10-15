@@ -69,7 +69,7 @@
       }
     },
     packRecords: {
-      label: '裝盒回報', type: 'array',
+      label: '裝盒回報（2026-10-15 取消，舊紀錄保留、不再扣庫存）', type: 'array',
       fields: {
         id: '唯一代號', date: '裝盒日期 YYYY-MM-DD', productId: '禮盒 id', boxes: '裝了幾盒', by: '回報者', at: '回報時間（毫秒）', note: '備註', voided: '是否已撤銷 true/false',
         batchId: '同一次送出的批次代號（同一批共用）', materials: '[{ materialId, qty }] 送出當時每盒的包材用量（配方快照；庫存優先用它扣）'
