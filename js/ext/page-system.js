@@ -48,7 +48,7 @@
   // =====================================================================
   // 每一項的設定：標題、處理的頁面（新頁面 id 或原系統 data-page）
   var CHECK_DEFS = [
-    { key: 'season', title: '進行中的檔期', page: 'xSeasons', pageLabel: '檔期設定' },
+    { key: 'season', title: '進行中的檔期', page: 'xSeasons', pageLabel: '檔期設定（頁面已移除）' },
     { key: 'price', title: '本期上架禮盒的售價', page: 'products', pageLabel: '禮盒資料' },
     { key: 'recipe', title: '本期上架禮盒的包材配方', page: 'products', pageLabel: '禮盒資料' },
     { key: 'component', title: '本期上架禮盒的單條內容物', page: 'products', pageLabel: '禮盒資料' },
@@ -631,7 +631,7 @@
   }
   var LEGACY_PAGES = [
     ['dashboard', '首頁'], ['materials', '包材資料'], ['singles', '單條資料'], ['products', '禮盒資料'],
-    ['campaigns', '檔期需求'], ['initialStock', '初始庫存'], ['replenish', '缺料／補貨'],
+    ['initialStock', '初始庫存'],
     ['importcenter', '資料匯入中心'], ['backup', '備份／還原'], ['orderHistory', '過去訂單紀錄']
   ];
   // 依選單順序列出所有頁面（找不到選單時用內建清單）

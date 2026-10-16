@@ -1,6 +1,6 @@
 /*
  * 檔期與業績（開發員 A）
- *  - xSeasons   檔期設定（ready）
+ *  - （xSeasons 檔期設定頁已於 2026-10-17 移除，seasons 資料仍保留）
  *  - xSalesDash 業績儀表板（只顯示在首頁的「業績儀表板」分頁，不在選單上）
  * 讀寫的資料集：seasons
  * 業績預估改用原本首頁的業績預估表（page-legacy-forecast.js）
@@ -222,12 +222,7 @@
     };
   }
 
-  X.registerPage({
-    id: 'xSeasons', group: 'season', order: 10, title: '檔期設定', sub: '每個檔期的日期與狀態', stage: 'ready',
-    icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M10 13.5v5M10 13.5h4.5l-1 1.3 1 1.3H10"/>',
-    render: function (el) { renderSeasons(el); },
-    _fn: { checkSeason: checkSeason, applySeason: applySeason, deleteSeason: deleteSeason, sortSeasons: sortSeasons, daysToHoliday: daysToHoliday }
-  });
+  // 「檔期設定」頁已移除（2026-10-17）：上面的函式與 seasons 資料保留（業績儀表板、開檔檢查還會讀 seasons），但不再註冊成頁面。
 
   // ================= (3) 業績儀表板 =================
   // 今年和去年同一個檔期（或全年）比較：訂單數量與金額，可以看全公司或單一部門。

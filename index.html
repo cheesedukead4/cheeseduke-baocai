@@ -65,9 +65,7 @@
       </div>
       <div class="nav-label">規劃與庫存</div>
       <div class="nav-group" data-group="plan">
-        <button class="admin-nav navbtn" data-page="campaigns"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>檔期需求</span></button>
         <button class="admin-nav navbtn" data-page="initialStock"><svg viewBox="0 0 24 24"><path d="M3 9 12 4l9 5v11H3z"/><path d="M7 20v-7h10v7M7 16h10"/></svg><span>初始庫存</span></button>
-        <button class="admin-nav navbtn" data-page="replenish"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><span>缺料／補貨</span></button>
       </div>
       <div class="nav-label">資料工具</div>
       <div class="nav-group" data-group="data">
@@ -136,7 +134,6 @@
     <div><h2>檔期包材管理總覽</h2><p>首頁依庫存、需求與可用量集中呈現；資料由各管理分頁自動彙整。</p></div>
     <div class="home-links">
       <button onclick="goPage('initialStock')">初始庫存</button>
-      <button onclick="goPage('campaigns')">檔期需求</button>
     </div>
   </div>
 
@@ -340,7 +337,8 @@
 </div>
 </section>
 
-<section id="campaigns" class="page">
+<!-- 「檔期需求」「缺料／補貨」頁已移除（2026-10-17）：選單與入口都拿掉，區塊留在這裡但永遠隱藏，因為 legacy-1.js 的 render() 還會寫入裡面的表格 -->
+<section id="campaigns" class="page" hidden style="display:none!important">
 <div class="panel"><h2>建立檔期需求</h2>
 <div class="formgrid"><label><span>檔期名稱</span><input id="cName" placeholder="例：中秋檔期"></label><label><span>日期</span><input id="cDate" type="date"></label><label><span>產品</span><select id="cProduct"></select></label><label><span>需求數量</span><input id="cQty" type="number" min="0" value="0"></label></div>
 <div class="toolbar" style="margin-top:12px"><button class="btn primary" onclick="saveCampaign()">新增需求</button></div>
@@ -370,7 +368,7 @@
 </div>
 </div>
 </section>
-<section id="replenish" class="page"><div class="panel"><h2>缺料／建議補貨</h2><p class="small">需求量會依「檔期產品數量 × 產品包材配方」自動展開。</p>
+<section id="replenish" class="page" hidden style="display:none!important"><div class="panel"><h2>缺料／建議補貨</h2><p class="small">需求量會依「檔期產品數量 × 產品包材配方」自動展開。</p>
 <div class="tablewrap"><table><thead><tr><th>包材</th><th class="num">目前庫存</th><th class="num">檔期需求</th><th class="num">安全庫存</th><th class="num">需求後庫存</th><th class="num">建議補貨</th><th>狀態</th></tr></thead><tbody id="repBody2"></tbody></table></div></div></section>
 
 
