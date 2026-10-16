@@ -72,12 +72,16 @@
   // ---------- 書籤 ----------
   function bookmarklet() {
     var app = location.origin + location.pathname;
-    var code = "(async()=>{try{var d=new Date(),p=function(n){return String(n).padStart(2,'0')},ds=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());" +
-      "var r=await fetch('/api/internal/logistics-console/hq-ledger?date='+ds,{credentials:'include'});if(!r.ok)throw new Error('HTTP '+r.status);" +
+    // 日期優先用總表頁面上選的日期（找不到就用今天）；失敗時把網址、狀態與回應內容顯示出來，方便找原因
+    var code = "(async()=>{var u='';try{var p=function(n){return String(n).padStart(2,'0')},d=new Date(),ds=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),pk=document.querySelector('input[type=date]');" +
+      "if(pk&&/^\\d{4}-\\d{2}-\\d{2}$/.test(pk.value))ds=pk.value;" +
+      "u=location.origin+'/api/internal/logistics-console/hq-ledger?date='+ds;" +
+      "var r=await fetch(u,{credentials:'include',headers:{Accept:'application/json'}});" +
+      "if(!r.ok){var tx='';try{tx=(await r.text()).slice(0,200)}catch(e){}throw new Error('HTTP '+r.status+'\\n網址：'+u+'\\n回應：'+tx)}" +
       "var j=await r.json(),it={};(j.rows||[]).forEach(function(x){var s=x.row&&x.row.closing&&x.row.closing.stock;if(x.code&&typeof s==='number')it[x.code]=s});" +
-      "if(!Object.keys(it).length)throw new Error('總表沒有資料');" +
+      "if(!Object.keys(it).length)throw new Error('總表沒有資料（'+ds+'）');" +
       "var b=btoa(unescape(encodeURIComponent(JSON.stringify({d:j.date||ds,i:it})))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');" +
-      "location.href='" + app + "#hqstock='+b}catch(e){alert('讀取總表失敗：'+e.message+'\\n請確認已經登入入口網站，並且在總表頁面按這個書籤')}})()";
+      "location.href='" + app + "#hqstock='+b}catch(e){alert('讀取總表失敗：'+e.message+'\\n\\n請確認已經登入入口網站，並且在總表頁面按這個書籤')}})()";
     return 'javascript:' + encodeURIComponent(code);
   }
 
