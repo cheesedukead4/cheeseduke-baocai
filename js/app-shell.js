@@ -252,7 +252,7 @@
     try { p = sessionStorage.getItem(PAGE_KEY); } catch (e) {}
     if (p && p !== 'dashboard' && (PAGES[p] || (window.CMSX && CMSX.pageInfo(p)))) {
       var b = document.querySelector('#nav .navbtn[data-page="' + p + '"]');
-      var needsAdmin = b && b.classList.contains('admin-nav') && !document.body.classList.contains('admin-mode');
+      var needsAdmin = b && b.classList.contains('admin-nav') && !document.body.classList.contains('admin-mode') && !(window.CMSAccess && CMSAccess.canOpen(p));
       if (b && !needsAdmin) b.click();
     }
     updateTitle(currentPage());

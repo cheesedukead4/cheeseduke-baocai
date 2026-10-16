@@ -155,6 +155,8 @@
         incoming.orderHistory = curList;
         ORDER_FLAGS.forEach(function (k) { if (current[k] !== undefined) incoming[k] = current[k]; });
       }
+      // 人員與權限只由「人員與權限」頁管理：還原備份不會動到（備份也不含人員），避免舊備份把人員清空或讓已刪除的人員復活
+      if (Array.isArray(current.users)) incoming.users = current.users; else delete incoming.users;
       db = incoming;
       try { if (typeof ensureHomeOrder === 'function') ensureHomeOrder(); } catch (e) {}
       persist();
@@ -184,6 +186,28 @@
     if (typeof root.importData === 'function' && !root.importData.__cmsGuarded) {
       guardedImportData.__cmsGuarded = true;
       root.importData = guardedImportData;
+    }
+    // 匯出備份不含人員（含加密後的登入碼）；清空全部資料時保留人員與權限
+    if (typeof root.exportData === 'function' && !root.exportData.__cmsGuarded) {
+      var origExport = root.exportData;
+      var wrappedExport = function () {
+        var u = db.users, had = Object.prototype.hasOwnProperty.call(db, 'users');
+        delete db.users;
+        try { return origExport.apply(this, arguments); } finally { if (had) db.users = u; }
+      };
+      wrappedExport.__cmsGuarded = true;
+      root.exportData = wrappedExport;
+    }
+    if (typeof root.wipeAll === 'function' && !root.wipeAll.__cmsGuarded) {
+      var origWipe = root.wipeAll;
+      var wrappedWipe = function () {
+        var keep = Array.isArray(db.users) ? db.users : null, before = db;
+        var r = origWipe.apply(this, arguments);
+        if (db !== before && keep) { db.users = keep; try { persist(); } catch (e) {} }
+        return r;
+      };
+      wrappedWipe.__cmsGuarded = true;
+      root.wipeAll = wrappedWipe;
     }
     if (typeof root.renderOrderHistory === 'function' && !root.renderOrderHistory.__cmsGuarded) {
       var originalRender = root.renderOrderHistory;

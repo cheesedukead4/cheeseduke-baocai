@@ -75,6 +75,14 @@
         batchId: '同一次送出的批次代號（同一批共用）', materials: '[{ materialId, qty }] 送出當時每盒的包材用量（配方快照；庫存優先用它扣）'
       }
     },
+    users: {
+      label: '人員與權限', type: 'array',
+      fields: {
+        id: '唯一代號', name: '姓名', active: '是否啟用 true/false', pages: '可以使用的頁面代號的清單，例如 materials、xQuickEntry（首頁人人可看）',
+        salt: '登入碼加密用的隨機值', hash: '登入碼加密後的結果（PBKDF2-SHA256，不存明碼）', iter: '加密次數',
+        createdAt: '建立時間（毫秒）', createdBy: '建立者', updatedAt: '最後修改時間（毫秒）', updatedBy: '最後修改者'
+      }
+    },
     calcRules: {
       label: '計算規則', type: 'object',
       fields: {
@@ -144,7 +152,10 @@
   function today() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function fmtTime(ms) { if (!ms) return ''; var d = new Date(ms); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
-  function userName() { try { var c = root.CMSCloud && CMSCloud.getConfig(); return (c && c.name) || '本機使用者'; } catch (e) { return '本機使用者'; } }
+  function userName() {
+    try { var p = root.CMSAccess && CMSAccess.name(); if (p) return p; } catch (e) {} // 有人員登入時，紀錄的輸入者用登入的人
+    try { var c = root.CMSCloud && CMSCloud.getConfig(); return (c && c.name) || '本機使用者'; } catch (e) { return '本機使用者'; }
+  }
   function isAdmin() { return document.body.classList.contains('admin-mode'); }
   function toast(t) { if (root.cmsToast) root.cmsToast(t); }
   function deptLabel(k) { var d = DEPTS.find(function (x) { return x.key === k; }); return d ? d.label : (k === 'none' ? '不計算' : (k || '')); }

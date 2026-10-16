@@ -56,6 +56,7 @@ function adminApply(){
 
  const oh=document.getElementById('orderHistoryNavBtn');
  if(oh)oh.style.display=ok?'inline-flex':'none';
+ if(window.CMSAccess)CMSAccess.apply(); // 管理員登入／登出後同步更新人員登入的選單狀態
 }
 function adminLogin(){
  const m=document.getElementById('adminModal');
@@ -94,7 +95,8 @@ document.addEventListener('DOMContentLoaded',adminApply);
 
 document.addEventListener('click',function(ev){
  const b=ev.target.closest('.admin-nav');
- if(b && !adminIsLoggedIn()){
+ // 人員登入後被開放的頁面可以進（見 js/access.js；沒權限的點擊已由 access.js 先處理）
+ if(b && !adminIsLoggedIn() && !(window.CMSAccess&&CMSAccess.canOpen(b.dataset.page))){
    ev.preventDefault(); ev.stopImmediatePropagation(); adminLogin();
  }
 },true);

@@ -654,22 +654,15 @@
   }
 
   // ---------- 畫面 ----------
-  var TABS = [['roles', '權限分級'], ['notify', '通知'], ['sheet', '試算表匯出'], ['datasets', '資料集總覽']];
+  var TABS = [['roles', '人員權限'], ['notify', '通知'], ['sheet', '試算表匯出'], ['datasets', '資料集總覽']];
   var ss = { tab: 'roles' };
   var CLOUD_NOTE = '設定會保存並同步給所有人，但寄送功能要等雲端排程完成後才會啟用。';
 
   function rolesHtml(s) {
-    var html = X.ui.banner('warn', '目前仍使用單一管理員密碼，分級需雲端後端配合，後續階段開放。下面是規劃內容，現在還不會限制任何人。');
-    html += X.ui.card('三種角色', '<ul style="margin:0;padding-left:20px;line-height:1.9">' +
-      ROLES.map(function (r) { return '<li><b>' + esc(r.label) + '</b>：' + esc(r.desc) + '</li>'; }).join('') + '</ul>',
-      '<button type="button" class="btn gray"' + LATER + ' style="min-height:40px">設定各角色密碼</button>');
-    var cols = [{ label: '頁面', render: function (p) { return '<b style="white-space:nowrap">' + esc(p.title) + '</b>'; } }]
-      .concat(ROLES.map(function (r) {
-        return { label: r.label, render: function (p) { var t = PERM[permFor(p.id, r.key)]; return X.ui.tag(t[0], t[1]); } };
-      }));
-    html += X.ui.card('各頁面權限（規劃）', X.ui.table(cols, menuPages()) +
-      '<p class="small" style="margin:10px 0 0">會計碼看到的彙總頁只顯示加總數字；過去訂單與匯入的待確認資料會隱藏客戶姓名。</p>',
-      '<button type="button" class="btn gray"' + LATER + ' style="min-height:40px">儲存權限設定</button>');
+    // 人員與頁面權限已改在「人員與權限」頁設定（js/ext/page-users.js）；這裡只留說明與連結
+    var html = X.ui.banner('info', '人員與每一頁的權限，已經改在「系統設定 → 人員與權限」設定（需要管理員登入）。');
+    html += X.ui.card('怎麼設定', '<ol style="margin:0;padding-left:20px;line-height:1.9"><li>管理員登入後，到「人員與權限」新增人員，勾選這個人能用哪些頁面。</li><li>把系統產生的登入碼交給本人。</li><li>同事按選單左下角的「人員登入」，選自己的名字、輸入登入碼，選單就只會出現被開放的頁面。</li></ol>',
+      '<button type="button" class="btn primary" data-act="go-users" style="min-height:40px">前往「人員與權限」</button>');
     if (s.roles.note) {
       html += X.ui.card('先前記錄的說明', '<p class="small" style="margin:0;white-space:pre-wrap">' + esc(s.roles.note) + '</p>');
     }
@@ -766,7 +759,7 @@
   function renderSettings(el) {
     var s = normSettings(X.get('appSettings'));
     if (!TABS.some(function (t) { return t[0] === ss.tab; })) ss.tab = 'roles';
-    var html = intro('規劃權限分級、設定自動通知與試算表匯出，並查看系統所有資料集。');
+    var html = intro('設定自動通知與試算表匯出，並查看系統所有資料集；人員權限在「人員與權限」頁。');
     html += '<div class="x-tabs" role="tablist">' + TABS.map(function (t) {
       var on = ss.tab === t[0];
       return '<button type="button" role="tab" aria-selected="' + (on ? 'true' : 'false') + '" data-act="tab" data-tab="' + t[0] + '"' + (on ? ' class="active"' : '') + '>' + esc(t[1]) + '</button>';
@@ -785,6 +778,7 @@
       else if (act === 'save-notify') saveNotify(el);
       else if (act === 'save-sheet') saveSheet(el);
       else if (act === 'fix-ids') fixIds();
+      else if (act === 'go-users') X.goPage('xUsers');
     };
     el.onchange = null;
     el.oninput = null;
@@ -848,7 +842,7 @@
 
   X.registerPage({
     id: 'xSettings', group: 'system', order: 10, stage: 'skeleton',
-    title: '權限與自動化', sub: '權限分級、通知、資料集總覽',
+    title: '權限與自動化', sub: '通知、試算表匯出、資料集總覽',
     icon: '<path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6z"/><circle cx="12" cy="10" r="2.3"/><path d="M8.5 16.2c.8-1.5 2-2.3 3.5-2.3s2.7.8 3.5 2.3"/>',
     render: function (el) { renderSettings(el); }
   });

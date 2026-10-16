@@ -214,3 +214,19 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
   .xr-entry summary span{padding-left:20px}
   .xr-months label{min-width:52px;padding:5px 8px}
 }
+
+/* ---------- 人員登入與權限（access.js、page-users.js） ---------- */
+.person-badge{display:none;font-size:12px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:999px;padding:4px 10px;white-space:nowrap}
+body.user-mode .person-badge{display:inline-block}
+body.user-mode .lock-hint{display:none}
+/* 人員登入：被開放的頁面看起來和管理員一樣（不上鎖），沒被開放的整個藏起來 */
+body:not(.admin-mode) #nav .admin-nav.user-ok:not(.active):not(:hover){color:var(--side-text)}
+body:not(.admin-mode) #nav .admin-nav.user-ok::after{display:none}
+body.user-mode:not(.admin-mode) #nav .admin-nav:not(.user-ok){display:none!important}
+.xu-group{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px}
+.xu-group-name{font-size:12px;font-weight:800;color:var(--text-2);margin-bottom:4px}
+.xu-checks{display:flex;flex-wrap:wrap;gap:4px 16px}
+.xu-check{display:inline-flex;align-items:center;gap:6px;font-size:14px;min-height:34px;cursor:pointer}
+.xu-check input{width:18px;height:18px}
+.xu-code{font-size:34px;font-weight:800;letter-spacing:.2em;text-align:center;background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:12px;padding:16px 8px;user-select:all;word-break:break-all}
+@media (max-width:640px){.person-badge{display:none!important}}
