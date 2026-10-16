@@ -17,6 +17,7 @@
  *   預購單：暫時用「檔期需求」頁的盒數；之後改由進單資料帶入
  *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
  * 包材「已裝盒」＝各禮盒現貨 × 配方用量的合計（沒有任何禮盒有現貨資料時顯示「—」）
+ * 單條「已裝盒」＝各禮盒現貨 × 配方裡這個單條的用量（單條內容物）的合計（沒有任何含這個單條的禮盒有現貨資料時顯示「—」）
  * 包材「待裝盒」＝各禮盒還要再裝的盒數（包裝需求為負數時的絕對值）× 配方用量的合計（2026-10-15 起，取代原本的檔期需求 × 配方）
  */
 (function (root) {
@@ -118,6 +119,18 @@
     });
     return any ? round2(total) : null;
   }
+  // 單條已裝盒＝各禮盒現貨 × 配方裡這個單條的用量（單條內容物）；沒有任何含這個單條的禮盒有現貨資料時回傳 null
+  function singlePacked(sid) {
+    var d = getDb(), any = false, total = 0;
+    arr(d, 'components').forEach(function (c) {
+      if (!c || !same(c.componentProductId, sid)) return;
+      var s = giftStock(c.productId);
+      if (s == null) return;
+      any = true;
+      total += num(s) * num(c.qty);
+    });
+    return any ? round2(total) : null;
+  }
   // 包材待裝盒＝各禮盒「還要再裝的盒數」× 配方裡這個包材的用量，全部加總
   // 還要再裝的盒數＝包裝需求是負數時的絕對值（包裝需求 0 以上＝不用再裝）；所有非單條的禮盒都算，和舊版檔期需求一樣不看本期上架
   // （已裝好的盒數要等禮盒「現貨」串接後才會從包裝需求扣掉）
@@ -140,6 +153,6 @@
   root.CMSStock = {
     material: material,
     stockByCode: stockByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast,
-    giftPackNeed: giftPackNeed, materialPacked: materialPacked, materialToPack: materialToPack
+    giftPackNeed: giftPackNeed, materialPacked: materialPacked, singlePacked: singlePacked, materialToPack: materialToPack
   };
 })(window);

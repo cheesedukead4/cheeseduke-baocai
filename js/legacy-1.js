@@ -977,7 +977,7 @@ function renderDashboard(){
    },0);
    return `<tr><td class="sort-action-col">${dragHandle('single',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td><td>${demand}</td>
-    ${(()=>{const sg=window.CMSStock?CMSStock.stockByCode(p.code):null;return `<td class="${sg==null?'manual-cell':''}" title="${sg==null?'總表沒有這個品號，或還沒同步現貨':'入口網站總表的剩餘庫存現貨'}">${sg==null?'—':sg}</td>`;})()}<td class="manual-cell">—</td><td class="manual-cell">—</td>
+    ${(()=>{const sg=window.CMSStock?CMSStock.stockByCode(p.code):null;return `<td class="${sg==null?'manual-cell':''}" title="${sg==null?'總表沒有這個品號，或還沒同步現貨':'入口網站總表的剩餘庫存現貨'}">${sg==null?'—':sg}</td>`;})()}${(()=>{const sp=window.CMSStock?CMSStock.singlePacked(p.id):null;return `<td class="${sp==null?'manual-cell':''}" title="${sp==null?'含這個單條的禮盒都還沒有現貨資料':'各禮盒現貨 × 配方裡這個單條的用量'}">${sp==null?'—':sp}</td>`;})()}<td class="manual-cell">—</td>
     <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td></tr>`;
  }).join(''):'<tr><td colspan="10" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
 
