@@ -83,6 +83,13 @@
         createdAt: '建立時間（毫秒）', createdBy: '建立者', updatedAt: '最後修改時間（毫秒）', updatedBy: '最後修改者'
       }
     },
+    hqStock: {
+      label: '總表現貨', type: 'object',
+      fields: {
+        date: '總表日期 YYYY-MM-DD', updatedAt: '同步時間（毫秒）', updatedBy: '同步的人', source: '資料來源說明',
+        items: '{ 品號: 現貨數量 }，來自入口網站總表的「剩餘庫存 → 現貨」（見 js/ext/page-hqstock.js）'
+      }
+    },
     calcRules: {
       label: '計算規則', type: 'object',
       fields: {

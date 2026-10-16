@@ -293,6 +293,7 @@
       restorePage();
       CMSCloud.appStarted();
       renderStatus();
+      if (window.CMSHqStock) CMSHqStock.applyPending(); // 從入口網站書籤帶來的現貨資料（見 ext/page-hqstock.js）
       // 申請持久儲存，降低瀏覽器自動清除本機資料（含尚未上傳的修改）的機會
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
       var sp = $('appSplash');

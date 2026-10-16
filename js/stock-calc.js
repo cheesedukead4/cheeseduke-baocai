@@ -12,11 +12,11 @@
  *
  * 禮盒（首頁「禮盒品項」）：
  *   包裝需求＝現貨＋待進貨－預購單（預扣單）－銷售預估
- *   現貨：資料來源還沒決定（待串接），先當 0、畫面顯示「—」
+ *   現貨：入口網站「總表」的剩餘庫存現貨，用品號對應（「現貨同步」頁一鍵帶入）；還沒同步或總表沒有這個品號時當 0、畫面顯示「—」
  *   待進貨：先當 0
  *   預購單：暫時用「檔期需求」頁的盒數；之後改由進單資料帶入
  *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
- * 包材「已裝盒」＝各禮盒現貨 × 配方用量的合計（現貨還沒串接，先顯示「—」）
+ * 包材「已裝盒」＝各禮盒現貨 × 配方用量的合計（沒有任何禮盒有現貨資料時顯示「—」）
  * 包材「待裝盒」＝各禮盒還要再裝的盒數（包裝需求為負數時的絕對值）× 配方用量的合計（2026-10-15 起，取代原本的檔期需求 × 配方）
  */
 (function (root) {
@@ -69,8 +69,15 @@
   // ---------- 禮盒 ----------
   function productById(d, pid) { return arr(d, 'products').find(function (p) { return p && same(p.id, pid); }) || null; }
 
-  // 現貨：資料來源還沒決定，回傳 null（畫面顯示「—」、公式當 0）
-  function giftStock(pid) { return null; }
+  // 現貨：入口網站「總表」的剩餘庫存現貨（用品號對應，見 ext/page-hqstock.js 的「現貨同步」）；
+  // 還沒同步過、或總表沒有這個品號時回傳 null（畫面顯示「—」、公式當 0）
+  function stockByCode(code) {
+    var d = getDb(), o = d && d.hqStock, c = String(code == null ? '' : code).trim();
+    if (!c || !o || !o.items || typeof o.items !== 'object' || !Object.prototype.hasOwnProperty.call(o.items, c)) return null;
+    var v = Number(o.items[c]);
+    return Number.isFinite(v) ? v : null;
+  }
+  function giftStock(pid) { var p = productById(getDb(), pid); return p ? stockByCode(p.code) : null; }
   // 待進貨：先當 0
   function giftIncoming(pid) { return 0; }
   // 預購單（預扣單）：暫時用「檔期需求」頁這個禮盒的盒數合計
@@ -99,7 +106,7 @@
   function giftPackNeed(pid) {
     return round2(num(giftStock(pid)) + giftIncoming(pid) - giftPreorder(pid) - giftForecast(pid));
   }
-  // 包材已裝盒＝各禮盒現貨 × 配方用量；現貨還沒串接時回傳 null
+  // 包材已裝盒＝各禮盒現貨 × 配方用量；沒有任何禮盒有現貨資料時回傳 null
   function materialPacked(mid) {
     var d = getDb(), any = false, total = 0;
     arr(d, 'recipes').forEach(function (r) {
@@ -132,7 +139,7 @@
 
   root.CMSStock = {
     material: material,
-    giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast,
+    stockByCode: stockByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast,
     giftPackNeed: giftPackNeed, materialPacked: materialPacked, materialToPack: materialToPack
   };
 })(window);

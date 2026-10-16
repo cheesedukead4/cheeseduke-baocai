@@ -959,7 +959,7 @@ function renderDashboard(){
    const low=window.CMSRules?CMSRules.isLow(remain,safety):remain<safety; // 水位判斷：見「計算規則」
    const unfolded=live.unfolded;
    const folded=live.folded;
-   // 已裝盒＝各禮盒現貨 × 配方用量（禮盒現貨還沒串接時顯示「—」）
+   // 已裝盒＝各禮盒現貨 × 配方用量（沒有任何禮盒有現貨資料時顯示「—」）
    const packed=window.CMSStock?CMSStock.materialPacked(m.id):null;
    return `<tr><td class="sort-action-col">${dragHandle('material',m.id)}</td>
     <td class="code-col">${m.code||''}</td><td class="name-cell">${m.name||''}</td>
@@ -977,7 +977,7 @@ function renderDashboard(){
    },0);
    return `<tr><td class="sort-action-col">${dragHandle('single',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td><td>${demand}</td>
-    <td class="manual-cell">—</td><td class="manual-cell">—</td><td class="manual-cell">—</td>
+    ${(()=>{const sg=window.CMSStock?CMSStock.stockByCode(p.code):null;return `<td class="${sg==null?'manual-cell':''}" title="${sg==null?'總表沒有這個品號，或還沒同步現貨':'入口網站總表的剩餘庫存現貨'}">${sg==null?'—':sg}</td>`;})()}<td class="manual-cell">—</td><td class="manual-cell">—</td>
     <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td></tr>`;
  }).join(''):'<tr><td colspan="10" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
 
@@ -988,7 +988,7 @@ function renderDashboard(){
      const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id), need=CMSStock.giftPackNeed(p.id);
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
-    <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'現貨的資料來源還沒串接，先當 0':''}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td>${CMSStock.giftPreorder(p.id)}</td>
+    <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td>${CMSStock.giftPreorder(p.id)}</td>
     <td>${fc}</td><td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
    }
    return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
