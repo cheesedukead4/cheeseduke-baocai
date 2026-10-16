@@ -569,7 +569,14 @@ let homeDragState=null;
 
 function saveHomeOrder(type, ids){
  ensureHomeOrder();
- db.homeOrder[type]=ids.map(String);
+ let newIds=ids.map(String);
+ if(type==='single'){
+   // 首頁只列上架的單條：拖曳只重排看得到的，沒上架（隱藏）的單條留在原本的位置
+   const visible=new Set(newIds);let k=0;
+   newIds=db.homeOrder.single.map(String).map(id=>visible.has(id)?newIds[k++]:id);
+   while(k<ids.length)newIds.push(String(ids[k++]));
+ }
+ db.homeOrder[type]=newIds;
 
  // 直接寫入本系統原本使用的主資料 localStorage KEY
  try{
@@ -931,7 +938,10 @@ function renderDashboard(){
  ensureHomeOrder();
  const materials=orderedHomeItems('material',Array.isArray(db.materials)?db.materials.slice():[]);
  const products=Array.isArray(db.products)?db.products.slice():[];
- const singles=orderedHomeItems('single',products.filter(p=>String(p.category||'').trim()==='單條'));
+ // 首頁只列「單條資料」勾了「本期上架」的單條（2026-10-16 起，和禮盒品項一樣）
+ const singleAll=products.filter(p=>String(p.category||'').trim()==='單條');
+ // 排序以全部單條為準、顯示時才過濾，沒上架的單條不會被從排序裡刪掉（之後勾回來位置還在）
+ const singles=orderedHomeItems('single',singleAll).filter(p=>p.isListedCurrent===true);
  const gifts=orderedHomeItems('gift',products.filter(p=>String(p.category||'').trim()!=='單條' && p.isListedCurrent===true));
 
  // 待裝盒：2026-10-15 起＝各禮盒還要再裝的盒數 × 配方（見 js/stock-calc.js materialToPack）；以下是舊算法（檔期需求 × 配方）
@@ -969,7 +979,7 @@ function renderDashboard(){
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td><td>${demand}</td>
     <td class="manual-cell">—</td><td class="manual-cell">—</td><td class="manual-cell">—</td>
     <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td></tr>`;
- }).join(''):'<tr><td colspan="9" class="empty">尚無單條資料</td></tr>';
+ }).join(''):'<tr><td colspan="10" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
 
  giftHome.innerHTML=gifts.length?gifts.map((p,i)=>{
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
