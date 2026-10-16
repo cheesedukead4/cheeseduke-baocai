@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="css/legacy.css">
 <link rel="stylesheet" href="css/app.css">
 <script src="config.js"></script>
+<script src="js/auth.js"></script>
 <script src="js/cloud-sync.js"></script>
 <script src="js/calc-rules.js"></script>
 <script src="js/stock-calc.js"></script>
@@ -516,12 +517,15 @@
       <button class="icon-btn" type="button" data-close aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div id="cloudStatusBox" class="cloud-status"></div>
+    <div id="cloudAuthBox" class="cloud-auth" style="display:none"></div>
     <label class="field"><span>雲端網址（Apps Script 網頁應用程式網址）</span><input id="cloudUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
     <label class="field"><span>團隊通行碼</span><input id="cloudToken" type="password" placeholder="由管理者提供" autocomplete="off"></label>
     <label class="field"><span>你的名字（顯示誰修改了資料）</span><input id="cloudName" placeholder="例：小美" autocomplete="off"></label>
     <p class="field-help">同一個團隊的所有裝置填入相同網址與通行碼，就會看到同一份資料。設定只存在這台裝置。</p>
     <div id="cloudTestMsg" class="field-msg" aria-live="polite"></div>
     <div class="cms-modal-actions">
+      <button type="button" class="btn gray" id="cloudLogoutBtn" style="display:none">登出</button>
+      <button type="button" class="btn primary" id="cloudSyncBtn" style="display:none">立即同步</button>
       <button type="button" class="btn gray" id="cloudDisableBtn">停用雲端</button>
       <span class="spacer"></span>
       <button type="button" class="btn gray" id="cloudTestBtn">測試連線</button>

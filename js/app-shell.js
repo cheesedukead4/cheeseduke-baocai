@@ -131,7 +131,7 @@
         syncing: ['同步中…', st.detail || ''],
         pending: ['有修改等待上傳', '共 ' + st.dirty + ' 類資料'],
         offline: ['目前無法連線', (st.detail ? st.detail + '。' : '') + '修改會先存在這台裝置，恢復連線後自動上傳。'],
-        error: ['連線失敗', st.detail || '請確認網址與通行碼'],
+        error: ['連線失敗', st.detail || (window.CMSAuth && CMSAuth.enabled ? '請確認網路，或重新登入' : '請確認網址與通行碼')],
         conflict: ['有同時修改需要處理', '請選擇要保留的版本']
       }[st.state] || [st.state, ''];
       box.innerHTML = '';
@@ -139,6 +139,10 @@
       var s = document.createElement('span'); s.textContent = lines[1];
       box.appendChild(b); box.appendChild(s);
       if (cfg && cfg.name) { var n = document.createElement('span'); n.textContent = '使用者：' + cfg.name; box.appendChild(n); }
+      if (window.CMSAuth && CMSAuth.enabled && CMSAuth.email()) {
+        var ab = $('cloudAuthBox');
+        if (ab) { ab.innerHTML = ''; var l1 = document.createElement('div'); l1.innerHTML = '登入帳號：<b></b>'; l1.querySelector('b').textContent = CMSAuth.email(); var l2 = document.createElement('div'); l2.textContent = CMSAuth.isAdmin() ? '身分：管理員（全部頁面）' : '身分：人員（只能用被開放的頁面）'; ab.appendChild(l1); ab.appendChild(l2); }
+      }
     }
     if (st.state === 'conflict' && st.conflicts) showConflicts(st.conflicts);
   }
@@ -207,6 +211,8 @@
         }
       }).catch(function (e) { setMsg('無法儲存：' + e.message, 'err'); });
     };
+    $('cloudSyncBtn').onclick = function () { $('cloudModal').classList.remove('show'); CMSCloud.syncNow().then(function (ok) { toast(ok ? '已同步' : '同步沒有成功，稍後會自動重試'); }); };
+    $('cloudLogoutBtn').onclick = function () { $('cloudModal').classList.remove('show'); CMSAuth.logout(); };
     $('cloudDisableBtn').onclick = function () {
       if (!CMSCloud.getConfig()) { $('cloudModal').classList.remove('show'); return; }
       if (!confirm('停用後這台裝置不再與同事同步（資料仍保留在本機）。確定停用？')) return;
@@ -217,6 +223,15 @@
     };
   }
   function openCloudModal() {
+    if (window.CMSAuth && CMSAuth.enabled) { // Google 登入模式：只顯示帳號、立即同步與登出
+      var m = $('cloudModal');
+      m.classList.add('auth-mode');
+      $('cloudAuthBox').style.display = '';
+      $('cloudSyncBtn').style.display = ''; $('cloudLogoutBtn').style.display = '';
+      renderStatus();
+      m.classList.add('show');
+      return;
+    }
     var cfg = CMSCloud.getConfig() || {};
     var preset = window.CMS_CLOUD_PRESET || {};
     $('cloudUrl').value = cfg.url || preset.url || '';

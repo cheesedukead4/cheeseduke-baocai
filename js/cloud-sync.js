@@ -52,7 +52,12 @@
   function label(k) { return LABELS[k] || k; }
 
   // ---------- 設定 ----------
+  function authOn() { return !!(window.CMSAuth && CMSAuth.enabled); }
   function getConfig() {
+    if (authOn()) { // Google 登入模式：網址來自 config.js，憑證是登入後的工作階段
+      var sess = CMSAuth.session(), purl = (window.CMS_CLOUD_PRESET || {}).url;
+      return sess && purl ? { url: purl, token: sess, name: CMSAuth.name() } : null;
+    }
     try {
       var c = JSON.parse(nativeGet.call(localStorage, CFG_KEY) || 'null');
       if (c && c.url && c.token) return c;
@@ -264,9 +269,11 @@
     });
   }
   function checkResp(j) {
+    if (j && j.ok && authOn()) CMSAuth.applyMe(j); // 雲端順帶回傳最新的權限，以及延長後的登入
     if (!j || !j.ok) {
       var code = j && j.error;
-      var msg = code === 'unauthorized' ? '團隊通行碼錯誤'
+      var msg = code === 'unauthorized' ? (authOn() ? '登入已過期，請重新登入' : '團隊通行碼錯誤')
+        : code === 'forbidden' ? '帳號已停用或不在人員名單內'
         : code === 'busy' ? '雲端忙碌中，稍後自動重試'
         : code === 'server' ? '雲端發生錯誤：' + (j.message || '')
         : (code || '雲端回應錯誤');
@@ -276,7 +283,12 @@
     }
     return j;
   }
-  function isHardError(e) { return e.code === 'unauthorized' || e.code === 'server' || e.code === 'bad_response'; }
+  function isHardError(e) { return e.code === 'unauthorized' || e.code === 'forbidden' || e.code === 'server' || e.code === 'bad_response'; }
+  // 雲端說登入失效／帳號被停用：停止同步，回到登入畫面
+  function denyIfAuth(e) {
+    if (authOn() && (e.code === 'unauthorized' || e.code === 'forbidden')) { clearTimeout(pushTimer); CMSAuth.denied(e.code); return true; }
+    return false;
+  }
   function fetchKeys(cfg, keys) {
     // 分批避免網址過長
     var batches = [], cur = [];
@@ -349,6 +361,7 @@
     }).catch(function (e) {
       pulling = false;
       setStatus(isHardError(e) ? 'error' : 'offline', e.message);
+      denyIfAuth(e);
       return false;
     });
   }
@@ -488,7 +501,7 @@
       else setStatus('synced');
     }).catch(function (e) {
       pushing = false;
-      if (e.code === 'unauthorized' || e.code === 'bad_response') { setStatus('error', e.message); return; }
+      if (e.code === 'unauthorized' || e.code === 'forbidden' || e.code === 'bad_response') { setStatus('error', e.message); denyIfAuth(e); return; }
       if (e.code === 'server' && ++serverErrors >= 5) { setStatus('error', e.message + '（已停止自動重試，請通知管理者）'); return; }
       setStatus(e.code === 'server' ? 'error' : 'offline', e.message);
       schedulePush(retryDelay); retryDelay = Math.min(retryDelay * 2, 60000);
@@ -540,15 +553,18 @@
     idb = db_;
     return idbAll();
   }).then(function (all) {
-    var meta = all.meta || {};
-    var cfg = getConfig();
     Object.keys(all).forEach(function (k) {
       if (k.indexOf('p:') === 0) parts[k.slice(2)] = all[k];
       else if (k.indexOf('b:') === 0) bases[k.slice(2)] = all[k];
     });
     hasData = Object.keys(parts).length > 0;
+    var meta = all.meta || {};
     Object.assign(vers, meta.vers || {});
     (meta.dirty || []).forEach(function (k) { dirty.add(k); });
+    // Google 登入模式：沒登入就不開始（登入畫面顯示中），登入後才讀雲端
+    return (window.CMSAuth ? CMSAuth.ready : Promise.resolve()).then(function () { return meta; });
+  }).then(function (meta) {
+    var cfg = getConfig();
     if (meta.rebase || (cfg && meta.cloud && meta.cloud !== cfg.url)) window.__cmsCloudRebase = true;
     if (!hasData) {
       // 同網址先前使用過舊版（純 localStorage）：搬進來
@@ -570,6 +586,23 @@
   // 未上傳的修改已存在本機 IndexedDB，下次開啟會自動補傳，所以關閉頁面時不需要阻擋
   window.addEventListener('pagehide', function () { if (getConfig() && dirty.size) push(); });
 
+  // 登出或被移出名單時清掉這台裝置上的資料（IndexedDB）；之後不再寫入本機快取
+  function wipeLocal() {
+    return new Promise(function (resolve) {
+      clearTimeout(pushTimer);
+      var db0 = idb; idb = null;
+      Object.keys(parts).forEach(function (k) { delete parts[k]; });
+      Object.keys(bases).forEach(function (k) { delete bases[k]; });
+      Object.keys(vers).forEach(function (k) { delete vers[k]; });
+      dirty.clear(); hasData = false;
+      try { if (db0) db0.close(); } catch (e) {}
+      if (!window.indexedDB) return resolve();
+      var r;
+      try { r = indexedDB.deleteDatabase(IDB_NAME); } catch (e) { return resolve(); }
+      r.onsuccess = r.onerror = r.onblocked = function () { resolve(); };
+    });
+  }
+
   // ---------- 對外介面 ----------
   window.CMSCloud = {
     ready: ready,
@@ -584,6 +617,7 @@
       return pull().then(function (ok) { return push().then(function () { return ok; }); });
     },
     resolveConflicts: resolveConflicts,
+    wipeLocal: wipeLocal,
     test: function (cfg) { return apiGet(cfg, { action: 'meta' }, 15000); },
     saveConfig: function (cfg) {
       if (cfg) {

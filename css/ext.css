@@ -230,3 +230,21 @@ body.user-mode:not(.admin-mode) #nav .admin-nav:not(.user-ok){display:none!impor
 .xu-check input{width:18px;height:18px}
 .xu-code{font-size:34px;font-weight:800;letter-spacing:.2em;text-align:center;background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:12px;padding:16px 8px;user-select:all;word-break:break-all}
 @media (max-width:640px){.person-badge{display:none!important}}
+
+/* ---------- Google 登入畫面（js/auth.js） ---------- */
+html.auth-locked .app-layout,html.auth-locked .app-splash,html.auth-locked .toast-region,html.auth-locked .cms-modal{display:none!important}
+#loginGate{position:fixed;inset:0;z-index:200000;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg);overflow:auto}
+#loginGate .lg-box{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-lg);padding:32px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+#loginGate h1{margin:6px 0 0;font-size:20px}
+#loginGate .lg-sub{margin:0 0 8px;color:var(--text-2)}
+#loginGate .lg-btn{min-height:44px;display:flex;justify-content:center}
+#loginGate .lg-msg{margin:4px 0 0;min-height:20px;font-size:13px;color:var(--text-2);line-height:1.6}
+#loginGate .lg-msg.bad{color:var(--bad);font-weight:700}
+#loginGate .lg-retry{border:1px solid var(--line-strong);background:var(--surface-2);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+#loginGate .lg-help{margin:10px 0 0;font-size:12px;color:var(--text-3);line-height:1.7}
+#loginGate .lg-mock{display:flex;gap:6px;width:100%;margin-top:6px}
+#loginGate .lg-mock input{flex:1;min-width:0;padding:8px;border:1px dashed var(--line-strong);border-radius:8px;font:inherit}
+#loginGate .lg-mock button{padding:8px 12px;border:1px dashed var(--line-strong);background:var(--surface-2);border-radius:8px;font:inherit;cursor:pointer}
+/* 雲端同步視窗：Google 登入模式只顯示帳號與同步／登出 */
+#cloudModal.auth-mode .field,#cloudModal.auth-mode .field-help,#cloudModal.auth-mode #cloudTestBtn,#cloudModal.auth-mode #cloudSaveBtn,#cloudModal.auth-mode #cloudDisableBtn{display:none}
+#cloudModal .cloud-auth{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.7}

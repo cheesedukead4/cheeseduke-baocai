@@ -45,7 +45,9 @@ document.addEventListener('click',function(e){
 
 
 const ADMIN_PASSWORD='1234';
-function adminIsLoggedIn(){ return sessionStorage.getItem('campaign_admin_logged_in')==='1'; }
+function adminAuthOn(){ return !!(window.CMSAuth&&CMSAuth.enabled); } // Google 登入模式（js/auth.js）：管理員身分來自登入的 Gmail，不再用密碼
+function adminIsLoggedIn(){ return adminAuthOn()?CMSAuth.isAdmin():sessionStorage.getItem('campaign_admin_logged_in')==='1'; }
+function adminCanOrderHistory(){ return adminIsLoggedIn()||!!(window.CMSAccess&&CMSAccess.canOpen('orderHistory')); } // 管理員，或被開放「過去訂單紀錄」的人
 function adminApply(){
  const ok=adminIsLoggedIn();
  document.body.classList.toggle('admin-mode',ok);
@@ -55,10 +57,11 @@ function adminApply(){
  if(b)b.style.display=ok?'inline-flex':'none';
 
  const oh=document.getElementById('orderHistoryNavBtn');
- if(oh)oh.style.display=ok?'inline-flex':'none';
+ if(oh)oh.style.display=(ok||(window.CMSAccess&&CMSAccess.canOpen('orderHistory')))?'inline-flex':'none';
  if(window.CMSAccess)CMSAccess.apply(); // 管理員登入／登出後同步更新人員登入的選單狀態
 }
 function adminLogin(){
+ if(adminAuthOn()){ if(window.cmsToast)cmsToast('這一頁需要管理員身分。請用管理員的 Google 帳號登入。'); return; }
  const m=document.getElementById('adminModal');
  const p=document.getElementById('adminPassword');
  const e=document.getElementById('adminError');
@@ -72,6 +75,7 @@ function adminClose(){
  if(m)m.classList.remove('show');
 }
 function adminSubmit(){
+ if(adminAuthOn())return;
  const p=document.getElementById('adminPassword');
  const e=document.getElementById('adminError');
  if(p && p.value===ADMIN_PASSWORD){
@@ -83,6 +87,7 @@ function adminSubmit(){
  }
 }
 function adminLogout(){
+ if(adminAuthOn()){ CMSAuth.logout(); return; }
  sessionStorage.removeItem('campaign_admin_logged_in');
  adminApply();
  // 登出後回首頁
@@ -113,7 +118,7 @@ function ensureOrderHistory(){
  ensureHistoricalGiftProducts();
 }
 function showOrderHistoryPage(){
- if(!adminIsLoggedIn()){ adminLogin(); return; }
+ if(!adminCanOrderHistory()){ adminLogin(); return; }
 
  // 隱藏系統內所有主要內容頁
  document.querySelectorAll('main > section, .page, [id^="page-"]').forEach(el=>{
@@ -140,7 +145,7 @@ function clearOrderHistoryForm(){
  delete window.__editingOrderHistoryId;
 }
 function saveOrderHistory(){
- if(!adminIsLoggedIn()){ adminLogin(); return; }
+ if(!adminCanOrderHistory()){ adminLogin(); return; }
  ensureOrderHistory();
  const rec={
    id:window.__editingOrderHistoryId || ('OH'+Date.now()),
@@ -173,7 +178,7 @@ function editOrderHistory(id){
  document.getElementById('histNote').value=r.note||'';
 }
 function deleteOrderHistory(id){
- if(!adminIsLoggedIn())return;
+ if(!adminCanOrderHistory())return;
  if(!confirm('確定刪除此筆過去訂單紀錄？'))return;
  ensureOrderHistory();
  db.orderHistory=db.orderHistory.filter(x=>String(x.id)!==String(id));
