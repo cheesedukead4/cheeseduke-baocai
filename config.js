@@ -8,7 +8,7 @@
  * 雲端後端（雲端後端/Code.gs）也要填同一個 ID 並執行 setupAuth()，詳見「使用說明」的「Google 登入」一節。
  */
 window.CMS_AUTH = {
-  clientId: ''
+  clientId: '373508141972-7trsuj8e732pljun49bhgcerbpldi50t.apps.googleusercontent.com'
 };
 
 window.CMS_CLOUD_PRESET = {
