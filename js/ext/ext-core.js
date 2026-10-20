@@ -83,6 +83,10 @@
         createdAt: '建立時間（毫秒）', createdBy: '建立者', updatedAt: '最後修改時間（毫秒）', updatedBy: '最後修改者'
       }
     },
+    seasonForecasts: {
+      label: '各檔期業績預估', type: 'object',
+      fields: { '（檔期 id）': '{ campaignName, lastYear, rows }：這個檔期的業績預估（格式同原系統 salesForecastV5）；進行中檔期的預估是業績預估頁正在編輯的 salesForecastV5（見 js/ext/season-items.js）' }
+    },
     seasonRecipes: {
       label: '各檔期配方', type: 'object',
       fields: { '（檔期 id）': '[{ id, productId, materialId, qty }]：這個檔期的包材配方；進行中檔期的配方是原系統的 recipes（見 js/ext/season-items.js）' }
