@@ -267,7 +267,7 @@
   // 金額＝數量 × 目前的售價（訂單資料沒有金額）：禮盒用「禮盒資料」的售價、單條用「單條資料」的售價（CMSX.productPrice，
   // 禮盒沒填售價時是否改用內建備用售價見「計算規則」）。去年的金額也用目前的售價計算。
   // 部門對照設成「不計算」的訂單不算進數量與金額。
-  var sd = { kind: '', year: '', dept: 'all', metric: 'amt', group: 'all', sel: '', cmp: 'auto' };
+  var sd = { kind: '', year: '', dept: 'all', metric: 'amt', group: 'all', sel: '', cmp: 'auto', span: '4' };
   var SD_KINDS = [['midautumn', '中秋'], ['newyear', '過年'], ['year', '全年（1～12 月）']];
 
   // 對照表（只讀）：品號 → 對照、禮盒；接單部門／通路 → 部門
@@ -496,16 +496,16 @@
   function valText(v, metric) { return v == null ? '—' : (metric === 'amt' ? money(v) : X.fmt(v) + ' 盒'); }
 
   // 整理成每週一筆：weeks 是週的代號（依檔期對齊時是「節日週＝0」的週數，否則是星期一的毫秒）；沒有資料的線整條是 null
-  function buildWeekly(list, ctx, selC, cmpC, dept, metric, group) {
+  function buildWeekly(list, ctx, selC, cmpC, dept, metric, group, span) {
     var kind = selC.kind, year = selC.year, selS = selC.season, cmpS = cmpC ? cmpC.season : null;
     var hSel = selS ? dateMs(selS.holidayDate) : null, hCmp = cmpS ? dateMs(cmpS.holidayDate) : null;
-    var byHoliday = hSel != null && hCmp != null;
+    var byHoliday = hSel != null && (!cmpC || hCmp != null); // 沒有比較檔期時，只要所選檔期有節日日期就依節日週對齊
     var prevKind = cmpC ? cmpC.kind : kind, prevYear = cmpC ? cmpC.year : '';
     var shift = cmpC ? Math.round((Date.UTC(Number(year), 0, 1) - Date.UTC(Number(prevYear), 0, 1)) / DAY / 7) * 7 : 0;
     var cmpIsLast = !!cmpC && cmpC.kind === kind && Number(cmpC.year) === Number(year) - 1;
     var keySel, keyPrev, startSel, startPrev;
     if (byHoliday) {
-      var aSel = weekOf(hSel), aCmp = weekOf(hCmp);
+      var aSel = weekOf(hSel), aCmp = hCmp != null ? weekOf(hCmp) : aSel;
       keySel = function (t) { return Math.floor((weekOf(t) - aSel) / (7 * DAY)); };
       keyPrev = function (t) { return Math.floor((weekOf(t) - aCmp) / (7 * DAY)); };
       startSel = function (k) { return aSel + k * 7 * DAY; };
@@ -529,17 +529,29 @@
     var nowWk = weekOf(dateMs(X.today()));
     var lo = function (k) { return k.length ? Math.min.apply(null, k) : null; }, hi = function (k) { return k.length ? Math.max.apply(null, k) : null; };
     var fLo = lo(kf), fHi = hi(kf), bLo = lo(kb), bHi = hi(kb);
+    // 週期：四週（依檔期對齊時＝節前 3 週～節日週；否則是資料的最後四週），或全部週
+    var spanNote = '';
+    if (span === '4') {
+      var w4 = byHoliday ? weeks.filter(function (k) { return k >= -3 && k <= 0; }) : weeks.slice(-4);
+      var inW = function (m, kk) { return kk.some(function (k) { return w4.indexOf(k) >= 0; }); };
+      if (w4.length && (inW(a, ka) || inW(b, kb) || inW(f.map, kf))) weeks = w4;
+      else spanNote = '這四週沒有資料，已顯示全部的週';
+    }
+    var pick = function (fn) { return weeks.map(fn); };
+    var actArr = pick(function (k) { return ka.length && startSel(k) <= nowWk ? (a[k] || 0) : null; });
+    var estArr = pick(function (k) { return fLo != null && k >= fLo && k <= fHi ? (f.map[k] || 0) : null; });
+    var prevArr = pick(function (k) { return bLo != null && k >= bLo && k <= bHi ? (b[k] || 0) : null; });
+    var any = function (arr) { return arr.some(function (v) { return v != null; }); };
     return {
       weeks: weeks, year: year, lastYear: prevYear, byHoliday: byHoliday, selName: selC.name, cmpName: cmpC ? cmpC.name : '', prevLabel: cmpIsLast ? '去年' : '比較檔期',
-      hasAct: ka.length > 0, hasEst: f.any, hasPrev: kb.length > 0,
+      span4: span === '4' && !spanNote, spanNote: spanNote,
+      hasAct: any(actArr), hasEst: f.any && any(estArr), hasPrev: any(prevArr),
       // 週的標示：依檔期對齊時用「節前 N 週／節日週／節後 N 週」，否則用星期一的日期
       label: function (k) { return byHoliday ? (k === 0 ? '節日週' : (k < 0 ? '節前 ' + (-k) + ' 週' : '節後 ' + k + ' 週')) : md(k); },
       rangeSel: function (k) { var s = startSel(k); return md(s) + '～' + md(s + 6 * DAY); },
       rangePrev: function (k) { var s = startPrev(k); return md(s) + '～' + md(s + 6 * DAY); },
       // 實際：還沒到的週不畫；預估只畫第一個到最後一個有預估的週；去年畫去年有訂單的範圍
-      act: weeks.map(function (k) { return ka.length && startSel(k) <= nowWk ? (a[k] || 0) : null; }),
-      est: weeks.map(function (k) { return fLo != null && k >= fLo && k <= fHi ? (f.map[k] || 0) : null; }),
-      prev: weeks.map(function (k) { return bLo != null && k >= bLo && k <= bHi ? (b[k] || 0) : null; })
+      act: actArr, est: estArr, prev: prevArr
     };
   }
 
@@ -609,6 +621,7 @@
     if (!m.hasAct) miss.push('這個檔期還沒有訂單，沒有「實際」線');
     if (!m.hasEst) miss.push('「業績預估」頁這個檔期還沒填預估（或預估日期不在這個檔期' + (group !== 'all' ? '、或填的禮盒不是 ' + gName : '') + '），沒有「預估」線');
     if (!m.hasPrev) miss.push('比較檔期沒有訂單' + (group !== 'all' ? '（或沒有 ' + gName + '）' : '') + '，沒有比較線');
+    if (m.spanNote) miss.push(m.spanNote);
     if (!m.byHoliday && m.cmpName) miss.push('這個檔期或比較檔期還沒有節日日期，所以先用「同一週」對齊');
     var tbl = X.ui.table([
       { label: m.byHoliday ? '週（離節日）' : '週（星期一）', render: function (r) { return esc(m.label(r.t)); } },
@@ -720,6 +733,7 @@
       choices.filter(function (ch) { return ch.id !== selC.id; }).map(function (ch) { return chip('cmp', ch.id, ch.name, sd.cmp === ch.id); }).join('') +
       chip('cmp', 'none', '不比較', sd.cmp === 'none') +
       '<span class="small">' + (cmpC ? '目前比較：' + esc(cmpC.name) : '目前沒有比較檔期') + '</span>');
+    html += row('週期', chip('span', '4', '四週（節前 3 週～節日週）', sd.span !== 'all') + chip('span', 'all', '全部週', sd.span === 'all'));
     html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
     html += row('看', chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">規格</span>' +
@@ -728,7 +742,7 @@
       esc('今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + (cmpC ? '；比較（' + periodLabel(cmpKind, lastYear) + '）：' + shortRange(prev) : '') + '。') +
       (cmpC && prev.minDate && cur.minDate && (prev.minDate.slice(5) !== cur.minDate.slice(5) || prev.maxDate.slice(5) !== cur.maxDate.slice(5)) ? ' <b>兩個檔期的訂單日期範圍不一樣，比較時請留意。</b>' : '') + '</p>';
 
-    var weekly = buildWeekly(list, salesCtx(), selC, cmpC, sd.dept, sd.metric, sd.group);
+    var weekly = buildWeekly(list, salesCtx(), selC, cmpC, sd.dept, sd.metric, sd.group, sd.span);
     html += renderChartCard(weekly, sd.metric, deptName, sd.group);
 
     html += X.ui.kpis([
@@ -821,6 +835,7 @@
       else if (a === 'cmp') sd.cmp = v;
       else if (a === 'dept') sd.dept = v;
       else if (a === 'group') sd.group = v;
+      else if (a === 'span') sd.span = v;
       else if (a === 'metric') { sd.metric = v; if (v === 'qty' && sd.group === 'all') sd.group = 'all3'; else if (v === 'amt' && sd.group === 'all3') sd.group = 'all'; }
       else return;
       renderSalesDash(el);
