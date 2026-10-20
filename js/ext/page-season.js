@@ -179,35 +179,33 @@
         '<div class="small" style="margin-top:6px">節日日期、期間、品項清單都來自訂單與內建的節日表（過年填除夕），建立後可以再修改；配方先沿用目前的配方，再逐檔期調整。</div>');
     }
 
+    var SM = ' style="min-height:30px;padding:2px 9px;font-size:12px"'; // 小按鈕，列表不要太大
     var cols = [
-      { label: '檔期', render: function (s) { return '<strong>' + esc(s.name) + '</strong>' + (s.note ? '<div class="small">' + esc(s.note) + '</div>' : ''); } },
-      { label: '種類', render: function (s) { return kindTag(s.kind); } },
-      { label: '期間', render: rangeHtml },
-      { label: '節日', render: function (s) { return s.holidayDate ? esc(s.holidayDate) + '<div style="margin-top:3px">' + holidayHtml(s) + '</div>' : DASH; } },
-      { label: '狀態', render: function (s) { return statusTag(s.status); } },
-      { label: '比較用檔期', render: function (s) { return s.compareSeasonId ? esc(nameOf[s.compareSeasonId] || '（已刪除）') : DASH; } },
-      { label: '品項清單', render: function (s) {
+      { label: '檔期', render: function (s) {
+        return '<strong' + (s.note ? ' title="' + esc(s.note) + '"' : '') + '>' + esc(s.name) + '</strong> ' + kindTag(s.kind) + ' ' + statusTag(s.status);
+      } },
+      { label: '期間／節日／比較', render: function (s) {
+        var range = (s.startDate || s.endDate) ? esc(s.startDate || '未定') + '～' + esc(String(s.endDate || '未定').slice(DATE_RE.test(s.endDate || '') && String(s.endDate).slice(0, 4) === String(s.startDate || '').slice(0, 4) ? 5 : 0)) : '';
+        var hol = s.holidayDate ? '節日 ' + esc(s.holidayDate) + ' ' + holidayHtml(s) : '';
+        var cmp = s.compareSeasonId ? '比較：' + esc(nameOf[s.compareSeasonId] || '（已刪除）') : '';
+        return '<div class="small">' + (range || DASH) + '</div>' + (hol ? '<div class="small" style="margin-top:2px">' + hol + '</div>' : '') + (cmp ? '<div class="small" style="margin-top:2px">' + cmp + '</div>' : '');
+      } },
+      { label: '品項／配方', render: function (s) {
         if (!SI) return DASH;
         var m = SI.summary(s);
-        return (m.gifts + m.singles) ? '禮盒 ' + m.gifts + '、單條 ' + m.singles : X.ui.tag('還沒設定', 'warn');
+        return ((m.gifts + m.singles) ? '禮盒 ' + m.gifts + '、單條 ' + m.singles : X.ui.tag('清單未設定', 'warn')) +
+          '<div class="small" style="margin-top:2px">' + (m.hasRecipes ? m.recipeProducts + ' 個禮盒有配方' : X.ui.tag('沒有自己的配方', 'warn')) + '</div>';
       } },
-      { label: '配方', render: function (s) {
-        if (!SI) return DASH;
-        var m = SI.summary(s);
-        return m.hasRecipes ? m.recipeProducts + ' 個禮盒有配方' : X.ui.tag('還沒有自己的配方', 'warn');
-      } },
-      {
-        label: '操作', render: function (s) {
-          var id = esc(s.id), bs = ' style="min-height:36px"'; // 手機上按鈕不要太小
-          return '<div class="x-row-actions" style="flex-wrap:wrap;min-width:130px">' +
-            '<button type="button" class="btn gray" data-act="edit" data-id="' + id + '"' + bs + '>編輯</button>' +
-            (SI ? '<button type="button" class="btn primary" data-act="items" data-id="' + id + '"' + bs + '>品項清單</button>' +
-              '<button type="button" class="btn primary" data-act="recipes" data-id="' + id + '"' + bs + '>配方</button>' : '') +
-            (s.status !== 'active' ? '<button type="button" class="btn green" data-act="activate" data-id="' + id + '"' + bs + '>設為進行中</button>' : '') +
-            (s.status !== 'closed' ? '<button type="button" class="btn gray" data-act="close" data-id="' + id + '"' + bs + '>結束檔期</button>' : '') +
-            '<button type="button" class="btn red" data-act="del" data-id="' + id + '"' + bs + '>刪除</button></div>';
-        }
-      }
+      { label: '操作', render: function (s) {
+        var id = esc(s.id);
+        return '<div style="display:flex;flex-wrap:wrap;gap:4px;min-width:150px;max-width:230px">' +
+          (SI ? '<button type="button" class="btn primary" data-act="items" data-id="' + id + '"' + SM + '>品項</button>' +
+            '<button type="button" class="btn primary" data-act="recipes" data-id="' + id + '"' + SM + '>配方</button>' : '') +
+          '<button type="button" class="btn gray" data-act="edit" data-id="' + id + '"' + SM + '>編輯</button>' +
+          (s.status !== 'active' ? '<button type="button" class="btn green" data-act="activate" data-id="' + id + '"' + SM + '>設為進行中</button>' : '') +
+          (s.status !== 'closed' ? '<button type="button" class="btn gray" data-act="close" data-id="' + id + '"' + SM + '>結束</button>' : '') +
+          '<button type="button" class="btn red" data-act="del" data-id="' + id + '"' + SM + '>刪除</button></div>';
+      } }
     ];
     html += X.ui.card('檔期列表', X.ui.table(cols, list, { empty: '還沒有任何檔期，按「新增檔期」開始建立。' }),
       '<button type="button" class="btn primary" data-act="add">＋ 新增檔期</button>');

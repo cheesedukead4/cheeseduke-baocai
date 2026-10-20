@@ -1,5 +1,5 @@
 /* 離線快取：網站檔案先走網路（略過瀏覽器的 HTTP 快取，確保拿到最新版；檔案沒變時伺服器只回 304），4 秒沒回應或失敗才用快取。雲端資料請求不經過快取。 */
-var CACHE = 'cms-app-v23';
+var CACHE = 'cms-app-v24';
 var NET_TIMEOUT_MS = 4000;
 var ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
