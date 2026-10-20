@@ -132,7 +132,6 @@
     list.splice(i, 1);
     list.forEach(function (s) { if (s && s.compareSeasonId === id) s.compareSeasonId = ''; });
     if (X.get('seasonRecipes')[id]) delete X.ensure('seasonRecipes')[id];
-    if (X.get('seasonForecasts')[id]) delete X.ensure('seasonForecasts')[id];
     return true;
   }
 
@@ -438,29 +437,29 @@
     });
     return out;
   }
-  // ---- 業績預估（每個檔期一份）----
-  // 進行中檔期的預估是「業績預估」頁正在編輯的那份（db.salesForecastV5）；其他檔期的預估存在 db.seasonForecasts[檔期id]（見 season-items.js：
-  // 把另一個檔期設為進行中時，目前的預估存回原本的檔期，業績預估頁換成新檔期自己的那份）。
-  // 一份預估＝每個禮盒（品號）4 個日期 × 各部門的預估盒數（lines[n][部門].est）。
-  function forecastOf(ch) {
-    if (!ch || !ch.season) return null;
-    var f = ch.season.status === 'active' ? (X.db() && X.db().salesForecastV5) : X.get('seasonForecasts')[ch.season.id];
-    return f && f.rows && typeof f.rows === 'object' ? f : null;
+  // 預估依週彙總：「業績預估」每個禮盒有 4 個日期，每個日期各部門的預估盒數；放進該日期所在的那一週
+  function forecastSeasonOk(ds, kind, year) {
+    var k = X.orderSeasonKind({ date: ds });
+    var sy = (k === 'newyear' || k === 'midautumn') && window.CMSRules ? CMSRules.seasonYear(ds, k) : String(ds).slice(0, 4);
+    return kind === 'year' ? String(ds).slice(0, 4) === year : (k === kind && String(sy) === String(year));
   }
-  function forecastHasData(fo) {
-    var rows = (fo && fo.rows) || {}, any = false;
+  function forecastRows() { var f = X.db() && X.db().salesForecastV5; return (f && f.rows && typeof f.rows === 'object') ? f.rows : {}; }
+  function forecastYears(kind) {
+    var seen = Object.create(null), rows = forecastRows();
     Object.keys(rows).forEach(function (code) {
       var r = rows[code];
-      Object.keys((r && r.lines) || {}).forEach(function (n) {
-        Object.keys(r.lines[n] || {}).forEach(function (dk) { if (X.num((r.lines[n][dk] || {}).est) > 0) any = true; });
+      (r && r.dates || []).forEach(function (ds, n) {
+        if (dateMs(ds) == null) return;
+        var k = X.orderSeasonKind({ date: ds });
+        if (kind === 'year') seen[String(ds).slice(0, 4)] = true;
+        else if (k === kind) seen[String(window.CMSRules ? CMSRules.seasonYear(ds, k) : ds.slice(0, 4))] = true;
       });
     });
-    return any;
+    return Object.keys(seen);
   }
-  // 預估依週彙總：每個日期的預估盒數放進該日期所在的那一週；沒填日期的列放不進圖裡，但算進合計（total）與 undated
-  function weeklyForecast(ctx, fo, dept, metric, group, keyFn) {
-    var out = Object.create(null), rows = (fo && fo.rows) || {}, nonRev = nonRevenue(), anyEst = false, total = 0, undated = 0;
-    if (dept === 'unmatched') return { map: out, any: false, total: 0, undated: 0 };
+  function weeklyForecast(ctx, kind, year, dept, metric, group, keyFn) {
+    var out = Object.create(null), rows = forecastRows(), nonRev = nonRevenue(), anyEst = false;
+    if (dept === 'unmatched') return { map: out, any: false };
     Object.keys(rows).forEach(function (code) {
       var r = rows[code];
       if (!r || !r.lines) return;
@@ -468,24 +467,21 @@
       if (metric === 'qty' ? !inGroup(p, group === 'all' ? 'all3' : group) : (group !== 'all' && !inGroup(p, group))) return;
       var price = 0;
       if (metric === 'amt') price = p ? X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(p) : X.productPrice(p)) : X.num(r.price);
-      Object.keys(r.lines).forEach(function (n) {
-        var line = r.lines[n], sum = 0;
-        if (!line) return;
-        Object.keys(line).forEach(function (dk) {
+      (r.dates || []).forEach(function (ds, n) {
+        var t = dateMs(ds);
+        if (t == null || !r.lines[n] || !forecastSeasonOk(ds, kind, year)) return;
+        var sum = 0;
+        Object.keys(r.lines[n]).forEach(function (dk) {
           if (dept !== 'all' && dk !== dept) return;
-          var est = X.num((line[dk] || {}).est);
+          var est = X.num((r.lines[n][dk] || {}).est);
           if (est > 0) anyEst = true;
           sum += metric === 'amt' ? (nonRev[dk] ? 0 : est * price) : est;
         });
-        if (!sum) return;
-        total += sum;
-        var t = dateMs((r.dates || [])[Number(n)]);
-        if (t == null) { undated += sum; return; }
         var w = keyFn(t);
         out[w] = (out[w] || 0) + sum;
       });
     });
-    return { map: out, any: anyEst, total: total, undated: undated };
+    return { map: out, any: anyEst };
   }
 
   function axisFmt(v, metric) {
@@ -500,57 +496,60 @@
   function valText(v, metric) { return v == null ? '—' : (metric === 'amt' ? money(v) : X.fmt(v) + ' 盒'); }
 
   // 整理成每週一筆：weeks 是週的代號（依檔期對齊時是「節日週＝0」的週數，否則是星期一的毫秒）；沒有資料的線整條是 null
-  // 實際＝selC（所選檔期）的訂單；預估＝fcC（比較的檔期）的業績預估
-  function buildWeekly(list, ctx, selC, fcC, dept, metric, group) {
-    var kind = selC.kind, year = selC.year, selS = selC.season, fcS = fcC ? fcC.season : null;
-    var hSel = selS ? dateMs(selS.holidayDate) : null, hFc = fcS ? dateMs(fcS.holidayDate) : null;
-    var byHoliday = hSel != null && hFc != null;
-    var shift = fcC ? Math.round((Date.UTC(Number(year), 0, 1) - Date.UTC(Number(fcC.year), 0, 1)) / DAY / 7) * 7 : 0;
-    var keySel, keyFc, startSel, startFc;
+  function buildWeekly(list, ctx, selC, cmpC, dept, metric, group) {
+    var kind = selC.kind, year = selC.year, selS = selC.season, cmpS = cmpC ? cmpC.season : null;
+    var hSel = selS ? dateMs(selS.holidayDate) : null, hCmp = cmpS ? dateMs(cmpS.holidayDate) : null;
+    var byHoliday = hSel != null && hCmp != null;
+    var prevKind = cmpC ? cmpC.kind : kind, prevYear = cmpC ? cmpC.year : '';
+    var shift = cmpC ? Math.round((Date.UTC(Number(year), 0, 1) - Date.UTC(Number(prevYear), 0, 1)) / DAY / 7) * 7 : 0;
+    var cmpIsLast = !!cmpC && cmpC.kind === kind && Number(cmpC.year) === Number(year) - 1;
+    var keySel, keyPrev, startSel, startPrev;
     if (byHoliday) {
-      var aSel = weekOf(hSel), aFc = weekOf(hFc);
+      var aSel = weekOf(hSel), aCmp = weekOf(hCmp);
       keySel = function (t) { return Math.floor((weekOf(t) - aSel) / (7 * DAY)); };
-      keyFc = function (t) { return Math.floor((weekOf(t) - aFc) / (7 * DAY)); };
+      keyPrev = function (t) { return Math.floor((weekOf(t) - aCmp) / (7 * DAY)); };
       startSel = function (k) { return aSel + k * 7 * DAY; };
-      startFc = function (k) { return aFc + k * 7 * DAY; };
+      startPrev = function (k) { return aCmp + k * 7 * DAY; };
     } else {
       keySel = weekOf;
-      keyFc = function (t) { return weekOf(t + shift * DAY); };
+      keyPrev = function (t) { return weekOf(t + shift * DAY); };
       startSel = function (k) { return k; };
-      startFc = function (k) { return k - shift * DAY; };
+      startPrev = function (k) { return k - shift * DAY; };
     }
     var a = weeklyOrders(list, kind, year, dept, metric, group, keySel);
-    var f = fcC && forecastOf(fcC) ? weeklyForecast(ctx, forecastOf(fcC), dept, metric, group, keyFc) : { map: Object.create(null), any: false, total: 0, undated: 0 };
+    var b = cmpC ? weeklyOrders(list, prevKind, prevYear, dept, metric, group, keyPrev) : Object.create(null);
+    var f = weeklyForecast(ctx, kind, year, dept, metric, group, keySel);
     var keysOf = function (m) { return Object.keys(m).map(Number); };
-    var ka = keysOf(a), kf = f.any ? keysOf(f.map) : [];
-    var all = ka.concat(kf);
-    if (!all.length) return { empty: true, hasEst: f.any, estTotal: f.total, undated: f.undated, fcName: fcC ? fcC.name : '', selName: selC.name };
+    var ka = keysOf(a), kb = keysOf(b), kf = f.any ? keysOf(f.map) : [];
+    var all = ka.concat(kb, kf);
+    if (!all.length) return null;
     var min = Math.min.apply(null, all), max = Math.max.apply(null, all), weeks = [];
     var stepK = byHoliday ? 1 : 7 * DAY;
     for (var t = min; t <= max && weeks.length < 120; t += stepK) weeks.push(t);
     var nowWk = weekOf(dateMs(X.today()));
-    var fLo = kf.length ? Math.min.apply(null, kf) : null, fHi = kf.length ? Math.max.apply(null, kf) : null;
-    var actTotal = 0;
-    ka.forEach(function (k) { actTotal += a[k] || 0; });
+    var lo = function (k) { return k.length ? Math.min.apply(null, k) : null; }, hi = function (k) { return k.length ? Math.max.apply(null, k) : null; };
+    var fLo = lo(kf), fHi = hi(kf), bLo = lo(kb), bHi = hi(kb);
     return {
-      weeks: weeks, year: year, byHoliday: byHoliday, selName: selC.name, fcName: fcC ? fcC.name : '', fcSame: !!fcC && fcC.id === selC.id,
-      hasAct: ka.length > 0, hasEst: f.any, estTotal: f.total, undated: f.undated, actTotal: actTotal,
+      weeks: weeks, year: year, lastYear: prevYear, byHoliday: byHoliday, selName: selC.name, cmpName: cmpC ? cmpC.name : '', prevLabel: cmpIsLast ? '去年' : '比較檔期',
+      hasAct: ka.length > 0, hasEst: f.any, hasPrev: kb.length > 0,
       // 週的標示：依檔期對齊時用「節前 N 週／節日週／節後 N 週」，否則用星期一的日期
       label: function (k) { return byHoliday ? (k === 0 ? '節日週' : (k < 0 ? '節前 ' + (-k) + ' 週' : '節後 ' + k + ' 週')) : md(k); },
       rangeSel: function (k) { var s = startSel(k); return md(s) + '～' + md(s + 6 * DAY); },
-      rangeFc: function (k) { var s = startFc(k); return md(s) + '～' + md(s + 6 * DAY); },
-      // 實際：還沒到的週不畫；預估只畫第一個到最後一個有預估的週
+      rangePrev: function (k) { var s = startPrev(k); return md(s) + '～' + md(s + 6 * DAY); },
+      // 實際：還沒到的週不畫；預估只畫第一個到最後一個有預估的週；去年畫去年有訂單的範圍
       act: weeks.map(function (k) { return ka.length && startSel(k) <= nowWk ? (a[k] || 0) : null; }),
-      est: weeks.map(function (k) { return fLo != null && k >= fLo && k <= fHi ? (f.map[k] || 0) : null; })
+      est: weeks.map(function (k) { return fLo != null && k >= fLo && k <= fHi ? (f.map[k] || 0) : null; }),
+      prev: weeks.map(function (k) { return bLo != null && k >= bLo && k <= bHi ? (b[k] || 0) : null; })
     };
   }
 
-  // 折線圖（SVG）：一條實際（實線）、一條預估（虛線）；線尾直接標名稱；滑過每一週顯示數值
+  // 折線圖（SVG）：一條實際（實線）、一條預估（虛線）、一條去年；線尾直接標名稱；滑過每一週顯示數值
   function chartSvg(m, metric) {
     var W = 760, H = 224, L = 58, R = 74, T = 12, B = 40, n = m.weeks.length;
     var series = [
       { key: 'act', name: '實際', color: C_ACT, dash: '' },
-      { key: 'est', name: '預估', color: C_EST, dash: '7 5' }
+      { key: 'est', name: '預估', color: C_EST, dash: '7 5' },
+      { key: 'prev', name: m.prevLabel === '去年' ? '去年' : '比較', color: C_PREV, dash: '' }
     ].filter(function (s) { return m['has' + s.key.charAt(0).toUpperCase() + s.key.slice(1)]; });
     var maxV = 0;
     series.forEach(function (s) { m[s.key].forEach(function (v) { if (v != null && v > maxV) maxV = v; }); });
@@ -568,6 +567,7 @@
       if (i % step === 0) xl += '<text x="' + x(i) + '" y="' + (H - B + 18) + '" text-anchor="middle" font-size="11" fill="' + (m.byHoliday && t === 0 ? 'var(--text)' : 'var(--text-3)') + '"' + (m.byHoliday && t === 0 ? ' font-weight="700"' : '') + '>' + esc(m.label(t)) + '</text>';
     });
     xl += '<text x="' + L + '" y="' + (H - 6) + '" font-size="10" fill="var(--text-3)">' + (m.byHoliday ? '橫軸：離節日幾週（節日週＝節日當天所在的那一週，週一～週日）' : '橫軸：每週一～週日，標的是星期一的日期') + '</text>';
+    // 節日週的標線（依檔期對齊時）
     var holi = '';
     if (m.byHoliday) { var hi0 = m.weeks.indexOf(0); if (hi0 >= 0) holi = '<line x1="' + x(hi0) + '" x2="' + x(hi0) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--line-strong)" stroke-width="1.5"/>'; }
     var lines = '', labels = '', ends = [];
@@ -585,65 +585,55 @@
       });
       if (last >= 0) ends.push({ name: s.name, x: x(last) + 9, y: y(m[s.key][last]) + 4 });
     });
+    // 線尾的名稱：幾條線結束在同一個位置時，上下錯開，不要疊在一起
     ends.sort(function (p, q) { return p.y - q.y; });
     ends.forEach(function (e, i) {
       for (var j = 0; j < i; j++) if (Math.abs(ends[j].x - e.x) < 60 && e.y - ends[j].y < 15) e.y = ends[j].y + 15;
       labels += '<text x="' + e.x + '" y="' + e.y + '" font-size="12" font-weight="700" fill="var(--text)">' + e.name + '</text>';
     });
-    return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際與預估的' + (metric === 'amt' ? '金額' : '禮盒數') + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
+    return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際、預估與去年的' + (metric === 'amt' ? '金額' : '禮盒數') + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
       g + xl + holi + '<line data-guide x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>' + lines + labels + '</svg>',
       geom: { W: W, L: L, R: R, n: n, iw: iw }, series: series };
   }
 
-  function pctText(a, b) { return b > 0 ? (Math.round(a / b * 1000) / 10) + '%' : '—'; }
   function renderChartCard(m, metric, deptName, group) {
     var gName = groupName(metric === 'qty' && group === 'all' ? 'all3' : group);
-    var title = deptName + '｜每週' + (metric === 'amt' ? '金額' : '禮盒數') + '（' + gName + '）';
-    var why = function (m) {
-      var out = [];
-      if (!m.fcName) out.push('目前選「不比較」，沒有預估線');
-      else if (!m.hasEst) out.push('「' + m.fcName + '」還沒有預估資料' + (group !== 'all' && group !== 'all3' ? '（或填的禮盒不是 ' + gName + '）' : '') +
-        '。業績預估頁是「進行中檔期」的預估；把另一個檔期設為進行中時，業績預估頁會換成那個檔期自己的一份');
-      if (m.undated) out.push('業績預估頁有 ' + valText(m.undated, metric) + ' 的預估沒有填日期，沒放進圖裡（已算進預估合計）');
-      return out;
-    };
-    if (!m) return X.ui.card(title, X.ui.empty('沒有資料可以畫。'));
-    if (m.empty) return X.ui.card(title, X.ui.empty('「' + m.selName + '」這個檔期沒有訂單' + (m.fcName ? '，「' + m.fcName + '」的預估也沒有放進日期' : '') + '，沒有東西可以畫。') +
-      (why(m).length ? '<p class="small" style="margin:6px 0 0;color:var(--warn)">' + esc(why(m).join('；')) + '。</p>' : ''));
+    if (!m) return X.ui.card('每週波動', X.ui.empty('這個檔期、這個部門沒有訂單，也沒有預估資料可以畫。'));
     var c = chartSvg(m, metric);
     var leg = c.series.map(function (s) {
-      var t = s.key === 'act' ? '實際（' + m.selName + '）' : '預估（' + m.fcName + '）';
+      var t = s.key === 'prev' ? m.prevLabel + (m.cmpName ? '（' + m.cmpName + (m.byHoliday ? '，對齊節日週' : '，同一週對齊') + '）' : '')
+        : s.key === 'act' ? '實際（' + (m.selName || m.year) + '）' : '預估（業績預估頁）';
       return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px"><svg width="26" height="10" aria-hidden="true" style="width:26px;height:10px"><line x1="0" x2="26" y1="5" y2="5" stroke="' + s.color + '" stroke-width="2.5"' + (s.dash ? ' stroke-dasharray="7 5"' : '') + '/></svg>' + esc(t) + '</span>';
     }).join('');
-    var miss = why(m);
-    if (!m.hasAct) miss.unshift('這個檔期還沒有訂單，沒有「實際」線');
-    if (m.hasEst && m.fcName && !m.byHoliday && !m.fcSame) miss.push('這個檔期或預估的檔期還沒有節日日期，所以先用「同一週」對齊');
+    var miss = [];
+    if (!m.hasAct) miss.push('這個檔期還沒有訂單，沒有「實際」線');
+    if (!m.hasEst) miss.push('「業績預估」頁這個檔期還沒填預估（或預估日期不在這個檔期' + (group !== 'all' ? '、或填的禮盒不是 ' + gName : '') + '），沒有「預估」線');
+    if (!m.hasPrev) miss.push('比較檔期沒有訂單' + (group !== 'all' ? '（或沒有 ' + gName + '）' : '') + '，沒有比較線');
+    if (!m.byHoliday && m.cmpName) miss.push('這個檔期或比較檔期還沒有節日日期，所以先用「同一週」對齊');
     var tbl = X.ui.table([
       { label: m.byHoliday ? '週（離節日）' : '週（星期一）', render: function (r) { return esc(m.label(r.t)); } },
-      { label: '實際日期', render: function (r) { return '<span class="small">' + esc(m.rangeSel(r.t)) + '</span>'; } },
+      { label: '今年日期', render: function (r) { return '<span class="small">' + esc(m.rangeSel(r.t)) + '</span>'; } },
       { label: '實際', num: true, render: function (r) { return r.act == null ? DASH : esc(valText(r.act, metric)); } },
-      { label: '預估日期', render: function (r) { return r.est == null ? DASH : '<span class="small">' + esc(m.rangeFc(r.t)) + '</span>'; } },
       { label: '預估', num: true, render: function (r) { return r.est == null ? DASH : esc(valText(r.est, metric)); } },
-      { label: '達成率', num: true, render: function (r) { return r.act == null || r.est == null ? DASH : pctText(r.act, r.est); } }
-    ], m.weeks.map(function (t, i) { return { t: t, act: m.act[i], est: m.est[i] }; }), { empty: '沒有資料' });
-    var sumLine = m.fcName && (m.hasEst || m.estTotal)
-      ? '<div class="small" style="margin-top:6px"><b>合計</b>　實際 ' + esc(valText(m.actTotal, metric)) + '　預估 ' + esc(valText(m.estTotal, metric)) + '　達成率 <b>' + pctText(m.actTotal, m.estTotal) + '</b></div>' : '';
-    return X.ui.card(title,
+      { label: m.prevLabel + '日期', render: function (r) { return r.prev == null ? DASH : '<span class="small">' + esc(m.rangePrev(r.t)) + '</span>'; } },
+      { label: m.prevLabel + '同週', num: true, render: function (r) { return r.prev == null ? DASH : esc(valText(r.prev, metric)); } },
+      { label: '實際比' + m.prevLabel, num: true, render: function (r) { return r.act == null || r.prev == null ? DASH : growth(r.act, r.prev); } }
+    ], m.weeks.map(function (t, i) { return { t: t, act: m.act[i], est: m.est[i], prev: m.prev[i] }; }), { empty: '沒有資料' });
+    return X.ui.card(deptName + '｜每週' + (metric === 'amt' ? '金額' : '禮盒數') + '（' + gName + '）',
       '<div style="margin-bottom:6px;font-size:12.5px">' + leg + '</div>' +
       '<div data-chartbox style="position:relative;max-width:720px">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:12px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
-      sumLine +
       (miss.length ? '<p class="small" style="margin:6px 0 0;color:var(--warn)">' + esc(miss.join('；')) + '。</p>' : '') +
       '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">看表格版與說明</summary><div style="margin-top:8px">' + tbl +
       '<p class="small" style="margin:10px 0 0">' +
-        (m.byHoliday ? '依檔期對齊：以各檔期節日（「檔期設定」的節日日期）所在的那一週為「節日週」，實際與預估各自從自己檔期的節日週往前、往後數。' : '') +
-        '實際＝所選檔期的實際訂單，依訂單日期落在哪一週；預估＝比較檔期在「業績預估」頁填的預估盒數（每個禮盒 4 個日期 × 各部門），放在該日期所在的那一週，只畫第一個到最後一個有填預估的週；達成率＝實際 ÷ 預估。' +
+        (m.byHoliday ? '依檔期對齊：以各檔期節日（「檔期設定」的節日日期）所在的那一週為「節日週」，兩個檔期都從這一週往前、往後數，節日日期不同也能同週比較。' : '') +
+        '實際＝訂單日期落在那一週的數量或金額；預估＝「業績預估」頁各禮盒、各日期填的預估盒數，放在該日期所在的那一週，只畫第一個到最後一個有填預估的週。' +
         '金額＝數量 × 目前售價，公關贈、執行長的金額不算營收；禮盒規格只算 5 入費雪、8 入費雪、蛋捲 10 入（依品名判斷）；選「全部商品」看金額時含單條與其他規格；「禮盒數」不含單條與品號還沒對照的訂單。還沒到的週不畫實際。</p></div></details>');
   }
 
-  // 滑過（或手指按住）某一週：顯示那一週實際與預估的數字
+  // 滑過（或手指按住）某一週：顯示那一週三條線的數字
   function bindChart(el, m, metric) {
     var box = el.querySelector('[data-chartbox]'), svg = box && box.querySelector('svg[data-chart]');
-    if (!svg || !m || m.empty) return;
+    if (!svg || !m) return;
     var tip = box.querySelector('[data-tip]'), guide = svg.querySelector('[data-guide]');
     var vb = svg.viewBox.baseVal, L = 58, R = 74, n = m.weeks.length;
     function show(ev) {
@@ -653,8 +643,8 @@
       var gx = L + (n === 1 ? iw / 2 : iw * i / (n - 1));
       guide.setAttribute('x1', gx); guide.setAttribute('x2', gx); guide.style.display = '';
       var row = function (name, color, v, range) { return v == null ? '' : '<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px"></span>' + name + '：<b>' + esc(valText(v, metric)) + '</b>' + (range ? ' <span style="color:var(--text-3)">' + esc(range) + '</span>' : '') + '</div>'; };
-      var wk = m.weeks[i], rate = m.act[i] != null && m.est[i] != null ? '<div>達成率：<b>' + pctText(m.act[i], m.est[i]) + '</b></div>' : '';
-      tip.innerHTML = '<div style="font-weight:700">' + esc(m.label(wk)) + '</div>' + row('實際', C_ACT, m.act[i], m.rangeSel(wk)) + row('預估', C_EST, m.est[i], m.rangeFc(wk)) + rate;
+      var wk = m.weeks[i];
+      tip.innerHTML = '<div style="font-weight:700">' + esc(m.label(wk)) + '</div>' + row('實際', C_ACT, m.act[i], m.rangeSel(wk)) + row('預估', C_EST, m.est[i], m.rangeSel(wk)) + row(m.prevLabel + '同週', C_PREV, m.prev[i], m.rangePrev(wk));
       tip.style.display = 'block';
       var bx = box.getBoundingClientRect(), left = (gx / vb.width) * r.width + (r.left - bx.left) + 12;
       if (left + tip.offsetWidth > box.clientWidth) left -= tip.offsetWidth + 24;
@@ -688,7 +678,7 @@
 
   function renderSalesDash(el) {
     var rows = X.orders();
-    var html = intro('用按鈕選檔期、預估的檔期、部門、金額或禮盒數與禮盒規格，下面的波動圖看每週的「實際」（所選檔期的業績）和「預估」（業績預估頁填的預估），並算達成率（不顯示客戶資料）；圖下方的表格是整個檔期和去年的合計比較。');
+    var html = intro('用按鈕選檔期、比較的檔期、部門、金額或禮盒數與禮盒規格，下面的波動圖看每週的實際、預估與比較檔期（不顯示客戶資料）；圖下方的表格是整個檔期的合計比較。');
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
@@ -698,17 +688,17 @@
     var c = classifyOrders(rows, salesCtx());
     var list = c.list;
     var choices = seasonChoices(list);
-    var hasData = function (ch) { return yearsOf(list, ch.kind).indexOf(ch.year) >= 0 || forecastHasData(forecastOf(ch)); };
+    var hasData = function (ch) { return yearsOf(list, ch.kind).indexOf(ch.year) >= 0 || forecastYears(ch.kind).indexOf(ch.year) >= 0; };
     var selC = choices.find(function (ch) { return ch.id === sd.sel; }) || choices.find(hasData) || choices[0] || null;
     if (!selC) { el.innerHTML = html + X.ui.empty('還沒有檔期，也沒有可以分檔期的訂單。請到「檔期設定」建立檔期。'); return; }
     sd.sel = selC.id; sd.kind = selC.kind; sd.year = selC.year;
-    // 下方表格用的「去年」：檔期資料的比較用檔期，沒有就找去年同種類的檔期
-    var cid = selC.season && selC.season.compareSeasonId;
-    var cmpC = (cid && choices.find(function (ch) { return ch.id === cid; })) ||
-      choices.find(function (ch) { return ch.kind === selC.kind && Number(ch.year) === Number(selC.year) - 1; }) || null;
-    // 圖上的預估：自動＝所選檔期自己的預估；也可以點別的檔期的預估，或不比較
-    var fcC = null;
-    if (sd.cmp !== 'none') fcC = (sd.cmp && sd.cmp !== 'auto' && choices.find(function (ch) { return ch.id === sd.cmp; })) || selC;
+    var cmpC = null;
+    if (sd.cmp && sd.cmp !== 'auto' && sd.cmp !== 'none') cmpC = choices.find(function (ch) { return ch.id === sd.cmp && ch.id !== selC.id; }) || null;
+    if (!cmpC && sd.cmp !== 'none') { // 自動：檔期資料裡的「比較用檔期」，沒有就找去年同種類的檔期
+      var cid = selC.season && selC.season.compareSeasonId;
+      cmpC = (cid && choices.find(function (ch) { return ch.id === cid; })) ||
+        choices.find(function (ch) { return ch.kind === selC.kind && Number(ch.year) === Number(selC.year) - 1; }) || null;
+    }
     var deptOpts = [{ key: 'all', label: '全公司' }].concat(X.DEPTS.map(function (d) { return { key: d.key, label: d.label }; }), [{ key: 'unmatched', label: '未對照' }]);
     if (!deptOpts.some(function (d) { return d.key === sd.dept; })) sd.dept = 'all';
     if (sd.metric === 'qty' && sd.group === 'all') sd.group = 'all3';
@@ -726,19 +716,19 @@
       return '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span class="small" style="min-width:60px;font-weight:700">' + label + '</span>' + chips + '</div>';
     };
     html += row('檔期', choices.map(function (ch) { return chip('sel', ch.id, ch.name, ch.id === selC.id); }).join(''));
-    html += row('預估', chip('cmp', 'auto', '自動', sd.cmp !== 'none' && !(sd.cmp && sd.cmp !== 'auto' && choices.some(function (ch) { return ch.id === sd.cmp; }))) +
+    html += row('比較', chip('cmp', 'auto', '自動', sd.cmp !== 'none' && (!sd.cmp || sd.cmp === 'auto' || !choices.some(function (ch) { return ch.id === sd.cmp && ch.id !== selC.id; }))) +
       choices.filter(function (ch) { return ch.id !== selC.id; }).map(function (ch) { return chip('cmp', ch.id, ch.name, sd.cmp === ch.id); }).join('') +
       chip('cmp', 'none', '不比較', sd.cmp === 'none') +
-      '<span class="small">' + (fcC ? '圖上的預估：' + esc(fcC.name) + (fcC.id === selC.id ? '（同檔期）' : '') : '不畫預估') + '</span>');
+      '<span class="small">' + (cmpC ? '目前比較：' + esc(cmpC.name) : '目前沒有比較檔期') + '</span>');
     html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
     html += row('看', chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">規格</span>' +
       GROUPS.filter(function (g) { return !(sd.metric === 'qty' && g[0] === 'all'); }).map(function (g) { return chip('group', g[0], g[1], g[0] === sd.group); }).join(''));
     html += '<p class="small" style="margin:0 0 10px">' +
-      esc('今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + (cmpC ? '；去年（' + periodLabel(cmpKind, lastYear) + '）：' + shortRange(prev) : '') + '。') +
+      esc('今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + (cmpC ? '；比較（' + periodLabel(cmpKind, lastYear) + '）：' + shortRange(prev) : '') + '。') +
       (cmpC && prev.minDate && cur.minDate && (prev.minDate.slice(5) !== cur.minDate.slice(5) || prev.maxDate.slice(5) !== cur.maxDate.slice(5)) ? ' <b>兩個檔期的訂單日期範圍不一樣，比較時請留意。</b>' : '') + '</p>';
 
-    var weekly = buildWeekly(list, salesCtx(), selC, fcC, sd.dept, sd.metric, sd.group);
+    var weekly = buildWeekly(list, salesCtx(), selC, cmpC, sd.dept, sd.metric, sd.group);
     html += renderChartCard(weekly, sd.metric, deptName, sd.group);
 
     html += X.ui.kpis([

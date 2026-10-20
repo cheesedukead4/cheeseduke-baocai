@@ -6,7 +6,6 @@
  * 資料：
  *   db.seasons[i].items       = [品項 id]        這個檔期的品項清單
  *   db.seasonRecipes[檔期id]  = [{ id, productId, materialId, qty }]   這個檔期的包材配方
- *   db.seasonForecasts[檔期id] = { campaignName, lastYear, rows }      這個檔期的業績預估（進行中檔期的是 db.salesForecastV5）
  *
  * 「進行中」的檔期用的是原系統現有的資料，所以首頁、待裝盒、開檔檢查等原本的計算完全不用改：
  *   - 進行中檔期的品項清單 ＝ 禮盒資料／單條資料裡勾「本期上架」的品項（isListedCurrent）
@@ -38,10 +37,7 @@
     return (Array.isArray(rows) ? rows : []).filter(function (r) { return r && r.productId != null && r.materialId != null; })
       .map(function (r) { return { id: r.id || X.uid('srec'), productId: r.productId, materialId: r.materialId, qty: Number(r.qty) || 0 }; });
   }
-  function rerenderLegacy() {
-    try { if (typeof root.render === 'function') root.render(); } catch (e) {}
-    try { if (typeof root.renderSalesForecast === 'function') root.renderSalesForecast(); } catch (e) {}
-  }
+  function rerenderLegacy() { try { if (typeof root.render === 'function') root.render(); } catch (e) {} }
 
   // ---------- 讀 ----------
   function listedIds() {
@@ -85,7 +81,7 @@
   }
   // 把 newS 設為進行中前呼叫（呼叫端再把 status 改成 active 並存檔）：交換上架清單與配方
   function activate(newS, oldS) {
-    var d = X.db(), sr = X.ensure('seasonRecipes'), sf = X.ensure('seasonForecasts');
+    var d = X.db(), sr = X.ensure('seasonRecipes');
     if (!d) return;
     var all = X.ensure('seasons');
     var rn = all.find(function (x) { return x && x.id === newS.id; }) || newS;
@@ -93,10 +89,6 @@
     if (ro && ro.id !== rn.id) {
       ro.items = listedIds();
       sr[ro.id] = cloneRecipes(d.recipes);
-      // 業績預估：目前業績預估頁的內容存回原本進行中的檔期；換成新檔期自己的那份，沒有就從空白開始
-      if (d.salesForecastV5 && typeof d.salesForecastV5 === 'object') sf[ro.id] = JSON.parse(JSON.stringify(d.salesForecastV5));
-      var nf = sf[rn.id];
-      d.salesForecastV5 = nf && nf.rows ? JSON.parse(JSON.stringify(nf)) : { campaignName: rn.name, lastYear: {}, rows: {} };
     }
     if (Array.isArray(rn.items) && rn.items.length) setFlags(rn.items); else rn.items = listedIds();
     if (Array.isArray(sr[rn.id]) && sr[rn.id].length) d.recipes = cloneRecipes(sr[rn.id]); else sr[rn.id] = cloneRecipes(d.recipes);
