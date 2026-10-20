@@ -229,7 +229,7 @@
   // 金額＝數量 × 目前的售價（訂單資料沒有金額）：禮盒用「禮盒資料」的售價、單條用「單條資料」的售價（CMSX.productPrice，
   // 禮盒沒填售價時是否改用內建備用售價見「計算規則」）。去年的金額也用目前的售價計算。
   // 部門對照設成「不計算」的訂單不算進數量與金額。
-  var sd = { kind: '', year: '', dept: 'all' };
+  var sd = { kind: '', year: '', dept: 'all', metric: 'amt' };
   var SD_KINDS = [['midautumn', '中秋'], ['newyear', '過年'], ['year', '全年（1～12 月）']];
 
   // 對照表（只讀）：品號 → 對照、禮盒；接單部門／通路 → 部門
@@ -350,9 +350,220 @@
   }
   function periodLabel(kind, year) { return year + ' ' + (kind === 'year' ? '全年' : (KIND[kind] || '')); }
 
+  // ================= 業績波動圖（依週）=================
+  // 三條線：實際（所選檔期／年份的訂單）、預估（「業績預估」頁各日期填的盒數）、去年（去年同檔期，往後對齊 52 週）。
+  // 可切換「金額」「禮盒數」；金額＝數量 × 目前售價（公關贈、執行長不算營收）；禮盒數不含單條與品號未對照的訂單。
+  var DAY = 86400000;
+  var C_ACT = '#2f5bd3', C_EST = '#c2691a', C_PREV = '#2a9d8f'; // 已用調色盤驗證工具檢查過：色盲分得開、對比足夠
+  function dateMs(s) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; }
+  function weekOf(ms) { return ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY; } // 這一週的星期一
+  function md(ms) { var d = new Date(ms); return (d.getUTCMonth() + 1) + '/' + d.getUTCDate(); }
+
+  // 訂單依週彙總：回傳 { 星期一的毫秒: 數值 }；shiftDays 用來把去年往後挪成「今年同一週」
+  function weeklyOrders(list, kind, year, dept, metric, shiftDays) {
+    var out = Object.create(null), nonRev = nonRevenue();
+    list.forEach(function (o) {
+      if (!inPeriod(o, kind, year) || o.dk === 'none') return;
+      if (dept !== 'all' && o.dk !== dept) return;
+      var t = dateMs(o.date);
+      if (t == null) return;
+      var v = metric === 'amt' ? (nonRev[o.dk] ? 0 : o.q * o.price) : (o.p && !isSingle(o.p) ? o.q : 0);
+      var w = weekOf(t + shiftDays * DAY);
+      out[w] = (out[w] || 0) + v;
+    });
+    return out;
+  }
+  // 預估依週彙總：「業績預估」每個禮盒有 4 個日期，每個日期各部門的預估盒數；放進該日期所在的那一週
+  function forecastSeasonOk(ds, kind, year) {
+    var k = X.orderSeasonKind({ date: ds });
+    var sy = (k === 'newyear' || k === 'midautumn') && window.CMSRules ? CMSRules.seasonYear(ds, k) : String(ds).slice(0, 4);
+    return kind === 'year' ? String(ds).slice(0, 4) === year : (k === kind && String(sy) === String(year));
+  }
+  function forecastRows() { var f = X.db() && X.db().salesForecastV5; return (f && f.rows && typeof f.rows === 'object') ? f.rows : {}; }
+  function forecastYears(kind) {
+    var seen = Object.create(null), rows = forecastRows();
+    Object.keys(rows).forEach(function (code) {
+      var r = rows[code];
+      (r && r.dates || []).forEach(function (ds, n) {
+        if (dateMs(ds) == null) return;
+        var k = X.orderSeasonKind({ date: ds });
+        if (kind === 'year') seen[String(ds).slice(0, 4)] = true;
+        else if (k === kind) seen[String(window.CMSRules ? CMSRules.seasonYear(ds, k) : ds.slice(0, 4))] = true;
+      });
+    });
+    return Object.keys(seen);
+  }
+  function weeklyForecast(ctx, kind, year, dept, metric) {
+    var out = Object.create(null), rows = forecastRows(), nonRev = nonRevenue(), anyEst = false;
+    if (dept === 'unmatched') return { map: out, any: false };
+    Object.keys(rows).forEach(function (code) {
+      var r = rows[code];
+      if (!r || !r.lines) return;
+      var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
+      var price = 0;
+      if (metric === 'amt') price = p ? X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(p) : X.productPrice(p)) : X.num(r.price);
+      (r.dates || []).forEach(function (ds, n) {
+        var t = dateMs(ds);
+        if (t == null || !r.lines[n] || !forecastSeasonOk(ds, kind, year)) return;
+        var sum = 0;
+        Object.keys(r.lines[n]).forEach(function (dk) {
+          if (dept !== 'all' && dk !== dept) return;
+          var est = X.num((r.lines[n][dk] || {}).est);
+          if (est > 0) anyEst = true;
+          sum += metric === 'amt' ? (nonRev[dk] ? 0 : est * price) : est;
+        });
+        var w = weekOf(t);
+        out[w] = (out[w] || 0) + sum;
+      });
+    });
+    return { map: out, any: anyEst };
+  }
+
+  function axisFmt(v, metric) {
+    if (metric === 'amt' && v >= 10000) return (Math.round(v / 1000) / 10) + ' 萬';
+    return X.fmt(v);
+  }
+  function niceMax(v) {
+    if (!(v > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+  }
+  function valText(v, metric) { return v == null ? '—' : (metric === 'amt' ? money(v) : X.fmt(v) + ' 盒'); }
+
+  // 整理成每週一筆：{ weeks:[毫秒], act:[值|null], est:[值|null], prev:[值|null] }；沒有資料的線整條是 null
+  function buildWeekly(list, ctx, kind, year, dept, metric) {
+    var lastYear = String(Number(year) - 1);
+    var a = weeklyOrders(list, kind, year, dept, metric, 0);
+    var b = weeklyOrders(list, kind, lastYear, dept, metric, 364);
+    var f = weeklyForecast(ctx, kind, year, dept, metric);
+    var keysOf = function (m) { return Object.keys(m).map(Number); };
+    var ka = keysOf(a), kb = keysOf(b), kf = f.any || keysOf(f.map).length ? keysOf(f.map) : [];
+    var all = ka.concat(kb, kf);
+    if (!all.length) return null;
+    var min = Math.min.apply(null, all), max = Math.max.apply(null, all), weeks = [];
+    for (var t = min; t <= max && weeks.length < 120; t += 7 * DAY) weeks.push(t);
+    var now = weekOf(dateMs(X.today()));
+    var lo = function (k) { return k.length ? Math.min.apply(null, k) : null; }, hi = function (k) { return k.length ? Math.max.apply(null, k) : null; };
+    var fLo = f.any ? lo(kf) : null, fHi = f.any ? hi(kf) : null, bLo = lo(kb), bHi = hi(kb);
+    return {
+      weeks: weeks, year: year, lastYear: lastYear, hasAct: ka.length > 0, hasEst: f.any, hasPrev: kb.length > 0,
+      // 實際：還沒到的週不畫；預估只畫第一個到最後一個有預估的週；去年畫去年有訂單的範圍
+      act: weeks.map(function (t) { return ka.length && t <= now ? (a[t] || 0) : null; }),
+      est: weeks.map(function (t) { return fLo != null && t >= fLo && t <= fHi ? (f.map[t] || 0) : null; }),
+      prev: weeks.map(function (t) { return bLo != null && t >= bLo && t <= bHi ? (b[t] || 0) : null; })
+    };
+  }
+
+  // 折線圖（SVG）：一條實際（實線）、一條預估（虛線）、一條去年；線尾直接標名稱；滑過每一週顯示數值
+  function chartSvg(m, metric) {
+    var W = 760, H = 320, L = 58, R = 74, T = 14, B = 44, n = m.weeks.length;
+    var series = [
+      { key: 'act', name: '實際', color: C_ACT, dash: '' },
+      { key: 'est', name: '預估', color: C_EST, dash: '7 5' },
+      { key: 'prev', name: '去年', color: C_PREV, dash: '' }
+    ].filter(function (s) { return m['has' + s.key.charAt(0).toUpperCase() + s.key.slice(1)]; });
+    var maxV = 0;
+    series.forEach(function (s) { m[s.key].forEach(function (v) { if (v != null && v > maxV) maxV = v; }); });
+    var top = niceMax(maxV), iw = W - L - R, ih = H - T - B;
+    var x = function (i) { return L + (n === 1 ? iw / 2 : iw * i / (n - 1)); };
+    var y = function (v) { return T + ih - ih * v / top; };
+    var g = '';
+    for (var k = 0; k <= 4; k++) {
+      var gv = top * k / 4, gy = y(gv);
+      g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '" stroke="var(--line)" stroke-width="1"/>' +
+        '<text x="' + (L - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="var(--text-3)">' + esc(axisFmt(gv, metric)) + '</text>';
+    }
+    var step = Math.max(1, Math.ceil(n / 10)), xl = '';
+    m.weeks.forEach(function (t, i) {
+      if (i % step === 0) xl += '<text x="' + x(i) + '" y="' + (H - B + 18) + '" text-anchor="middle" font-size="11" fill="var(--text-3)">' + md(t) + '</text>';
+    });
+    xl += '<text x="' + L + '" y="' + (H - 6) + '" font-size="10" fill="var(--text-3)">每週一～週日，標的是星期一的日期</text>';
+    var lines = '', labels = '', ends = [];
+    series.forEach(function (s) {
+      var d = '', pen = false, last = -1;
+      m[s.key].forEach(function (v, i) {
+        if (v == null) { pen = false; return; }
+        d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' ';
+        pen = true; last = i;
+      });
+      lines += '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"' + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : '') + '/>';
+      m[s.key].forEach(function (v, i) {
+        if (v == null) return;
+        lines += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.5" fill="' + s.color + '" stroke="var(--surface)" stroke-width="2"/>';
+      });
+      if (last >= 0) ends.push({ name: s.name, x: x(last) + 9, y: y(m[s.key][last]) + 4 });
+    });
+    // 線尾的名稱：幾條線結束在同一個位置時，上下錯開，不要疊在一起
+    ends.sort(function (p, q) { return p.y - q.y; });
+    ends.forEach(function (e, i) {
+      for (var j = 0; j < i; j++) if (Math.abs(ends[j].x - e.x) < 60 && e.y - ends[j].y < 15) e.y = ends[j].y + 15;
+      labels += '<text x="' + e.x + '" y="' + e.y + '" font-size="12" font-weight="700" fill="var(--text)">' + e.name + '</text>';
+    });
+    return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際、預估與去年的' + (metric === 'amt' ? '金額' : '禮盒數') + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
+      g + xl + '<line data-guide x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>' + lines + labels + '</svg>',
+      geom: { W: W, L: L, R: R, n: n, iw: iw }, series: series };
+  }
+
+  function renderChartCard(m, metric, deptName) {
+    if (!m) return X.ui.card('每週波動', X.ui.empty('這個檔期、這個部門沒有訂單，也沒有預估資料可以畫。'));
+    var c = chartSvg(m, metric);
+    var leg = c.series.map(function (s) {
+      return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><svg width="26" height="10" aria-hidden="true" style="width:26px;height:10px"><line x1="0" x2="26" y1="5" y2="5" stroke="' + s.color + '" stroke-width="2.5"' + (s.dash ? ' stroke-dasharray="7 5"' : '') + '/></svg>' +
+        esc(s.name === '去年' ? '去年（' + m.lastYear + '，往後對齊 52 週）' : s.name === '實際' ? '實際（' + m.year + '）' : '預估（業績預估頁）') + '</span>';
+    }).join('');
+    var miss = [];
+    if (!m.hasAct) miss.push('今年這個檔期還沒有訂單，沒有「實際」線');
+    if (!m.hasEst) miss.push('「業績預估」頁這個檔期還沒填預估（或預估日期不在這個檔期），沒有「預估」線');
+    if (!m.hasPrev) miss.push('去年同檔期沒有訂單，沒有「去年」線');
+    var tbl = X.ui.table([
+      { label: '週（星期一）', render: function (r) { return esc(md(r.t)); } },
+      { label: '實際', num: true, render: function (r) { return r.act == null ? DASH : esc(valText(r.act, metric)); } },
+      { label: '預估', num: true, render: function (r) { return r.est == null ? DASH : esc(valText(r.est, metric)); } },
+      { label: '去年同週', num: true, render: function (r) { return r.prev == null ? DASH : esc(valText(r.prev, metric)); } },
+      { label: '實際比去年', num: true, render: function (r) { return r.act == null || r.prev == null ? DASH : growth(r.act, r.prev); } }
+    ], m.weeks.map(function (t, i) { return { t: t, act: m.act[i], est: m.est[i], prev: m.prev[i] }; }), { empty: '沒有資料' });
+    var seg = function (v, label) {
+      return '<button type="button" class="btn ' + (metric === v ? 'primary' : 'gray') + '" data-act="metric" data-v="' + v + '" aria-pressed="' + (metric === v) + '" style="min-height:34px;padding:4px 14px">' + label + '</button>';
+    };
+    return X.ui.card(deptName + '｜每週' + (metric === 'amt' ? '金額' : '禮盒數') + '（實際、預估、去年）',
+      '<div style="margin-bottom:8px;font-size:13px">' + leg + '</div>' +
+      '<div data-chartbox style="position:relative">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:12px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
+      (miss.length ? '<p class="small" style="margin:8px 0 0;color:var(--warn)">' + esc(miss.join('；')) + '。</p>' : '') +
+      '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">看表格版（每週數字）</summary><div style="margin-top:8px">' + tbl + '</div></details>' +
+      '<p class="small" style="margin:10px 0 0">實際＝訂單日期落在那一週的數量；去年＝去年同檔期的訂單，往後挪 52 週（364 天）對齊今年同一週；預估＝「業績預估」頁各禮盒、各日期填的預估盒數，放在該日期所在的那一週，只畫第一個到最後一個有填預估的週。' +
+        '金額＝數量 × 目前售價，公關贈、執行長的金額不算營收；「禮盒數」不含單條，也不含品號還沒對照的訂單。還沒到的週不畫實際。</p>',
+      '<span style="display:inline-flex;gap:6px">' + seg('amt', '金額') + seg('qty', '禮盒數') + '</span>');
+  }
+
+  // 滑過（或手指按住）某一週：顯示那一週三條線的數字
+  function bindChart(el, m, metric) {
+    var box = el.querySelector('[data-chartbox]'), svg = box && box.querySelector('svg[data-chart]');
+    if (!svg || !m) return;
+    var tip = box.querySelector('[data-tip]'), guide = svg.querySelector('[data-guide]');
+    var vb = svg.viewBox.baseVal, L = 58, R = 74, n = m.weeks.length;
+    function show(ev) {
+      var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * vb.width / r.width;
+      var iw = vb.width - L - R, i = n === 1 ? 0 : Math.round((px - L) / iw * (n - 1));
+      if (i < 0 || i > n - 1) { hide(); return; }
+      var gx = L + (n === 1 ? iw / 2 : iw * i / (n - 1));
+      guide.setAttribute('x1', gx); guide.setAttribute('x2', gx); guide.style.display = '';
+      var row = function (name, color, v) { return v == null ? '' : '<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px"></span>' + name + '：<b>' + esc(valText(v, metric)) + '</b></div>'; };
+      var wk = m.weeks[i];
+      tip.innerHTML = '<div style="font-weight:700">' + md(wk) + ' ～ ' + md(wk + 6 * DAY) + '</div>' + row('實際', C_ACT, m.act[i]) + row('預估', C_EST, m.est[i]) + row('去年同週', C_PREV, m.prev[i]);
+      tip.style.display = 'block';
+      var bx = box.getBoundingClientRect(), left = (gx / vb.width) * r.width + (r.left - bx.left) + 12;
+      if (left + tip.offsetWidth > box.clientWidth) left -= tip.offsetWidth + 24;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
+    }
+    function hide() { guide.style.display = 'none'; tip.style.display = 'none'; }
+    svg.addEventListener('pointermove', show);
+    svg.addEventListener('pointerdown', show);
+    svg.addEventListener('pointerleave', hide);
+  }
+
   function renderSalesDash(el) {
     var rows = X.orders();
-    var html = intro('比較今年和去年同一個檔期的訂單數量與金額，可以看全公司或單一部門（不顯示客戶資料）。金額＝數量 × 目前的售價。');
+    var html = intro('每週的實際、預估與去年同期的波動圖，可以切換金額或禮盒數，也可以看全公司或單一部門（不顯示客戶資料）。下面的表格是整個檔期的合計比較。');
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
@@ -367,7 +578,10 @@
       sd.kind = act && (act.kind === 'newyear' || act.kind === 'midautumn') && yearsOf(list, act.kind).length ? act.kind
         : (SD_KINDS.map(function (k) { return k[0]; }).find(function (k) { return yearsOf(list, k).length; }) || 'year');
     }
+    // 年份：有訂單的年份，加上「業績預估」填了日期的年份（還沒開賣的新檔期也能看預估）
     var years = yearsOf(list, sd.kind);
+    forecastYears(sd.kind).forEach(function (y) { if (years.indexOf(y) < 0) years.push(y); });
+    years.sort().reverse();
     if (years.indexOf(sd.year) < 0) sd.year = years[0] || '';
     var deptOpts = [{ key: 'all', label: '全公司' }].concat(X.DEPTS.map(function (d) { return { key: d.key, label: d.label }; }), [{ key: 'unmatched', label: '未對照的訂單' }]);
     if (!deptOpts.some(function (d) { return d.key === sd.dept; })) sd.dept = 'all';
@@ -389,6 +603,9 @@
       esc((sd.kind === 'year' ? '全年＝訂單日期的年份。' : (window.CMSRules ? CMSRules.seasonRuleText() : '過年＝1～2 月訂單、中秋＝8～10 月訂單') + '（可在「計算規則」修改）。') +
         '今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + '；去年（' + periodLabel(sd.kind, lastYear) + '）：' + shortRange(prev) + '。') +
       (prev.minDate && cur.minDate && (prev.minDate.slice(5) !== cur.minDate.slice(5) || prev.maxDate.slice(5) !== cur.maxDate.slice(5)) ? ' <b>兩年的訂單日期範圍不一樣，比較時請留意。</b>' : '') + '</p>';
+
+    var weekly = sd.year ? buildWeekly(list, salesCtx(), sd.kind, sd.year, sd.dept, sd.metric) : null;
+    html += renderChartCard(weekly, sd.metric, deptName);
 
     html += X.ui.kpis([
       { label: deptName + '｜訂單數量', value: X.fmt(cur.qty), tone: 'info', sub: '去年 ' + X.fmt(prev.qty) + (growthText(cur.qty, prev.qty) ? '，' + growthText(cur.qty, prev.qty) : '') + (cur.singleQty ? '；含單條 ' + X.fmt(cur.singleQty) + ' 條' : '') },
@@ -468,11 +685,14 @@
       ], chRows) + (unCh.length > 10 ? '<p class="small" style="margin:10px 0 0">另外還有 ' + (unCh.length - 10) + ' 個未列出。請到「對照設定」的通路、接單部門分頁設定。</p>' : ''));
     }
 
-    html += X.ui.card('預估 vs 實際', X.ui.empty('之後會把「業績預估」填的預估和這裡的實際訂單放在一起，依部門、品項比較達成率。'),
-      '<button type="button" class="btn gray"' + LATER + '>比較預估與實際</button>');
     html += '<p class="small" style="margin:4px 0 0">共 ' + X.fmt(rows.length) + ' 筆訂單明細' + (c.ignored ? '（品號設為「不計算」的 ' + X.fmt(c.ignored) + ' 筆不算）' : '') + '，計算 ' + ms + ' 毫秒。</p>';
     el.innerHTML = html;
+    bindChart(el, weekly, sd.metric);
 
+    el.onclick = function (e) {
+      var b = e.target.closest ? e.target.closest('[data-act="metric"]') : null;
+      if (b && b.dataset.v !== sd.metric) { sd.metric = b.dataset.v; renderSalesDash(el); }
+    };
     el.onchange = function (e) {
       var t = e.target;
       if (!t || !t.dataset) return;
