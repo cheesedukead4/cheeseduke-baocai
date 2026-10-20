@@ -1,6 +1,6 @@
 /*
  * 檔期與業績（開發員 A）
- *  - （xSeasons 檔期設定頁已於 2026-10-17 移除，seasons 資料仍保留）
+ *  - xSeasons   檔期設定（2026-10-17 曾移除，2026-10-20 重新開放並加上每個檔期的品項清單與配方，見 season-items.js）
  *  - xSalesDash 業績儀表板（只顯示在首頁的「業績儀表板」分頁，不在選單上）
  * 讀寫的資料集：seasons
  * 業績預估改用原本首頁的業績預估表（page-legacy-forecast.js）
@@ -109,14 +109,19 @@
       compareSeasonId: v.compareSeasonId || '',
       note: String(v.note || '').trim()
     };
-    var rec;
+    var rec, wasActive = false;
     if (editId) {
       rec = list.find(function (s) { return s && s.id === editId; });
       if (!rec) return { error: '找不到這個檔期，可能已被其他人刪除。' };
+      wasActive = rec.status === 'active';
       Object.assign(rec, data);
     } else {
       rec = Object.assign({ id: X.uid('sea'), createdAt: Date.now(), by: X.userName() }, data);
       list.push(rec);
+    }
+    // 改成進行中：把原本進行中檔期的上架清單與配方存起來，換成這個檔期的（見 season-items.js）
+    if (rec.status === 'active' && !wasActive && X.seasonItems) {
+      X.seasonItems.activate(rec, list.find(function (x) { return x && x.id !== rec.id && x.status === 'active'; }) || null);
     }
     return { rec: rec, demoted: rec.status === 'active' ? demoteOthers(list, rec.id) : [] };
   }
@@ -126,6 +131,7 @@
     if (i < 0) return false;
     list.splice(i, 1);
     list.forEach(function (s) { if (s && s.compareSeasonId === id) s.compareSeasonId = ''; });
+    if (X.get('seasonRecipes')[id]) delete X.ensure('seasonRecipes')[id];
     return true;
   }
 
@@ -166,6 +172,12 @@
       { label: '已結束', value: cnt.closed + ' 個', tone: 'muted' }
     ]);
     if (list.length && !active) html += X.ui.banner('warn', '目前沒有「進行中」的檔期。開檔前請把要進行的檔期「設為進行中」。');
+    var SI = X.seasonItems, pend = SI ? SI.pendingSeed() : [];
+    if (pend.length) {
+      html += X.ui.banner('info', '過去訂單裡有 ' + pend.length + ' 個檔期還沒建立檔期資料或品項清單（' + pend.map(function (p) { return p.g.sy + (KIND[p.g.kind] || ''); }).join('、') + '）。' +
+        '<div style="margin-top:8px"><button type="button" class="btn primary" data-act="seed">依過去訂單建立檔期與品項清單</button></div>' +
+        '<div class="small" style="margin-top:6px">節日日期、期間、品項清單都來自訂單與內建的節日表（過年填除夕），建立後可以再修改；配方先沿用目前的配方，再逐檔期調整。</div>');
+    }
 
     var cols = [
       { label: '檔期', render: function (s) { return '<strong>' + esc(s.name) + '</strong>' + (s.note ? '<div class="small">' + esc(s.note) + '</div>' : ''); } },
@@ -174,11 +186,23 @@
       { label: '節日', render: function (s) { return s.holidayDate ? esc(s.holidayDate) + '<div style="margin-top:3px">' + holidayHtml(s) + '</div>' : DASH; } },
       { label: '狀態', render: function (s) { return statusTag(s.status); } },
       { label: '比較用檔期', render: function (s) { return s.compareSeasonId ? esc(nameOf[s.compareSeasonId] || '（已刪除）') : DASH; } },
+      { label: '品項清單', render: function (s) {
+        if (!SI) return DASH;
+        var m = SI.summary(s);
+        return (m.gifts + m.singles) ? '禮盒 ' + m.gifts + '、單條 ' + m.singles : X.ui.tag('還沒設定', 'warn');
+      } },
+      { label: '配方', render: function (s) {
+        if (!SI) return DASH;
+        var m = SI.summary(s);
+        return m.hasRecipes ? m.recipeProducts + ' 個禮盒有配方' : X.ui.tag('還沒有自己的配方', 'warn');
+      } },
       {
         label: '操作', render: function (s) {
           var id = esc(s.id), bs = ' style="min-height:36px"'; // 手機上按鈕不要太小
           return '<div class="x-row-actions" style="flex-wrap:wrap;min-width:130px">' +
             '<button type="button" class="btn gray" data-act="edit" data-id="' + id + '"' + bs + '>編輯</button>' +
+            (SI ? '<button type="button" class="btn primary" data-act="items" data-id="' + id + '"' + bs + '>品項清單</button>' +
+              '<button type="button" class="btn primary" data-act="recipes" data-id="' + id + '"' + bs + '>配方</button>' : '') +
             (s.status !== 'active' ? '<button type="button" class="btn green" data-act="activate" data-id="' + id + '"' + bs + '>設為進行中</button>' : '') +
             (s.status !== 'closed' ? '<button type="button" class="btn gray" data-act="close" data-id="' + id + '"' + bs + '>結束檔期</button>' : '') +
             '<button type="button" class="btn red" data-act="del" data-id="' + id + '"' + bs + '>刪除</button></div>';
@@ -196,14 +220,25 @@
       if (!b) return;
       var act = b.dataset.act;
       if (act === 'add') { openSeasonDialog(null); return; }
+      if (act === 'seed') {
+        var r = X.seasonItems.seed();
+        X.toast(r.made.length || r.filled.length ? '已建立：' + r.made.concat(r.filled).join('、') : '沒有需要建立的');
+        return;
+      }
       var all = X.ensure('seasons');
       var s = all.find(function (x) { return x && x.id === b.dataset.id; });
       if (!s) return;
       if (act === 'edit') {
         openSeasonDialog(s);
+      } else if (act === 'items') {
+        SI.openItemsDialog(s, function () { renderSeasons(el); });
+      } else if (act === 'recipes') {
+        SI.openRecipeDialog(s, function () { renderSeasons(el); });
       } else if (act === 'activate') {
         var cur = all.find(function (x) { return x && x.status === 'active' && x.id !== s.id; });
-        if (cur && !confirm('目前進行中的是「' + cur.name + '」。\n要改成「' + s.name + '」嗎？原本的會改回規劃中。')) return;
+        if (!confirm((cur ? '目前進行中的是「' + cur.name + '」，改成「' + s.name + '」後它會改回規劃中。\n' : '') +
+          '設為進行中後，首頁的「本期上架」和包材配方會換成「' + s.name + '」自己的品項清單與配方（原本進行中檔期的會先存起來）。\n確定嗎？')) return;
+        if (SI) SI.activate(s, cur || null);
         demoteOthers(all, s.id);
         s.status = 'active';
         X.save();
@@ -222,7 +257,12 @@
     };
   }
 
-  // 「檔期設定」頁已移除（2026-10-17）：上面的函式與 seasons 資料保留（業績儀表板、開檔檢查還會讀 seasons），但不再註冊成頁面。
+  X.registerPage({
+    id: 'xSeasons', group: 'season', order: 10, title: '檔期設定', sub: '每個檔期的日期、品項清單與配方', stage: 'ready',
+    icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M10 13.5v5M10 13.5h4.5l-1 1.3 1 1.3H10"/>',
+    render: function (el) { renderSeasons(el); },
+    _fn: { checkSeason: checkSeason, applySeason: applySeason, deleteSeason: deleteSeason, sortSeasons: sortSeasons, daysToHoliday: daysToHoliday }
+  });
 
   // ================= (3) 業績儀表板 =================
   // 今年和去年同一個檔期（或全年）比較：訂單數量與金額，可以看全公司或單一部門。
@@ -761,6 +801,7 @@
     };
   }
 
+  X.salesTools = { classifyOrders: classifyOrders, salesCtx: salesCtx, inPeriod: inPeriod };
   X.registerPage({
     id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '今年和去年同檔期的訂單數量與金額比較', stage: 'ready',
     icon: '<path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5a9 9 0 0 1 5.5 5.5H15z"/>',

@@ -48,7 +48,7 @@
   // =====================================================================
   // 每一項的設定：標題、處理的頁面（新頁面 id 或原系統 data-page）
   var CHECK_DEFS = [
-    { key: 'season', title: '進行中的檔期', page: 'xSeasons', pageLabel: '檔期設定（頁面已移除）' },
+    { key: 'season', title: '進行中的檔期', page: 'xSeasons', pageLabel: '檔期設定' },
     { key: 'price', title: '本期上架禮盒的售價', page: 'products', pageLabel: '禮盒資料' },
     { key: 'recipe', title: '本期上架禮盒的包材配方', page: 'products', pageLabel: '禮盒資料' },
     { key: 'component', title: '本期上架禮盒的單條內容物', page: 'products', pageLabel: '禮盒資料' },

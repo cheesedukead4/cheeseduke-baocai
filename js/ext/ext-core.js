@@ -31,7 +31,7 @@
     seasons: {
       label: '檔期設定', type: 'array',
       fields: {
-        id: '唯一代號', name: '檔期名稱，例：2027 過年', kind: "'newyear' 過年｜'midautumn' 中秋｜'other' 其他",
+        id: '唯一代號', items: '這個檔期的品項清單（品項 id 的清單；進行中檔期以「本期上架」為準）', name: '檔期名稱，例：2027 過年', kind: "'newyear' 過年｜'midautumn' 中秋｜'other' 其他",
         holidayDate: '節日日期 YYYY-MM-DD（用來對齊「節前第幾天」）', startDate: '檔期開始 YYYY-MM-DD', endDate: '檔期結束 YYYY-MM-DD',
         status: "'planning' 規劃中｜'active' 進行中（同時只能有一個）｜'closed' 已結束", compareSeasonId: '比較用的去年同檔期 id（可空）',
         note: '備註', createdAt: '建立時間（毫秒）', by: '建立者'
@@ -82,6 +82,10 @@
         salt: '登入碼加密用的隨機值', hash: '登入碼加密後的結果（PBKDF2-SHA256，不存明碼）', iter: '加密次數',
         createdAt: '建立時間（毫秒）', createdBy: '建立者', updatedAt: '最後修改時間（毫秒）', updatedBy: '最後修改者'
       }
+    },
+    seasonRecipes: {
+      label: '各檔期配方', type: 'object',
+      fields: { '（檔期 id）': '[{ id, productId, materialId, qty }]：這個檔期的包材配方；進行中檔期的配方是原系統的 recipes（見 js/ext/season-items.js）' }
     },
     hqStock: {
       label: '總表現貨', type: 'object',
