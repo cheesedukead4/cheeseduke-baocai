@@ -560,6 +560,7 @@
 
       weeks: weeks, year: year, lastYear: prevYear, byHoliday: byHoliday, selName: selC.name, cmpName: cmpC ? cmpC.name : '', prevLabel: cmpIsLast ? '去年' : '比較檔期',
       span4: span === '4' && !spanNote, spanNote: spanNote,
+      selIsActive: !!(selC.season && selC.season.status === 'active'), activeId: (X.activeSeason() || {}).id || '', activeName: (X.activeSeason() || {}).name || '',
       hasAct: any(actArr), hasEst: f.any && any(estArr), hasPrev: any(prevArr),
       // 週的標示：依檔期對齊時用「節前 N 週／節日週／節後 N 週」，否則用星期一的日期
       label: function (k) { return byHoliday ? (k === 0 ? '節日週' : (k < 0 ? '節前 ' + (-k) + ' 週' : '節後 ' + k + ' 週')) : md(k); },
@@ -635,7 +636,10 @@
     var miss = [];
     if (!m.hasAct) miss.push('這個檔期還沒有訂單，沒有「實際」線');
     if (m.estNoHoliday) miss.push('這個檔期還沒有節日日期，預估量分不到每一週，請到「檔期設定」填節日日期');
-    else if (!m.hasEst) miss.push('這個檔期沒有預估量（預估從今年開始存；進行中的檔期用業績預估頁填的，結束或換成別的進行中檔期時才會存起來' + (group !== 'all' && group !== 'all3' ? '；也可能是填的禮盒不是 ' + gName : '') + '），沒有「預估」線');
+    else if (!m.hasEst) {
+      if (!m.selIsActive) miss.push('「' + m.selName + '」不是進行中的檔期，沒有存到預估量（預估從今年開始存，只有進行中的檔期，或結束時存過預估的檔期才有預估線）');
+      else miss.push('業績預估頁還沒有預估量：所選條件（' + gName + '、' + deptName + '）裡填的預估盒數都是 0，所以沒有「預估」線' + (m.estTotal === 0 ? '' : ''));
+    }
     if (!m.hasPrev) miss.push('比較檔期沒有訂單' + (group !== 'all' ? '（或沒有 ' + gName + '）' : '') + '，沒有比較線');
     if (m.spanNote) miss.push(m.spanNote);
     if (!m.byHoliday && m.cmpName) miss.push('這個檔期或比較檔期還沒有節日日期，所以先用「同一週」對齊');
@@ -648,6 +652,12 @@
       { label: m.prevLabel + '同週', num: true, render: function (r) { return r.prev == null ? DASH : esc(valText(r.prev, metric)); } },
       { label: '實際比' + m.prevLabel, num: true, render: function (r) { return r.act == null || r.prev == null ? DASH : growth(r.act, r.prev); } }
     ], m.weeks.map(function (t, i) { return { t: t, act: m.act[i], est: m.est[i], prev: m.prev[i] }; }), { empty: '沒有資料' });
+    var hint = '';
+    if (!m.hasEst && !m.estNoHoliday) {
+      hint = !m.selIsActive && m.activeId
+        ? '<button type="button" class="btn primary" data-act="sel" data-v="' + esc(m.activeId) + '" style="min-height:30px;padding:3px 11px;font-size:12.5px;margin-top:6px">改看進行中的檔期（' + esc(m.activeName) + '）</button>'
+        : '<button type="button" class="btn gray" data-go="xSalesForecast" style="min-height:30px;padding:3px 11px;font-size:12.5px;margin-top:6px">到「業績預估」頁填預估量</button>';
+    }
     var rate = m.hasEst && m.estSum > 0 ? '　達成率 <b>' + (Math.round(m.actSum / m.estSum * 1000) / 10) + '%</b>' : '';
     var vsPrev = m.hasPrev && m.prevSum > 0 ? '　比' + esc(m.prevLabel) + ' <b>' + (m.actSum >= m.prevSum ? '+' : '') + (Math.round((m.actSum - m.prevSum) / m.prevSum * 1000) / 10) + '%</b>' : '';
     var sumLine = '<div class="small" style="margin-top:6px"><b>合計（圖上顯示的週）</b>　實際 ' + esc(valText(m.actSum, metric)) +
@@ -665,7 +675,7 @@
       '<div style="margin-bottom:6px;font-size:12.5px">' + leg + '</div>' +
       '<div data-chartbox style="position:relative;max-width:720px">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:12px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
       sumLine +
-      (miss.length ? '<p class="small" style="margin:6px 0 0;color:var(--warn)">' + esc(miss.join('；')) + '。</p>' : '') +
+      (miss.length ? '<p class="small" style="margin:6px 0 0;color:var(--warn)">' + esc(miss.join('；')) + '。</p>' : '') + hint +
       '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">看表格版、預估比例與說明</summary><div style="margin-top:8px">' + tbl + wEdit +
       '<p class="small" style="margin:10px 0 0">' +
         (m.byHoliday ? '依檔期對齊：以各檔期節日（「檔期設定」的節日日期）所在的那一週為「節日週」，兩個檔期都從這一週往前、往後數，節日日期不同也能同週比較。' : '') +
@@ -859,6 +869,8 @@
     bindChart(el, weekly, sd.metric);
 
     el.onclick = function (e) {
+      var go = e.target.closest ? e.target.closest('[data-go]') : null;
+      if (go) { X.goPage(go.dataset.go); return; }
       var b = e.target.closest ? e.target.closest('[data-act]') : null;
       if (!b || !b.dataset.act) return;
       var a = b.dataset.act, v = b.dataset.v;
