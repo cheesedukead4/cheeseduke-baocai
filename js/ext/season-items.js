@@ -6,6 +6,7 @@
  * 資料：
  *   db.seasons[i].items       = [品項 id]        這個檔期的品項清單
  *   db.seasonRecipes[檔期id]  = [{ id, productId, materialId, qty }]   這個檔期的包材配方
+ *   db.seasonForecasts[檔期id] = { savedAt, by, forecast }             這個檔期結束或換成別的進行中檔期時存下來的業績預估（進行中檔期的預估就是業績預估頁那份）
  *
  * 「進行中」的檔期用的是原系統現有的資料，所以首頁、待裝盒、開檔檢查等原本的計算完全不用改：
  *   - 進行中檔期的品項清單 ＝ 禮盒資料／單條資料裡勾「本期上架」的品項（isListedCurrent）
@@ -79,6 +80,15 @@
     if (isActive(rec)) { X.db().recipes = cloneRecipes(clean); rerenderLegacy(); }
     return X.save();
   }
+  // 把目前業績預估頁的預估存給這個檔期（不動業績預估頁本身，它仍然只有一份）
+  function snapshotForecast(s) {
+    var d = X.db();
+    if (!s || !d || !d.salesForecastV5 || typeof d.salesForecastV5 !== 'object') return;
+    // 業績預估頁上填的「檔期名稱」和這個檔期不同時（例如那份其實是別的檔期的），不存，避免把別的檔期的預估記到這個檔期
+    var cn = String(d.salesForecastV5.campaignName || '').trim();
+    if (cn && cn !== String(s.name || '').trim()) return;
+    X.ensure('seasonForecasts')[s.id] = { savedAt: Date.now(), by: X.userName(), forecast: JSON.parse(JSON.stringify(d.salesForecastV5)) };
+  }
   // 把 newS 設為進行中前呼叫（呼叫端再把 status 改成 active 並存檔）：交換上架清單與配方
   function activate(newS, oldS) {
     var d = X.db(), sr = X.ensure('seasonRecipes');
@@ -89,6 +99,7 @@
     if (ro && ro.id !== rn.id) {
       ro.items = listedIds();
       sr[ro.id] = cloneRecipes(d.recipes);
+      snapshotForecast(ro); // 原本進行中檔期的業績預估存起來（儀表板之後選到那個檔期就用這份）
     }
     if (Array.isArray(rn.items) && rn.items.length) setFlags(rn.items); else rn.items = listedIds();
     if (Array.isArray(sr[rn.id]) && sr[rn.id].length) d.recipes = cloneRecipes(sr[rn.id]); else sr[rn.id] = cloneRecipes(d.recipes);
@@ -308,7 +319,7 @@
   }
 
   X.seasonItems = {
-    itemsOf: itemsOf, recipesOf: recipesOf, saveItems: saveItems, saveRecipes: saveRecipes, activate: activate,
+    itemsOf: itemsOf, recipesOf: recipesOf, saveItems: saveItems, saveRecipes: saveRecipes, activate: activate, snapshotForecast: snapshotForecast,
     pendingSeed: pendingSeed, seed: seed, openItemsDialog: openItemsDialog, openRecipeDialog: openRecipeDialog, summary: summary,
     _orderGroups: orderGroups, _HOLIDAYS: HOLIDAYS
   };
