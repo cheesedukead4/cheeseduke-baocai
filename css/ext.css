@@ -303,3 +303,28 @@ th{font-size:16.5px!important}
   .home-sheet [data-chartbox]{max-width:none!important}
   .home-sheet .sheet-block{margin-bottom:14px}
 }
+
+/* ===== 快速輸入／盤點：比照首頁（寬版、第一欄固定、其餘欄位平均、文字放大） ===== */
+@media (min-width:901px){
+  .panel.x-qe-panel,.panel.x-pk-panel{max-width:1320px;margin-left:0;margin-right:auto}
+  .x-qe-headrow,.x-qe-row{grid-template-columns:clamp(210px,24%,320px) repeat(5,minmax(0,1fr))!important;gap:8px!important}
+}
+.x-qe-headrow>div{font-size:15px!important}
+.x-qe-headrow small{font-size:14px!important}
+.x-qe-name b{font-size:17px!important}
+.x-qe-code,.x-qe-unit,.x-qe-done{font-size:14.5px!important}
+.x-qe-cell input{font-size:18.5px!important;height:46px!important}
+.x-qe-datetag .btn{font-size:14.5px!important}
+.x-qe-count,.x-pk-count{font-size:16.5px!important}
+.x-qe-count b,.x-pk-count b{font-size:20px!important}
+.x-qe-err,.x-pk-err{font-size:15px!important}
+.x-qe-submit,.x-pk-submit{font-size:18px!important}
+.x-qe-batch-meta,.x-pk-batch-meta{font-size:15.5px!important}
+.x-qe-batch-meta b,.x-pk-batch-meta b{font-size:16.5px!important}
+.x-qe-batch-sum,.x-pk-batch-sum,.x-qe-rec,.x-pk-rec{font-size:16px!important}
+.x-qe-batch-note,.x-pk-batch-note,.x-qe-batch-head>.btn,.x-pk-batch-head>.btn,.x-qe-rec>.btn,.x-pk-rec>.btn,.x-qe-rec-note,.x-pk-rec-note{font-size:14.5px!important}
+.x-qe-batch summary,.x-pk-batch summary{font-size:15.5px!important}
+@media (max-width:900px){
+  .x-qe-legend{font-size:14.5px!important}
+  .x-qe-lab{font-size:14px!important}
+}
