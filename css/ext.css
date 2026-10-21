@@ -248,3 +248,32 @@ html.auth-locked .app-layout,html.auth-locked .app-splash,html.auth-locked .toas
 /* 雲端同步視窗：Google 登入模式只顯示帳號與同步／登出 */
 #cloudModal.auth-mode .field,#cloudModal.auth-mode .field-help,#cloudModal.auth-mode #cloudTestBtn,#cloudModal.auth-mode #cloudSaveBtn,#cloudModal.auth-mode #cloudDisableBtn{display:none}
 #cloudModal .cloud-auth{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.7}
+
+/* ---------- 表格寬度：符合畫面寬度，不要過寬（2026-10-21） ----------
+   原本每個儲存格都不換行（nowrap）、不少表格還設了很寬的最小寬度，表格會比畫面寬很多、要左右捲動。
+   這裡讓文字可以換行、拿掉固定的最小寬度、縮小欄位內距與輸入框寬度，表格就會縮到符合畫面；
+   真的塞不下的（手機上的欄位很多的表）仍然可以在表格區塊內左右捲動。 */
+.tablewrap,.x-table-wrap,.sheet-block,.home-sheet{max-width:100%}
+table{max-width:100%;table-layout:auto}
+th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:normal;padding-left:6px!important;padding-right:6px!important}
+.x-table th,.x-table td{padding:8px 6px!important}
+.sheet-table,.initial-sheet,.folding-table,.forecast-sheet,.forecast-summary-table,.forecast-product-table,
+.sheet-table.gift-home-table,.gift-home-table{width:100%!important;min-width:0!important}
+@media(max-width:900px){.sheet-table{min-width:0!important}}
+#prodBody td:nth-child(3),#prodBody td:nth-child(4){min-width:0!important}
+.initial-sheet .initial-name{min-width:0!important}
+/* 欄位裡的輸入框：跟著欄寬縮放，不要把欄撐寬 */
+.initial-num,.fold-num,.forecast-sheet input,.forecast-sheet td.sf-amount input,.forecast-sheet .sf-date-input,.forecast-sheet .sf-price input,
+.forecast-summary-table input,.forecast-product-table input,.forecast-product-table .sf-amount-row input{width:100%!important;min-width:0!important;max-width:100%;box-sizing:border-box}
+.forecast-sheet .sf-product,.forecast-product-table .sf-amount-row td,.forecast-product-table td{min-width:0!important}
+.x-table input[type=number]{width:100%;max-width:96px}
+.x-table select{max-width:100%}
+/* 數字、代號、按鈕列不要被拆得很難看 */
+td.num,.num,.sort-action-col{white-space:nowrap!important}
+td .btn,td button{white-space:nowrap}
+/* 代號、品名欄不要被擠成一個字一行：給最小寬度，其他欄位吃剩下的寬度 */
+.code-col{min-width:76px;white-space:nowrap!important;overflow-wrap:normal}
+.name-cell,td.name-cell{min-width:160px}
+th{overflow-wrap:normal;word-break:keep-all}
+td{word-break:normal}
+#dashboard th:nth-child(2),#dashboard th:nth-child(3){white-space:nowrap!important}
