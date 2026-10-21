@@ -283,19 +283,24 @@ th{font-size:14px!important}
 .sheet-table th,.sheet-table thead th{font-size:15px!important;font-weight:700;padding-top:10px!important;padding-bottom:10px!important}
 .x-table th{font-size:14px!important}
 .sheet-caption{font-size:14px}
-/* 首頁：包材庫存、單條內容物、禮盒品項。固定欄寬比例：代號品名給足寬度，數字欄平均，輸入欄不要太寬
+/* 首頁：包材庫存、單條內容物、禮盒品項。
+   包材庫存：固定欄寬比例，撐滿畫面。單條內容物、禮盒品項：欄位固定成緊湊的像素寬度，表格不撐滿（太寬很難看）。
    （用 !important：原本的 legacy.css 有 .gift-home-table{table-layout:auto!important}、.name-col{width:1%} 等規則會蓋掉） */
 @media(min-width:901px){
-  table.sheet-table.home-t-mat,table.sheet-table.home-t-single,table.sheet-table.home-t-gift{table-layout:fixed!important;width:100%!important;min-width:0!important}
+  table.sheet-table.home-t-mat{table-layout:fixed!important;width:100%!important;min-width:0!important}
   table.home-t-mat th:nth-child(1){width:5%!important}   table.home-t-mat th:nth-child(2){width:9%!important}   table.home-t-mat th:nth-child(3){width:18%!important}
   table.home-t-mat th:nth-child(4),table.home-t-mat th:nth-child(5),table.home-t-mat th:nth-child(6),table.home-t-mat th:nth-child(7),table.home-t-mat th:nth-child(8){width:7.6%!important}
   table.home-t-mat th:nth-child(9){width:9%!important}   table.home-t-mat th:nth-child(10){width:12%!important}  table.home-t-mat th:nth-child(11){width:9%!important}
-  table.home-t-single th:nth-child(1){width:5%!important} table.home-t-single th:nth-child(2){width:9%!important} table.home-t-single th:nth-child(3){width:21%!important}
-  table.home-t-single th:nth-child(n+4){width:9.28%!important}
-  table.home-t-gift th:nth-child(1){width:5%!important}  table.home-t-gift th:nth-child(2){width:9%!important}  table.home-t-gift th:nth-child(3){width:20%!important}
-  table.home-t-gift th:nth-child(n+4):nth-child(-n+9){width:9%!important} table.home-t-gift th:nth-child(10){width:12%!important}
+  table.sheet-table.home-t-single{table-layout:fixed!important;width:784px!important;max-width:100%!important;min-width:0!important}
+  table.home-t-single th:nth-child(1){width:44px!important} table.home-t-single th:nth-child(2){width:86px!important} table.home-t-single th:nth-child(3){width:150px!important}
+  table.home-t-single th:nth-child(n+4){width:72px!important}
+  table.sheet-table.home-t-gift{table-layout:fixed!important;width:812px!important;max-width:100%!important;min-width:0!important}
+  table.home-t-gift th:nth-child(1){width:44px!important}  table.home-t-gift th:nth-child(2){width:86px!important}  table.home-t-gift th:nth-child(3){width:150px!important}
+  table.home-t-gift th:nth-child(n+4):nth-child(-n+9){width:72px!important} table.home-t-gift th:nth-child(10){width:100px!important}
   table.home-t-mat input,table.home-t-single input,table.home-t-gift input{width:100%;max-width:100%;box-sizing:border-box;text-align:right}
   table.home-t-mat td.name-cell,table.home-t-single td.name-cell,table.home-t-gift td.name-cell,
   table.home-t-mat th.name-col,table.home-t-single th.name-col,table.home-t-gift th.name-col{width:auto;white-space:normal!important}
   table.home-t-mat th,table.home-t-single th,table.home-t-gift th{white-space:normal!important;word-break:normal!important}
+  /* 這兩張表不撐滿時，左邊對齊，標題和說明列也不用拉到整個畫面寬 */
+  .home-table-panel[data-home-panel="single"] .tablewrap,.home-table-panel[data-home-panel="gift"] .tablewrap{overflow-x:auto}
 }
