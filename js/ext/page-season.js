@@ -180,7 +180,7 @@
         '<div class="small" style="margin-top:6px">節日日期、期間、品項清單都來自訂單與內建的節日表（過年填除夕），建立後可以再修改；配方先沿用目前的配方，再逐檔期調整。</div>');
     }
 
-    var SM = ' style="min-height:30px;padding:2px 9px;font-size:12px"'; // 小按鈕，列表不要太大
+    var SM = ' style="min-height:30px;padding:2px 9px;font-size:14.5px"'; // 小按鈕，列表不要太大
     var cols = [
       { label: '檔期', render: function (s) {
         return '<strong' + (s.note ? ' title="' + esc(s.note) + '"' : '') + '>' + esc(s.name) + '</strong> ' + kindTag(s.kind) + ' ' + statusTag(s.status);
@@ -588,13 +588,13 @@
     for (var k = 0; k <= 4; k++) {
       var gv = top * k / 4, gy = y(gv);
       g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '" stroke="var(--line)" stroke-width="1"/>' +
-        '<text x="' + (L - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="var(--text-3)">' + esc(axisFmt(gv, metric)) + '</text>';
+        '<text x="' + (L - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="13" fill="var(--text-3)">' + esc(axisFmt(gv, metric)) + '</text>';
     }
     var step = Math.max(1, Math.ceil(n / (m.byHoliday ? 8 : 10))), xl = '';
     m.weeks.forEach(function (t, i) {
-      if (i % step === 0) xl += '<text x="' + x(i) + '" y="' + (H - B + 18) + '" text-anchor="middle" font-size="11" fill="' + (m.byHoliday && t === 0 ? 'var(--text)' : 'var(--text-3)') + '"' + (m.byHoliday && t === 0 ? ' font-weight="700"' : '') + '>' + esc(m.label(t)) + '</text>';
+      if (i % step === 0) xl += '<text x="' + x(i) + '" y="' + (H - B + 18) + '" text-anchor="middle" font-size="13" fill="' + (m.byHoliday && t === 0 ? 'var(--text)' : 'var(--text-3)') + '"' + (m.byHoliday && t === 0 ? ' font-weight="700"' : '') + '>' + esc(m.label(t)) + '</text>';
     });
-    xl += '<text x="' + L + '" y="' + (H - 6) + '" font-size="10" fill="var(--text-3)">' + (m.byHoliday ? '橫軸：離節日幾週（節日週＝節日當天所在的那一週，週一～週日）' : '橫軸：每週一～週日，標的是星期一的日期') + '</text>';
+    xl += '<text x="' + L + '" y="' + (H - 6) + '" font-size="12" fill="var(--text-3)">' + (m.byHoliday ? '橫軸：離節日幾週（節日週＝節日當天所在的那一週，週一～週日）' : '橫軸：每週一～週日，標的是星期一的日期') + '</text>';
     // 節日週的標線（依檔期對齊時）
     var holi = '';
     if (m.byHoliday) { var hi0 = m.weeks.indexOf(0); if (hi0 >= 0) holi = '<line x1="' + x(hi0) + '" x2="' + x(hi0) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--line-strong)" stroke-width="1.5"/>'; }
@@ -617,7 +617,7 @@
     ends.sort(function (p, q) { return p.y - q.y; });
     ends.forEach(function (e, i) {
       for (var j = 0; j < i; j++) if (Math.abs(ends[j].x - e.x) < 60 && e.y - ends[j].y < 15) e.y = ends[j].y + 15;
-      labels += '<text x="' + e.x + '" y="' + e.y + '" font-size="12" font-weight="700" fill="var(--text)">' + e.name + '</text>';
+      labels += '<text x="' + e.x + '" y="' + e.y + '" font-size="14" font-weight="700" fill="var(--text)">' + e.name + '</text>';
     });
     return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際、預估與去年的' + (metric === 'amt' ? '金額' : '禮盒數') + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
       g + xl + holi + '<line data-guide x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>' + lines + labels + '</svg>',
@@ -655,8 +655,8 @@
     var hint = '';
     if (!m.hasEst && !m.estNoHoliday) {
       hint = !m.selIsActive && m.activeId
-        ? '<button type="button" class="btn primary" data-act="sel" data-v="' + esc(m.activeId) + '" style="min-height:30px;padding:3px 11px;font-size:12.5px;margin-top:6px">改看進行中的檔期（' + esc(m.activeName) + '）</button>'
-        : '<button type="button" class="btn gray" data-go="xSalesForecast" style="min-height:30px;padding:3px 11px;font-size:12.5px;margin-top:6px">到「業績預估」頁填預估量</button>';
+        ? '<button type="button" class="btn primary" data-act="sel" data-v="' + esc(m.activeId) + '" style="min-height:30px;padding:3px 11px;font-size:15px;margin-top:6px">改看進行中的檔期（' + esc(m.activeName) + '）</button>'
+        : '<button type="button" class="btn gray" data-go="xSalesForecast" style="min-height:30px;padding:3px 11px;font-size:15px;margin-top:6px">到「業績預估」頁填預估量</button>';
     }
     var rate = m.hasEst && m.estSum > 0 ? '　達成率 <b>' + (Math.round(m.actSum / m.estSum * 1000) / 10) + '%</b>' : '';
     var vsPrev = m.hasPrev && m.prevSum > 0 ? '　比' + esc(m.prevLabel) + ' <b>' + (m.actSum >= m.prevSum ? '+' : '') + (Math.round((m.actSum - m.prevSum) / m.prevSum * 1000) / 10) + '%</b>' : '';
@@ -667,13 +667,13 @@
       var wl = ['節前 3 週', '節前 2 週', '節前 1 週', '節日週'];
       wEdit = '<div style="margin-top:12px"><b>預估的週別比例</b> <span class="small">（' + (m.weightsCustom ? '你設定的' : '預設：照比較檔期那四週的實際進單比例；比較檔期沒資料就平均') + '）</span><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px">' +
         wl.map(function (t, i) { return '<label class="small">' + t + ' <input data-w="' + i + '" type="number" min="0" step="0.1" value="' + (Math.round(m.weights[i] * 1000) / 10) + '" style="width:70px;padding:5px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> %</label>'; }).join('') +
-        '<button type="button" class="btn primary" data-act="wsave" style="min-height:30px;padding:3px 11px;font-size:12.5px">儲存比例</button>' +
-        (m.weightsCustom ? '<button type="button" class="btn gray" data-act="wreset" style="min-height:30px;padding:3px 11px;font-size:12.5px">改回照比較檔期</button>' : '') +
+        '<button type="button" class="btn primary" data-act="wsave" style="min-height:30px;padding:3px 11px;font-size:15px">儲存比例</button>' +
+        (m.weightsCustom ? '<button type="button" class="btn gray" data-act="wreset" style="min-height:30px;padding:3px 11px;font-size:15px">改回照比較檔期</button>' : '') +
         '</div><div class="small" style="margin-top:4px">四個比例加起來不用剛好是 100，系統會自動換算；預估總量乘上比例，就是每週的預估量。</div></div>';
     }
     return X.ui.card(deptName + '｜' + (m.cum ? '累計' : '每週') + (metric === 'amt' ? '金額' : '禮盒數') + '（' + gName + '）',
-      '<div style="margin-bottom:6px;font-size:12.5px">' + leg + '</div>' +
-      '<div data-chartbox style="position:relative;max-width:720px">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:12px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
+      '<div style="margin-bottom:6px;font-size:15px">' + leg + '</div>' +
+      '<div data-chartbox style="position:relative;max-width:720px">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:14.5px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
       sumLine +
       (miss.length ? '<p class="small" style="margin:6px 0 0;color:var(--warn)">' + esc(miss.join('；')) + '。</p>' : '') + hint +
       '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">看表格版、預估比例與說明</summary><div style="margin-top:8px">' + tbl + wEdit +
@@ -763,7 +763,7 @@
 
     // 用按鈕選：檔期、比較檔期、部門、金額／禮盒數、禮盒規格
     var chip = function (act, id, label, on) {
-      return '<button type="button" class="btn ' + (on ? 'primary' : 'gray') + '" data-act="' + act + '" data-v="' + esc(id) + '" aria-pressed="' + (on ? 'true' : 'false') + '" style="min-height:30px;padding:3px 11px;font-size:12.5px">' + esc(label) + '</button>';
+      return '<button type="button" class="btn ' + (on ? 'primary' : 'gray') + '" data-act="' + act + '" data-v="' + esc(id) + '" aria-pressed="' + (on ? 'true' : 'false') + '" style="min-height:30px;padding:3px 11px;font-size:15px">' + esc(label) + '</button>';
     };
     var row = function (label, chips) {
       return '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span class="small" style="min-width:60px;font-weight:700">' + label + '</span>' + chips + '</div>';

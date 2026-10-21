@@ -4,14 +4,14 @@
 body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 
 /* 提示列 */
-.x-banner{border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.6;border:1px solid}
+.x-banner{border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:15.5px;line-height:1.6;border:1px solid}
 .x-banner.x-info{background:var(--brand-soft);border-color:#cfdcfa;color:#2b437f}
 .x-banner.x-warn{background:var(--warn-soft);border-color:#f1d9a6;color:#7a5414}
 .x-banner.x-bad{background:var(--bad-soft);border-color:#f3c3c1;color:#8f2420}
 .x-banner.x-ok{background:var(--ok-soft);border-color:#bfe3cc;color:#1d6b3e}
 
 /* 標籤 */
-.x-tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+.x-tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:14.5px;font-weight:700;white-space:nowrap}
 .x-tag.x-muted{background:#eef1f6;color:var(--text-2)}
 .x-tag.x-info{background:var(--brand-soft);color:var(--brand)}
 .x-tag.x-ok{background:var(--ok-soft);color:var(--ok)}
@@ -28,28 +28,28 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 /* 指標 */
 .x-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
 .x-kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
-.x-kpi span{display:block;font-size:12.5px;color:var(--text-2);font-weight:700}
-.x-kpi strong{display:block;font-size:24px;margin-top:4px;font-variant-numeric:tabular-nums}
-.x-kpi small{display:block;font-size:12px;color:var(--text-3);margin-top:2px}
+.x-kpi span{display:block;font-size:15px;color:var(--text-2);font-weight:700}
+.x-kpi strong{display:block;font-size:26.5px;margin-top:4px;font-variant-numeric:tabular-nums}
+.x-kpi small{display:block;font-size:14.5px;color:var(--text-3);margin-top:2px}
 .x-kpi.x-ok strong{color:var(--ok)}.x-kpi.x-warn strong{color:var(--warn)}.x-kpi.x-bad strong{color:var(--bad)}.x-kpi.x-info strong{color:var(--brand)}
 
 /* 表格 */
-.x-table{width:100%;border-collapse:collapse;font-size:13.5px}
-.x-table th{background:var(--surface-2);color:var(--text-2);font-weight:700;font-size:12.5px;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
+.x-table{width:100%;border-collapse:collapse;font-size:16px}
+.x-table th{background:var(--surface-2);color:var(--text-2);font-weight:700;font-size:15px;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
 .x-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .x-table .num{text-align:right;font-variant-numeric:tabular-nums}
 .x-table input,.x-table select{border:1px solid var(--line-strong);border-radius:7px;padding:6px 8px;font:inherit;max-width:100%}
 .x-table input[type=number]{width:96px;text-align:right}
 .x-table .x-row-actions{display:flex;gap:6px;justify-content:flex-end}
-.x-table .x-row-actions button{padding:5px 10px;font-size:12.5px}
+.x-table .x-row-actions button{padding:5px 10px;font-size:15px}
 
 /* 表單 */
 .x-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 14px}
-.x-field{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:700;color:var(--text-2)}
+.x-field{display:flex;flex-direction:column;gap:5px;font-size:15px;font-weight:700;color:var(--text-2)}
 .x-field i{color:var(--bad);font-style:normal}
 .x-field input,.x-field select,.x-field textarea{border:1px solid var(--line-strong);border-radius:8px;padding:9px 11px;font:inherit;font-weight:400;color:var(--text);background:#fff;width:100%;box-sizing:border-box}
 .x-full{grid-column:1/-1}
-.x-check{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text)}
+.x-check{display:flex;align-items:center;gap:8px;font-size:16px;color:var(--text)}
 .x-dialog .cms-modal-box{width:min(620px,100%)}
 .x-dialog .x-form{margin-top:6px}
 
@@ -64,7 +64,7 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 
 /* 首頁提醒列 */
 .x-alertbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
-.x-alertbar a,.x-alertbar button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;text-decoration:none}
+.x-alertbar a,.x-alertbar button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font:inherit;font-size:15.5px;font-weight:700;color:var(--text);cursor:pointer;text-decoration:none}
 .x-alertbar .x-bad{border-color:#f3c3c1;background:var(--bad-soft);color:var(--bad)}
 .x-alertbar .x-warn{border-color:#f1d9a6;background:var(--warn-soft);color:var(--warn)}
 .x-alertbar .x-ok{border-color:#bfe3cc;background:var(--ok-soft);color:var(--ok)}
@@ -173,24 +173,24 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 }
 
 /* ---------- 計算規則（xCalcRules） ---------- */
-.xr-group-title{font-size:13px;font-weight:800;color:var(--text-2);margin:18px 0 8px}
+.xr-group-title{font-size:15.5px;font-weight:800;color:var(--text-2);margin:18px 0 8px}
 .xr-param{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surface);transition:box-shadow .3s}
 .xr-param.xr-changed{border-color:#cfdcfa;background:var(--brand-soft)}
 .xr-param.xr-flash{box-shadow:0 0 0 3px var(--brand)}
 .xr-param-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
-.xr-param-head b{font-size:14.5px;line-height:1.5}
+.xr-param-head b{font-size:17px;line-height:1.5}
 .xr-param-head span{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
-.xr-help{font-size:12.5px;color:var(--text-2);margin:6px 0 10px;line-height:1.65}
-.xr-uses{font-size:12px;color:var(--text-3);margin-top:8px;line-height:1.6}
+.xr-help{font-size:15px;color:var(--text-2);margin:6px 0 10px;line-height:1.65}
+.xr-uses{font-size:14.5px;color:var(--text-3);margin-top:8px;line-height:1.6}
 .xr-months{display:flex;flex-wrap:wrap;gap:6px}
-.xr-months label{position:relative;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;min-height:36px;min-width:58px;box-sizing:border-box}
+.xr-months label{position:relative;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;font-size:15.5px;font-weight:700;cursor:pointer;background:#fff;min-height:36px;min-width:58px;box-sizing:border-box}
 .xr-months label.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .xr-months input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 .xr-months label:focus-within{outline:2px solid var(--brand);outline-offset:2px}
 .xr-input{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .xr-input input[type=number],.xr-input select{border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font:inherit;min-height:42px;background:#fff;max-width:100%;box-sizing:border-box}
 .xr-input input[type=number]{width:150px}
-.xr-err{color:var(--bad);font-size:12.5px;font-weight:700}
+.xr-err{color:var(--bad);font-size:15px;font-weight:700}
 .xr-savebar{position:sticky;bottom:10px;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #cfdcfa;box-shadow:var(--shadow-lg);border-radius:12px;padding:10px 14px;margin:12px 0}
 .xr-savebar b{flex:1 1 200px}
 .xr-entry{border-top:1px solid var(--line)}
@@ -198,16 +198,16 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 .xr-entry summary::-webkit-details-marker{display:none}
 .xr-entry summary::before{content:'▸';color:var(--brand);font-weight:800;width:12px}
 .xr-entry[open] summary::before{content:'▾'}
-.xr-entry summary b{font-size:14.5px}
-.xr-entry summary span{font-size:12.5px;color:var(--text-2);flex-basis:100%;padding-left:20px}
+.xr-entry summary b{font-size:17px}
+.xr-entry summary span{font-size:15px;color:var(--text-2);flex-basis:100%;padding-left:20px}
 .xr-body{padding:0 4px 14px 20px}
-.xr-body ol{margin:4px 0 10px;padding-left:20px;line-height:1.8;font-size:14px}
+.xr-body ol{margin:4px 0 10px;padding-left:20px;line-height:1.8;font-size:16.5px}
 .xr-val{display:inline-block;background:var(--brand-soft);color:var(--brand);border-radius:6px;padding:0 6px;font-weight:800}
 .xr-chiprow{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
-.xr-chip{border:1px solid #cfdcfa;background:var(--brand-soft);color:var(--brand);border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;min-height:32px;text-align:left}
-.xr-notes{background:var(--warn-soft);border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.7;color:#7a5414}
+.xr-chip{border:1px solid #cfdcfa;background:var(--brand-soft);color:var(--brand);border-radius:999px;padding:5px 12px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;min-height:32px;text-align:left}
+.xr-notes{background:var(--warn-soft);border-radius:8px;padding:8px 12px;font-size:15.5px;line-height:1.7;color:#7a5414}
 .xr-notes ul{margin:4px 0 0;padding-left:18px}
-.xr-code{font-size:11.5px;color:var(--text-3);margin-top:8px;word-break:break-all}
+.xr-code{font-size:14px;color:var(--text-3);margin-top:8px;word-break:break-all}
 @media (max-width:640px){
   .xr-param{padding:10px 12px}
   .xr-body{padding-left:8px}
@@ -216,7 +216,7 @@ body:not(.admin-mode) #nav .admin-nav .x-stage-dot{display:none}
 }
 
 /* ---------- 人員登入與權限（access.js、page-users.js） ---------- */
-.person-badge{display:none;font-size:12px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:999px;padding:4px 10px;white-space:nowrap}
+.person-badge{display:none;font-size:14.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:999px;padding:4px 10px;white-space:nowrap}
 body.user-mode .person-badge{display:inline-block}
 body.user-mode .lock-hint{display:none}
 /* 人員登入：被開放的頁面看起來和管理員一樣（不上鎖），沒被開放的整個藏起來 */
@@ -224,30 +224,30 @@ body:not(.admin-mode) #nav .admin-nav.user-ok:not(.active):not(:hover){color:var
 body:not(.admin-mode) #nav .admin-nav.user-ok::after{display:none}
 body.user-mode:not(.admin-mode) #nav .admin-nav:not(.user-ok){display:none!important}
 .xu-group{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px}
-.xu-group-name{font-size:12px;font-weight:800;color:var(--text-2);margin-bottom:4px}
+.xu-group-name{font-size:14.5px;font-weight:800;color:var(--text-2);margin-bottom:4px}
 .xu-checks{display:flex;flex-wrap:wrap;gap:4px 16px}
-.xu-check{display:inline-flex;align-items:center;gap:6px;font-size:14px;min-height:34px;cursor:pointer}
+.xu-check{display:inline-flex;align-items:center;gap:6px;font-size:16.5px;min-height:34px;cursor:pointer}
 .xu-check input{width:18px;height:18px}
-.xu-code{font-size:34px;font-weight:800;letter-spacing:.2em;text-align:center;background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:12px;padding:16px 8px;user-select:all;word-break:break-all}
+.xu-code{font-size:36.5px;font-weight:800;letter-spacing:.2em;text-align:center;background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:12px;padding:16px 8px;user-select:all;word-break:break-all}
 @media (max-width:640px){.person-badge{display:none!important}}
 
 /* ---------- Google 登入畫面（js/auth.js） ---------- */
 html.auth-locked .app-layout,html.auth-locked .app-splash,html.auth-locked .toast-region,html.auth-locked .cms-modal{display:none!important}
 #loginGate{position:fixed;inset:0;z-index:200000;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg);overflow:auto}
 #loginGate .lg-box{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-lg);padding:32px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
-#loginGate h1{margin:6px 0 0;font-size:20px}
+#loginGate h1{margin:6px 0 0;font-size:22.5px}
 #loginGate .lg-sub{margin:0 0 8px;color:var(--text-2)}
 #loginGate .lg-btn{min-height:44px;display:flex;justify-content:center}
-#loginGate .lg-msg{margin:4px 0 0;min-height:20px;font-size:13px;color:var(--text-2);line-height:1.6}
+#loginGate .lg-msg{margin:4px 0 0;min-height:20px;font-size:15.5px;color:var(--text-2);line-height:1.6}
 #loginGate .lg-msg.bad{color:var(--bad);font-weight:700}
 #loginGate .lg-retry{border:1px solid var(--line-strong);background:var(--surface-2);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
-#loginGate .lg-help{margin:10px 0 0;font-size:12px;color:var(--text-3);line-height:1.7}
+#loginGate .lg-help{margin:10px 0 0;font-size:14.5px;color:var(--text-3);line-height:1.7}
 #loginGate .lg-mock{display:flex;gap:6px;width:100%;margin-top:6px}
 #loginGate .lg-mock input{flex:1;min-width:0;padding:8px;border:1px dashed var(--line-strong);border-radius:8px;font:inherit}
 #loginGate .lg-mock button{padding:8px 12px;border:1px dashed var(--line-strong);background:var(--surface-2);border-radius:8px;font:inherit;cursor:pointer}
 /* 雲端同步視窗：Google 登入模式只顯示帳號與同步／登出 */
 #cloudModal.auth-mode .field,#cloudModal.auth-mode .field-help,#cloudModal.auth-mode #cloudTestBtn,#cloudModal.auth-mode #cloudSaveBtn,#cloudModal.auth-mode #cloudDisableBtn{display:none}
-#cloudModal .cloud-auth{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.7}
+#cloudModal .cloud-auth{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15.5px;line-height:1.7}
 
 /* ---------- 表格寬度：符合畫面寬度，不要過寬（2026-10-21） ----------
    原本每個儲存格都不換行（nowrap）、不少表格還設了很寬的最小寬度，表格會比畫面寬很多、要左右捲動。
@@ -279,10 +279,10 @@ td{word-break:normal}
 #dashboard th:nth-child(2),#dashboard th:nth-child(3){white-space:nowrap!important}
 
 /* ---------- 表格標題字放大、首頁三張表的欄寬（2026-10-21） ---------- */
-th{font-size:14px!important}
-.sheet-table th,.sheet-table thead th{font-size:15px!important;font-weight:700;padding-top:10px!important;padding-bottom:10px!important}
-.x-table th{font-size:14px!important}
-.sheet-caption{font-size:14px}
+th{font-size:16.5px!important}
+.sheet-table th,.sheet-table thead th{font-size:17.5px!important;font-weight:700;padding-top:10px!important;padding-bottom:10px!important}
+.x-table th{font-size:16.5px!important}
+.sheet-caption{font-size:16.5px}
 /* 首頁整體版面一致、電腦版用寬版（2026-10-21）：四個分頁（包材庫存、單條內容物、禮盒品項、業績儀表板）都用同一個寬版內容寬度，
    三張表都撐滿面板；前兩欄（拖曳、編號）固定寬度，其餘欄位平均分配剩下的寬度。
    欄位標題字 15 像素，列高一致。畫面寬度 900 像素以下維持自動欄寬。
@@ -298,7 +298,7 @@ th{font-size:14px!important}
   table.home-t-mat td.name-cell,table.home-t-single td.name-cell,table.home-t-gift td.name-cell,
   table.home-t-mat th.name-col,table.home-t-single th.name-col,table.home-t-gift th.name-col{width:auto;white-space:normal!important}
   table.home-t-mat th,table.home-t-single th,table.home-t-gift th{white-space:normal!important;word-break:normal!important}
-  #dashboard th,#dashboard .x-table th{font-size:15px!important}
+  #dashboard th,#dashboard .x-table th{font-size:17.5px!important}
   #dashboard tbody td{padding-top:10px!important;padding-bottom:10px!important}
   .home-sheet [data-chartbox]{max-width:none!important}
   .home-sheet .sheet-block{margin-bottom:14px}
