@@ -328,3 +328,13 @@ th{font-size:16.5px!important}
   .x-qe-legend{font-size:14.5px!important}
   .x-qe-lab{font-size:14px!important}
 }
+
+/* ===== 主檔資料（包材／單條／禮盒）：比照首頁（寬版、編號與操作欄固定、其餘平均） ===== */
+@media (min-width:901px){
+  #materials>.panel,#singles>.panel,#products>.panel{max-width:1320px;margin-left:0;margin-right:auto}
+  #materials .tablewrap table,#singles .tablewrap table,#products .tablewrap table{table-layout:fixed!important;width:100%!important;max-width:none!important;min-width:0!important}
+  #materials .tablewrap th,#singles .tablewrap th,#products .tablewrap th{width:auto!important;white-space:normal!important;font-size:17.5px!important}
+  #materials .tablewrap th:first-child,#singles .tablewrap th:first-child,#products .tablewrap th:first-child{width:130px!important}
+  #materials .tablewrap th:last-child,#singles .tablewrap th:last-child,#products .tablewrap th:last-child{width:150px!important}
+  #materials .tablewrap td,#singles .tablewrap td,#products .tablewrap td{white-space:normal;overflow-wrap:anywhere;padding-top:10px;padding-bottom:10px}
+}
