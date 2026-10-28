@@ -260,7 +260,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:normal;padd
 .sheet-table,.initial-sheet,.folding-table,.forecast-sheet,.forecast-summary-table,.forecast-product-table,
 .sheet-table.gift-home-table,.gift-home-table{width:100%!important;min-width:0!important}
 @media(max-width:900px){.sheet-table{min-width:0!important}}
-#prodBody td:nth-child(3),#prodBody td:nth-child(4){min-width:0!important}
+#prodBody td:nth-child(3),#prodBody td:nth-child(4),#prodBodyOther td:nth-child(3),#prodBodyOther td:nth-child(4){min-width:0!important}
 .initial-sheet .initial-name{min-width:0!important}
 /* 欄位裡的輸入框：跟著欄寬縮放，不要把欄撐寬 */
 .initial-num,.fold-num,.forecast-sheet input,.forecast-sheet td.sf-amount input,.forecast-sheet .sf-date-input,.forecast-sheet .sf-price input,
@@ -337,4 +337,7 @@ th{font-size:16.5px!important}
   #materials .tablewrap th:first-child,#singles .tablewrap th:first-child,#products .tablewrap th:first-child{width:130px!important}
   #materials .tablewrap th:last-child,#singles .tablewrap th:last-child,#products .tablewrap th:last-child{width:150px!important}
   #materials .tablewrap td,#singles .tablewrap td,#products .tablewrap td{white-space:normal;overflow-wrap:anywhere;padding-top:10px;padding-bottom:10px}
+}
+@media (min-width:901px){
+  #products .tablewrap th:last-child{width:200px!important}
 }

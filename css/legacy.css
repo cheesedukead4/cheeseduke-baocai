@@ -50,8 +50,8 @@ button:disabled{cursor:not-allowed;opacity:.55}
 #unifiedFormulaBody td{vertical-align:top;line-height:1.65}
 #unifiedFormulaBody td:nth-child(2),#unifiedFormulaBody td:nth-child(3){max-width:420px;white-space:normal}
 
-#prodBody td{vertical-align:top;line-height:1.65}
-#prodBody td:nth-child(3),#prodBody td:nth-child(4){white-space:normal;min-width:220px}
+#prodBody td,#prodBodyOther td{vertical-align:top;line-height:1.65}
+#prodBody td:nth-child(3),#prodBody td:nth-child(4),#prodBodyOther td:nth-child(3),#prodBodyOther td:nth-child(4){white-space:normal;min-width:220px}
 
 .collapse-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .collapse-head h2{margin:0}

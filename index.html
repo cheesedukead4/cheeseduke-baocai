@@ -320,13 +320,26 @@
 </div>
 
 <div class="panel collapsible-panel" id="giftListPanel">
-<div class="collapse-head"><h2>已建立好的禮盒資料</h2><button class="collapse-btn" onclick="togglePanel('giftListPanel',this)">收合</button></div>
+<div class="collapse-head"><h2>本期上架的禮盒資料 <span class="small" id="giftListedCount"></span></h2><button class="collapse-btn" onclick="togglePanel('giftListPanel',this)">收合</button></div>
 <div class="collapse-body">
-<p class="small">每個禮盒一列，直接顯示單條內容物及完整包材配方。</p>
+<p class="small">目前勾選「本期上架」的禮盒（會顯示在首頁禮盒品項與業績預估）。取消勾選會移到下方「已建立過的禮盒」。</p>
 <div class="tablewrap gift-list-no-scroll">
 <table class="gift-list-fit">
 <thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
 <tbody id="prodBody"></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="panel collapsible-panel" id="giftOtherPanel">
+<div class="collapse-head"><h2>已建立過的禮盒資料（未上架） <span class="small" id="giftOtherCount"></span></h2><button class="collapse-btn" onclick="togglePanel('giftOtherPanel',this)">收合</button></div>
+<div class="collapse-body">
+<p class="small">以前建立過、目前沒有上架的禮盒。要再上架時勾選「本期上架」就會移到上方。</p>
+<div class="tablewrap gift-list-no-scroll">
+<table class="gift-list-fit">
+<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
+<tbody id="prodBodyOther"></tbody>
 </table>
 </div>
 </div>

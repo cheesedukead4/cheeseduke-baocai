@@ -227,6 +227,23 @@ function deleteSingleItem(i){
 
 
 
+function renderGiftListTables(){
+ const body=document.getElementById('prodBody'),other=document.getElementById('prodBodyOther');if(!body||!other)return;
+ const all=db.products.filter(x=>(x.category||'禮盒')!=='單條')
+  .sort((a,b)=>(a.code||'').localeCompare((b.code||''),'zh-TW',{numeric:true,sensitivity:'base'}));
+ const row=x=>{
+   let comps=(db.components||[]).filter(r=>r.productId===x.id);
+   let mats=(db.recipes||[]).filter(r=>r.productId===x.id);
+   let ctext=comps.length?comps.map(r=>`${prodName(r.componentProductId)} ×${r.qty}`).join('、'):'尚未設定';
+   let mtext=mats.length?mats.map(r=>`${matName(r.materialId)} ×${r.qty}`).join('、'):'尚未設定';
+   return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="copyGiftFull('${x.id}')">複製</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="7"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
+ };
+ const on=all.filter(x=>x.isListedCurrent===true),off=all.filter(x=>x.isListedCurrent!==true);
+ body.innerHTML=on.length?on.map(row).join(''):'<tr><td colspan="7" class="empty">目前沒有上架的禮盒（到下方勾選「本期上架」）</td></tr>';
+ other.innerHTML=off.length?off.map(row).join(''):'<tr><td colspan="7" class="empty">沒有未上架的禮盒</td></tr>';
+ const c1=document.getElementById('giftListedCount'),c2=document.getElementById('giftOtherCount');
+ if(c1)c1.textContent='（'+on.length+' 個）';if(c2)c2.textContent='（'+off.length+' 個）';
+}
 function togglePanel(panelId,btn){
  const panel=document.getElementById(panelId);if(!panel)return;
  panel.classList.toggle('collapsed');
@@ -296,6 +313,7 @@ function collectGiftFormula(){
 function saveGiftWithFormula(){
  const code=pCode.value.trim(),name=pName.value.trim();
  if(!name)return alert('請輸入禮盒名稱');
+ if(code&&db.products.some(x=>x.id!==editGiftWithFormula&&(x.category||'禮盒')!=='單條'&&String(x.code||'').trim()===code))return alert(`禮盒編號「${code}」已經有了，請換一個編號（複製禮盒時要改成新的編號）`);
  let rows;
  try{rows=collectGiftFormula()}catch(e){return alert(e.message)}
  if(!rows.length && !editGiftWithFormula)return alert('請至少建立一組禮盒配方');
@@ -346,6 +364,16 @@ function editGiftFull(pid){
    document.getElementById('gfQty'+i).value=v.qty;
  });
  pCode.scrollIntoView({behavior:'smooth',block:'center'});
+}
+// 複製禮盒：把品名、售價與配方帶進上方「新增／編輯」表單當新禮盒（編號留空、預設不上架），改完編號按儲存才會建立
+function copyGiftFull(pid){
+ const src=db.products.find(x=>x.id===pid);if(!src)return;
+ editGiftFull(pid);
+ editGiftWithFormula=null;
+ pCode.value='';
+ pName.value=(src.name||'')+'（複製）';
+ document.getElementById('giftCurrentListed').checked=false;
+ pCode.focus();
 }
 function deleteGiftFull(pid){
  const p=db.products.find(x=>x.id===pid);
@@ -1011,13 +1039,7 @@ function render(){
  if(window.rProduct)opts(rProduct,db.products,'name');let giftProducts=db.products
  .filter(x=>(x.category||'禮盒')!=='單條')
  .sort((a,b)=>(a.code||'').localeCompare((b.code||''),'zh-TW',{numeric:true,sensitivity:'base'}));
- prodBody.innerHTML=giftProducts.length?giftProducts.map(x=>{
-   let comps=(db.components||[]).filter(r=>r.productId===x.id);
-   let mats=(db.recipes||[]).filter(r=>r.productId===x.id);
-   let ctext=comps.length?comps.map(r=>`${prodName(r.componentProductId)} ×${r.qty}`).join('、'):'尚未設定';
-   let mtext=mats.length?mats.map(r=>`${matName(r.materialId)} ×${r.qty}`).join('、'):'尚未設定';
-   return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="7"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
- }).join(''):'<tr><td colspan="7" class="empty">尚無禮盒資料</td></tr>';
+ renderGiftListTables();
  let singleProducts=db.products.filter(x=>x.category==='單條');
  // 單條也有售價（業績儀表板算金額用）與本期上架，存法和禮盒一樣（updateGiftListPrice／updateGiftListPublished 依品項 id 存）
  singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=5 class=empty>尚無單條資料</td></tr>';
@@ -1087,7 +1109,8 @@ function updateGiftListPublished(pid, input){
  p.isListedCurrent=input.checked;
  try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){p.isListedCurrent=previous;input.checked=previous;alert('儲存失敗：'+e.message);return;}
  if(editGiftWithFormula===pid){const el=document.getElementById('giftCurrentListed');if(el)el.checked=input.checked;}
- // 即時刷新首頁禮盒表，不重新繪製後台表單
+ // 即時刷新首頁禮盒表，不重新繪製後台表單；禮盒在「上架／已建立過」兩張表之間移動
+ if((p.category||'禮盒')!=='單條')renderGiftListTables();
  renderDashboard();
  if(typeof renderSalesForecast==='function')renderSalesForecast();
 }
