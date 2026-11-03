@@ -1120,6 +1120,12 @@ function giftDiscountNote(p){
  const parts=GIFT_DISCOUNTS.filter(f=>Number(p&&p[f[0]])>0&&Number(p[f[0]])<=10).map(f=>f[1]+' '+(price>0?Math.round(price*Number(p[f[0]])/10).toLocaleString():'—'));
  return parts.length?'折後：'+parts.join('、'):'';
 }
+// 業績預估頁每個禮盒標題旁的說明：原價與各種折扣（沒填折扣的不列）
+function giftDiscountLabel(p){
+ const price=typeof sfUnitPrice==='function'?sfUnitPrice(p):Number(p&&p.price);
+ const parts=GIFT_DISCOUNTS.filter(f=>Number(p&&p[f[0]])>0&&Number(p[f[0]])<=10).map(f=>f[1]+' '+Number(p[f[0]])+' 折');
+ return '原價 '+(price>0?price.toLocaleString():'未填')+(parts.length?'｜'+parts.join('、'):'｜沒設折扣');
+}
 function updateGiftListDiscount(pid, field, input){
  const p=db.products.find(x=>x.id===pid);if(!p)return;
  const f=GIFT_DISCOUNTS.find(x=>x[0]===field);if(!f)return;
