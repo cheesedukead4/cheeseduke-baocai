@@ -341,3 +341,11 @@ th{font-size:16.5px!important}
 @media (min-width:901px){
   #products .tablewrap th:last-child{width:200px!important}
 }
+
+/* 禮盒資料列表：四種折扣成數（門市／官網／執行長／通路）排成 2×2 */
+.gift-disc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;min-width:0}
+.gift-disc-item{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:14px;color:var(--text-2)}
+.gift-disc-item .gift-inline-price{width:100%!important;min-width:0}
+@media (min-width:901px){
+  #products .tablewrap th:nth-child(4){width:240px!important}
+}

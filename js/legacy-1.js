@@ -236,7 +236,7 @@ function renderGiftListTables(){
    let mats=(db.recipes||[]).filter(r=>r.productId===x.id);
    let ctext=comps.length?comps.map(r=>`${prodName(r.componentProductId)} ×${r.qty}`).join('、'):'尚未設定';
    let mtext=mats.length?mats.map(r=>`${matName(r.materialId)} ×${r.qty}`).join('、'):'尚未設定';
-   return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}折扣成數" value="${x.discount==null?'':Number(x.discount)}" onchange="updateGiftListDiscount('${x.id}',this)" placeholder="不打折"><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="copyGiftFull('${x.id}')">複製</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="8"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
+   return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><div class="gift-disc-grid">${GIFT_DISCOUNTS.map(f=>`<label class="gift-disc-item"><span>${f[1]}</span><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}${f[1]}折扣成數" value="${x[f[0]]==null?'':Number(x[f[0]])}" onchange="updateGiftListDiscount('${x.id}','${f[0]}',this)" placeholder="不打折"></label>`).join('')}</div><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="copyGiftFull('${x.id}')">複製</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="8"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
  };
  const on=all.filter(x=>x.isListedCurrent===true),off=all.filter(x=>x.isListedCurrent!==true);
  body.innerHTML=on.length?on.map(row).join(''):'<tr><td colspan="8" class="empty">目前沒有上架的禮盒（到下方勾選「本期上架」）</td></tr>';
@@ -290,7 +290,7 @@ function initGiftFormulaRows(){
 function clearGiftWithFormula(){
  editGiftWithFormula=null;
  setGiftFormulaRowCount(1);
- pCode.value='';pName.value='';document.getElementById('pPrice').value='';document.getElementById('pDiscount').value=''; document.getElementById('giftCurrentListed').checked=false;
+ pCode.value='';pName.value='';document.getElementById('pPrice').value='';GIFT_DISCOUNTS.forEach(f=>{document.getElementById(f[2]).value='';}); document.getElementById('giftCurrentListed').checked=false;
  for(let i=1;i<=8;i++){
    document.getElementById('gfType'+i).value='product';
    updateGiftFormulaItem(i,'');
@@ -320,19 +320,18 @@ function saveGiftWithFormula(){
  const priceRaw=document.getElementById('pPrice').value;
  const price=priceRaw===''?null:Number(priceRaw);
  if(price!==null && (!Number.isFinite(price)||price<0))return alert('售價請輸入有效的非負數');
- const discRaw=document.getElementById('pDiscount').value.trim();
- const discount=discRaw===''?null:Number(discRaw);
- if(discount!==null&&(!Number.isFinite(discount)||discount<=0||discount>10))return alert('折扣成數請輸入 0.1～10 之間的數字（例：8.5 代表 8.5 折，空白＝不打折）');
+ const disc={};
+ for(const f of GIFT_DISCOUNTS){const r=parseGiftDiscount(document.getElementById(f[2]).value);if(!r.ok)return alert(f[1]+'折扣成數請輸入 0.1～10 之間的數字（例：8.5 代表 8.5 折，空白＝不打折）');disc[f[0]]=r.value;}
  const isListedCurrent=document.getElementById('giftCurrentListed').checked;
 
  let pid=editGiftWithFormula;
  if(pid){
    const p=db.products.find(x=>x.id===pid);
    if(!p)return alert('找不到此禮盒資料');
-   Object.assign(p,{code,name,category:'禮盒',price,discount,isListedCurrent});
+   Object.assign(p,{code,name,category:'禮盒',price,...disc,isListedCurrent});
  }else{
    pid=id();
-   db.products.push({id:pid,code,name,category:'禮盒',price,discount,isListedCurrent});
+   db.products.push({id:pid,code,name,category:'禮盒',price,...disc,isListedCurrent});
  }
  db.components=(db.components||[]).filter(x=>x.productId!==pid);
  db.recipes=(db.recipes||[]).filter(x=>x.productId!==pid);
@@ -349,7 +348,7 @@ function editGiftFull(pid){
  expandPanel('giftEditorPanel');
  const p=db.products.find(x=>x.id===pid);if(!p)return;
  editGiftWithFormula=pid;
- pCode.value=p.code||'';pName.value=p.name||'';document.getElementById('pPrice').value=p.price??'';document.getElementById('pDiscount').value=p.discount??'';document.getElementById('giftCurrentListed').checked=(p.isListedCurrent===true);
+ pCode.value=p.code||'';pName.value=p.name||'';document.getElementById('pPrice').value=p.price??'';GIFT_DISCOUNTS.forEach(f=>{document.getElementById(f[2]).value=p[f[0]]??'';});document.getElementById('giftCurrentListed').checked=(p.isListedCurrent===true);
  for(let i=1;i<=8;i++){
    document.getElementById('gfType'+i).value='product';
    updateGiftFormulaItem(i,'');
@@ -1107,22 +1106,28 @@ function updateGiftListPrice(pid, input){
  {const note=document.querySelector('[data-disc-note="'+pid+'"]');if(note)note.textContent=giftDiscountNote(p);}
  if(typeof recalcSalesForecast==='function')recalcSalesForecast();
 }
-// 折扣成數：門市平均折扣，8.5 ＝ 8.5 折（售價 × 0.85）；空白＝不打折。只用在業績預估的金額
-function giftDiscountNote(p){
- const d=Number(p&&p.discount),price=Number(p&&p.price);
- if(!(d>0&&d<=10))return '';
- return '折後約 '+(price>0?Math.round(price*d/10).toLocaleString()+' 元':'—');
+// 折扣成數：8.5 ＝ 8.5 折（售價 × 0.85），空白＝不打折；分成門市（東橋、A11、京站）、官網、執行長、通路四種，只用在業績預估的金額
+const GIFT_DISCOUNTS=[['discount','門市','pDiscount'],['discountWeb','官網','pDiscountWeb'],['discountCeo','執行長','pDiscountCeo'],['discountChannel','通路','pDiscountChannel']];
+function parseGiftDiscount(raw){
+ raw=String(raw==null?'':raw).trim();
+ if(raw==='')return {ok:true,value:null};
+ const v=Number(raw);
+ if(!Number.isFinite(v)||v<=0||v>10)return {ok:false,value:null};
+ return {ok:true,value:v};
 }
-function updateGiftListDiscount(pid, input){
+function giftDiscountNote(p){
+ const price=Number(p&&p.price);
+ const parts=GIFT_DISCOUNTS.filter(f=>Number(p&&p[f[0]])>0&&Number(p[f[0]])<=10).map(f=>f[1]+' '+(price>0?Math.round(price*Number(p[f[0]])/10).toLocaleString():'—'));
+ return parts.length?'折後：'+parts.join('、'):'';
+}
+function updateGiftListDiscount(pid, field, input){
  const p=db.products.find(x=>x.id===pid);if(!p)return;
- const raw=String(input.value).trim();
- const value=raw===''?null:Number(raw);
- if(value!==null&&(!Number.isFinite(value)||value<=0||value>10)){
-   alert('折扣成數請輸入 0.1～10 之間的數字（例：8.5 代表 8.5 折，空白＝不打折）');input.value=p.discount==null?'':p.discount;return;
- }
- p.discount=value;
+ const f=GIFT_DISCOUNTS.find(x=>x[0]===field);if(!f)return;
+ const r=parseGiftDiscount(input.value);
+ if(!r.ok){alert('折扣成數請輸入 0.1～10 之間的數字（例：8.5 代表 8.5 折，空白＝不打折）');input.value=p[field]==null?'':p[field];return;}
+ p[field]=r.value;
  try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){alert('儲存失敗：'+e.message);return;}
- if(editGiftWithFormula===pid){const el=document.getElementById('pDiscount');if(el)el.value=value??'';}
+ if(editGiftWithFormula===pid){const el=document.getElementById(f[2]);if(el)el.value=r.value??'';}
  const note=document.querySelector('[data-disc-note="'+pid+'"]');if(note)note.textContent=giftDiscountNote(p);
  if(typeof recalcSalesForecast==='function')recalcSalesForecast();
 }
