@@ -449,7 +449,7 @@
     return f && f.rows && typeof f.rows === 'object' ? f : null;
   }
   function forecastHasData(fo) { return forecastTotal({ byCode: Object.create(null), byId: Object.create(null) }, fo, 'all', 'qty', 'all').any; }
-  // 預估總量（整個檔期）：每個禮盒所有日期、所選部門的預估盒數加總；金額＝盒數 × 售價
+  // 預估總量（整個檔期）：每個禮盒所有日期、所選部門的預估盒數加總；金額＝盒數 × 售價 × 折扣成數（禮盒資料；沒填＝原價）
   function forecastTotal(ctx, fo, dept, metric, group) {
     var rows = (fo && fo.rows) || {}, nonRev = nonRevenue(), any = false, total = 0;
     if (dept === 'unmatched') return { total: 0, any: false };
@@ -461,7 +461,7 @@
         if (metric === 'qty' ? !inGroup(p, group === 'all' ? 'all3' : group) : (group !== 'all' && !inGroup(p, group))) return;
       }
       var price = 0;
-      if (metric === 'amt') price = p ? X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(p) : X.productPrice(p)) : X.num(r.price);
+      if (metric === 'amt') price = p ? X.num(typeof sfForecastPrice === 'function' ? sfForecastPrice(p) : X.productPrice(p)) : X.num(r.price);
       Object.keys(r.lines).forEach(function (n) {
         var line = r.lines[n];
         if (!line) return;

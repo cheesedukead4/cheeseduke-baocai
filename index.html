@@ -262,6 +262,7 @@
 <label><span>禮盒編號</span><input id="pCode"></label>
 <label><span>禮盒名稱</span><input id="pName"></label>
 <label><span>售價（元）</span><input id="pPrice" type="number" min="0" step="1" placeholder="請輸入售價"></label>
+<label><span>折扣成數（門市平均）</span><input id="pDiscount" type="number" min="0.1" max="10" step="0.1" placeholder="例：8.5（空白＝不打折）"></label>
 <label><span>本期是否上架</span><span class="gift-season-checks"><label><input id="giftCurrentListed" type="checkbox"> 本期上架（勾選後顯示於首頁禮盒品項）</label></span></label>
 </div>
 <h3 style="margin:18px 0 8px">禮盒配方</h3>
@@ -325,7 +326,7 @@
 <p class="small">目前勾選「本期上架」的禮盒（會顯示在首頁禮盒品項與業績預估）。取消勾選會移到下方「已建立過的禮盒」。</p>
 <div class="tablewrap gift-list-no-scroll">
 <table class="gift-list-fit">
-<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
+<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>折扣成數</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
 <tbody id="prodBody"></tbody>
 </table>
 </div>
@@ -338,7 +339,7 @@
 <p class="small">以前建立過、目前沒有上架的禮盒。要再上架時勾選「本期上架」就會移到上方。</p>
 <div class="tablewrap gift-list-no-scroll">
 <table class="gift-list-fit">
-<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
+<thead><tr><th>禮盒編號</th><th>禮盒名稱</th><th>售價</th><th>折扣成數</th><th>本期是否上架</th><th>單條內容物</th><th>包材配方</th><th>操作</th></tr></thead>
 <tbody id="prodBodyOther"></tbody>
 </table>
 </div>
