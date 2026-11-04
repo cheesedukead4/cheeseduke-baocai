@@ -802,6 +802,22 @@
       '<p class="small" style="margin:10px 0 0">進貨量＝「業績預估」頁各部門、各日期預估盒數加總 × ' + pctText + '（無條件進位）；已販售＝這個檔期的實際訂單（只算禮盒，不含單條與品號未對照的訂單）。已販售 ≥ 進貨量就標「要追量進貨」，首頁上方的提醒列也會顯示。上方圖的「規格」按鈕會同時篩選這張表。</p>', go);
   }
 
+  // 給「採購叫貨」用：進行中檔期的業績預估，每個禮盒的預估盒數（所有部門、所有日期加總）
+  X.forecastBoxes = function () {
+    var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
+    if (!fo || !fo.rows) return out;
+    Object.keys(fo.rows).forEach(function (code) {
+      var r = fo.rows[code];
+      if (!r || !r.lines) return;
+      var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
+      if (!p || isSingle(p)) return;
+      var sum = 0;
+      Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
+      if (sum > 0) { out.byId[String(p.id)] = (out.byId[String(p.id)] || 0) + sum; out.any = true; }
+    });
+    return out;
+  };
+
   // 可以選的檔期（按鈕）：檔期設定裡的過年、中秋（新的在前）＋ 有訂單但還沒有檔期資料的 ＋ 各年全年
   function seasonChoices(list) {
     var out = [], seen = Object.create(null);

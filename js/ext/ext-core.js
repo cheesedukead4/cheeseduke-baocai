@@ -98,6 +98,13 @@
         items: '{ 品號: 現貨數量 }，來自入口網站總表的「剩餘庫存 → 現貨」（見 js/ext/page-hqstock.js）'
       }
     },
+    purchaseOrders: {
+      label: '採購叫貨紀錄', type: 'array',
+      fields: {
+        id: '唯一代號', date: '叫貨日期 YYYY-MM-DD', singleId: '單條 id', qty: '叫貨數量（條）', supplier: '廠商（選填）',
+        status: "'ordered' 已叫貨（在途）｜'received' 已到貨", receivedDate: '到貨日期', note: '備註', by: '記錄者', at: '記錄時間（毫秒）'
+      }
+    },
     calcRules: {
       label: '計算規則', type: 'object',
       fields: {
