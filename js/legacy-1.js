@@ -1037,6 +1037,7 @@ function render(){
  // 每次顯示禮盒列表前核對舊版包材配方，避免 localStorage 覆蓋造成空白。
  restoreMissingPackagingRecipesOnce();
  if(typeof applyDefaultGiftDiscountsOnce==='function')applyDefaultGiftDiscountsOnce();
+ if(typeof migrateSingleForecastOnce==='function')migrateSingleForecastOnce();
 
  if(!editGiftWithFormula)document.getElementById('giftCurrentListed').checked=false;
  if(!editGiftWithFormula&&!window.__giftDiscFormInit){window.__giftDiscFormInit=true;GIFT_DISCOUNTS.forEach(f=>{const el=document.getElementById(f[2]);if(el&&el.value==='')el.value=GIFT_DISCOUNT_DEFAULTS[f[0]];});}
