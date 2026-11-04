@@ -227,6 +227,8 @@ function deleteSingleItem(i){
 
 
 
+// 折扣成數的初始值（8.5＝8.5 折）：新增禮盒時帶入表單；第一次升級時補進還沒填折扣的禮盒。之後都可以在禮盒資料自行修改
+var GIFT_DISCOUNT_DEFAULTS={discount:9,discountWeb:8,discountCeo:8.5,discountChannel:7};
 function renderGiftListTables(){
  const body=document.getElementById('prodBody'),other=document.getElementById('prodBodyOther');if(!body||!other)return;
  const all=db.products.filter(x=>(x.category||'禮盒')!=='單條')
@@ -290,7 +292,7 @@ function initGiftFormulaRows(){
 function clearGiftWithFormula(){
  editGiftWithFormula=null;
  setGiftFormulaRowCount(1);
- pCode.value='';pName.value='';document.getElementById('pPrice').value='';GIFT_DISCOUNTS.forEach(f=>{document.getElementById(f[2]).value='';}); document.getElementById('giftCurrentListed').checked=false;
+ pCode.value='';pName.value='';document.getElementById('pPrice').value='';GIFT_DISCOUNTS.forEach(f=>{document.getElementById(f[2]).value=GIFT_DISCOUNT_DEFAULTS[f[0]];}); document.getElementById('giftCurrentListed').checked=false;
  for(let i=1;i<=8;i++){
    document.getElementById('gfType'+i).value='product';
    updateGiftFormulaItem(i,'');
@@ -1034,8 +1036,10 @@ function renderDashboard(){
 function render(){
  // 每次顯示禮盒列表前核對舊版包材配方，避免 localStorage 覆蓋造成空白。
  restoreMissingPackagingRecipesOnce();
+ if(typeof applyDefaultGiftDiscountsOnce==='function')applyDefaultGiftDiscountsOnce();
 
  if(!editGiftWithFormula)document.getElementById('giftCurrentListed').checked=false;
+ if(!editGiftWithFormula&&!window.__giftDiscFormInit){window.__giftDiscFormInit=true;GIFT_DISCOUNTS.forEach(f=>{const el=document.getElementById(f[2]);if(el&&el.value==='')el.value=GIFT_DISCOUNT_DEFAULTS[f[0]];});}
  matBody.innerHTML=db.materials.length?db.materials.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td>${x.category||'單條'}</td><td>${x.unit||''}</td><td class=num>${x.safety}</td><td><button onclick="editMat('${x.id}')">編輯</button> <button onclick="del('materials','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=6 class=empty>尚無包材資料</td></tr>';
  prodBody.innerHTML=db.products.length?db.products.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td>${x.category||''}</td><td>${db.recipes.filter(r=>r.productId===x.id).length} 項</td><td><button onclick="openGenericEdit('gift','${x.id}')">編輯</button> <button onclick="del('products','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=5 class=empty>尚無產品資料</td></tr>';
  if(window.rProduct)opts(rProduct,db.products,'name');let giftProducts=db.products

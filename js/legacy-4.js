@@ -693,6 +693,17 @@ function backfillGiftPricesOnce(){
 }
 
 
+// 第一次升級時，把初始折扣（門市 9、官網 8、執行長 8.5、通路 7）補進還沒填折扣的禮盒；已經填過的不動，之後使用者怎麼改都不會被覆蓋
+function applyDefaultGiftDiscountsOnce(){
+ const version='v1';
+ if(db.giftDiscountSeed===version)return;
+ (db.products||[]).forEach(p=>{
+   if(String(p.category||'禮盒').trim()==='單條')return;
+   Object.keys(GIFT_DISCOUNT_DEFAULTS).forEach(k=>{if(p[k]===undefined)p[k]=GIFT_DISCOUNT_DEFAULTS[k];});
+ });
+ db.giftDiscountSeed=version;
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('初始折扣儲存失敗',e);}
+}
 function applyRequestedListedProductsOnce(){
  const version='20261008-22-listed-codes-v1';
  if(db.listedSelectionVersion===version)return;
