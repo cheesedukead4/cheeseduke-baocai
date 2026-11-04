@@ -269,7 +269,7 @@
   // 金額＝數量 × 目前的售價（訂單資料沒有金額）：禮盒用「禮盒資料」的售價、單條用「單條資料」的售價（CMSX.productPrice，
   // 禮盒沒填售價時是否改用內建備用售價見「計算規則」）。去年的金額也用目前的售價計算。
   // 部門對照設成「不計算」的訂單不算進數量與金額。
-  var sd = { kind: '', year: '', dept: 'all', metric: 'amt', group: 'all', sel: '', cmp: 'auto', span: '4', cum: 'cum' };
+  var sd = { kind: '', year: '', dept: 'all', metric: 'amt', group: 'all', sel: '', cmp: 'auto', span: '4', cum: 'cum', unit: 'box', sgroup: 'all' };
   var SD_KINDS = [['midautumn', '中秋'], ['newyear', '過年'], ['year', '全年（1～12 月）']];
 
   // 對照表（只讀）：品號 → 對照、禮盒；接單部門／通路 → 部門
@@ -394,7 +394,7 @@
   // 三條線：實際（所選檔期／年份的訂單）、預估（「業績預估」頁各日期填的盒數）、去年（去年同檔期，往後對齊 52 週）。
   // 可切換「金額」「禮盒數」；金額＝數量 × 目前售價（公關贈、執行長不算營收）；禮盒數不含單條與品號未對照的訂單。
   var DAY = 86400000;
-  var C_ACT = '#2f5bd3', C_EST = '#c2691a', C_PREV = '#2a9d8f', C_BUY = '#7b4bb3', C_BAD = '#c0392b'; // 已用調色盤驗證工具檢查過：色盲分得開、對比足夠
+  var C_ACT = '#2f5bd3', C_EST = '#c2691a', C_PREV = '#2a9d8f', C_BUY = '#7b4bb3', C_BAD = '#c0392b', C_ORD = '#1b8a5a'; // 已用調色盤驗證工具檢查過：色盲分得開、對比足夠
   function dateMs(s) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; }
   function weekOf(ms) { return ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY; } // 這一週的星期一
   function md(ms) { var d = new Date(ms); return (d.getUTCMonth() + 1) + '/' + d.getUTCDate(); }
@@ -423,6 +423,42 @@
   }
   function inGroup(p, group) { var g = giftGroup(p); return !!g && (group === 'all3' || group === g); }
 
+  // ---- 單條（條）檢視：禮盒依「禮盒資料」的單條內容物換算成單條（1 盒 CO-43＝5 條鳳費），單賣的單條直接算 ----
+  // 沒有單條內容物、但名稱和某個單條一樣的禮盒，當成 1 盒＝1 條（「計算規則」可關閉，同「換算成單條」頁）
+  var CONV = null;
+  function convMap() {
+    var byId = {}, byName = {}, comps = {}, nm = function (v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); };
+    X.products().forEach(function (p) { if (!p) return; byId[String(p.id)] = p; if (isSingle(p)) { var n = nm(p.name); if (n && !byName[n]) byName[n] = p; } });
+    X.components().forEach(function (c) {
+      var sg = c && byId[String(c.componentProductId)];
+      if (sg) (comps[String(c.productId)] = comps[String(c.productId)] || []).push({ single: sg, qty: X.num(c.qty) });
+    });
+    var sameOk = !window.CMSRules || CMSRules.get('singlesSameName');
+    return function (p) {
+      if (!p) return null;
+      if (isSingle(p)) return [{ single: p, qty: 1 }];
+      var l = comps[String(p.id)];
+      if (l && l.length) return l;
+      var sg = sameOk ? byName[nm(p.name)] : null;
+      return sg ? [{ single: sg, qty: 1 }] : null;
+    };
+  }
+  function conv() { return CONV || (CONV = convMap()); }
+  function singleMatch(group, sg) { return group === 'all' || String(sg.id) === String(group); }
+  // 這個檔期「採購叫貨」記的叫貨條數（已叫貨＋已到貨；進行中檔期也算沒記檔期的舊紀錄）
+  function orderedSingles(selC, group) {
+    var sid = selC.season && selC.season.id, act = !!(selC.season && selC.season.status === 'active'), t = 0;
+    X.get('purchaseOrders').forEach(function (o) {
+      if (!o || !(X.num(o.qty) > 0)) return;
+      if (o.seasonId ? o.seasonId !== sid : !act) return;
+      if (group !== 'all' && String(o.singleId) !== String(group)) return;
+      t += X.num(o.qty);
+    });
+    return t;
+  }
+  function unitLabel(metric) { return metric === 'amt' ? '金額' : (metric === 'single' ? '單條數' : '禮盒數'); }
+  function singleGroupName(group) { if (group === 'all') return '全部單條'; var p = X.productById(group); return p ? ((p.code ? p.code + ' ' : '') + p.name) : '單條'; }
+
   // 訂單依週彙總：回傳 { 週的代號: 數值 }；keyFn(日期毫秒) 決定這筆訂單放在哪一週
   function weeklyOrders(list, kind, year, dept, metric, group, keyFn) {
     var out = Object.create(null), nonRev = nonRevenue();
@@ -432,7 +468,10 @@
       var t = dateMs(o.date);
       if (t == null) return;
       var v;
-      if (metric === 'amt') v = (group !== 'all' && !inGroup(o.p, group)) ? 0 : (nonRev[o.dk] ? 0 : o.q * o.price);
+      if (metric === 'single') {
+        var ps = conv()(o.p); v = 0;
+        if (ps) ps.forEach(function (pt) { if (singleMatch(group, pt.single)) v += o.q * pt.qty; });
+      } else if (metric === 'amt') v = (group !== 'all' && !inGroup(o.p, group)) ? 0 : (nonRev[o.dk] ? 0 : o.q * o.price);
       else v = inGroup(o.p, group === 'all' ? 'all3' : group) ? o.q : 0;
       var w = keyFn(t);
       out[w] = (out[w] || 0) + v;
@@ -459,7 +498,12 @@
       var r = rows[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
-      if (ctx.byId && Object.keys(ctx.byId).length) {
+      var mult = 1;
+      if (metric === 'single') {
+        var ps = p && conv()(p); mult = 0;
+        if (ps) ps.forEach(function (pt) { if (singleMatch(group, pt.single)) mult += pt.qty; });
+        if (!(mult > 0)) return;
+      } else if (ctx.byId && Object.keys(ctx.byId).length) {
         if (metric === 'qty' ? !inGroup(p, group === 'all' ? 'all3' : group) : (group !== 'all' && !inGroup(p, group))) return;
       }
       var price = 0;
@@ -472,7 +516,7 @@
           if (dept !== 'all' && dk !== dept) return;
           var est = X.num((line[dk0] || {}).est);
           if (est > 0) any = true;
-          total += metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est;
+          total += metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est * mult;
         });
       });
     });
@@ -488,7 +532,7 @@
     var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), n = v / p;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
   }
-  function valText(v, metric) { return v == null ? '—' : (metric === 'amt' ? money(v) : X.fmt(v) + ' 盒'); }
+  function valText(v, metric) { return v == null ? '—' : (metric === 'amt' ? money(v) : X.fmt(v) + (metric === 'single' ? ' 條' : ' 盒')); }
 
   // 整理成每週一筆：weeks 是週的代號（依檔期對齊時是「節日週＝0」的週數，否則是星期一的毫秒）；沒有資料的線整條是 null
   function buildWeekly(list, ctx, selC, cmpC, dept, metric, group, span, cum) {
@@ -559,12 +603,18 @@
     var runTotal = function (arr) { var run = 0; return arr.map(function (v) { if (v == null) return null; run += v; return run; }); };
     if (cum) { actArr = runTotal(actArr); estArr = runTotal(estArr); prevArr = runTotal(prevArr); }
     // 進貨量線：預估總量 × 進貨比例（只在「禮盒數」的「累計」圖畫，是一條水平線）；實際累計第一次碰到它的那一週標紅色
-    var ratio = purchaseRatio(), buyTotal = (metric === 'qty' && ft.any) ? Math.ceil(ft.total * ratio - 1e-9) : 0;
+    // 「單條數」檢視還有一條「已叫貨」線：採購叫貨記的叫貨條數；有叫貨紀錄時，販售超過已叫貨條數就要追量
+    var isQty = metric === 'qty' || metric === 'single';
+    var ratio = purchaseRatio(), buyTotal = (isQty && ft.any) ? Math.ceil(ft.total * ratio - 1e-9) : 0;
+    var ordTotal = metric === 'single' ? orderedSingles(selC, group) : 0;
+    var thr = ordTotal > 0 ? ordTotal : buyTotal;
     var buyArr = (cum && buyTotal > 0) ? pick(function () { return buyTotal; }) : pick(function () { return null; });
+    var ordArr = (cum && ordTotal > 0) ? pick(function () { return ordTotal; }) : pick(function () { return null; });
     var crossIdx = -1;
-    if (any(buyArr)) for (var ci = 0; ci < actArr.length; ci++) if (actArr[ci] != null && actArr[ci] >= buyTotal) { crossIdx = ci; break; }
+    if ((any(buyArr) || any(ordArr)) && thr > 0) for (var ci = 0; ci < actArr.length; ci++) if (actArr[ci] != null && actArr[ci] >= thr) { crossIdx = ci; break; }
     return {
-      buy: buyArr, hasBuy: any(buyArr), buyTotal: buyTotal, ratio: ratio, crossIdx: crossIdx, buyNeedCum: metric === 'qty' && ft.any && !cum,
+      buy: buyArr, hasBuy: any(buyArr), buyTotal: buyTotal, ratio: ratio, crossIdx: crossIdx, buyNeedCum: isQty && (ft.any || ordTotal > 0) && !cum,
+      ord: ordArr, hasOrd: any(ordArr), ordTotal: ordTotal, thrTotal: thr, thrIsOrd: ordTotal > 0, unit: metric === 'single' ? '條' : '盒',
       cum: !!cum, actSum: actSum, estSum: estSum, prevSum: prevSum, estTotal: ft.total, weights: wts, weightsCustom: wtsCustom, estNoHoliday: ft.any && !byHoliday,
 
       weeks: weeks, year: year, lastYear: prevYear, byHoliday: byHoliday, selName: selC.name, cmpName: cmpC ? cmpC.name : '', prevLabel: cmpIsLast ? '去年' : '比較檔期',
@@ -587,7 +637,8 @@
       { key: 'act', name: '實際', color: C_ACT, dash: '' },
       { key: 'est', name: '預估', color: C_EST, dash: '7 5' },
       { key: 'prev', name: m.prevLabel === '去年' ? '去年' : '比較', color: C_PREV, dash: '' },
-      { key: 'buy', name: '進貨量', color: C_BUY, dash: '2 5', noDots: true }
+      { key: 'buy', name: '進貨量', color: C_BUY, dash: '2 5', noDots: true },
+      { key: 'ord', name: '已叫貨', color: C_ORD, dash: '9 4', noDots: true }
     ].filter(function (s) { return m['has' + s.key.charAt(0).toUpperCase() + s.key.slice(1)]; });
     var maxV = 0;
     series.forEach(function (s) { m[s.key].forEach(function (v) { if (v != null && v > maxV) maxV = v; }); });
@@ -635,18 +686,18 @@
       for (var j = 0; j < i; j++) if (Math.abs(ends[j].x - e.x) < 60 && e.y - ends[j].y < 15) e.y = ends[j].y + 15;
       labels += '<text x="' + e.x + '" y="' + e.y + '" font-size="14" font-weight="700" fill="var(--text)">' + e.name + '</text>';
     });
-    return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際、預估、進貨量與去年的' + (metric === 'amt' ? '金額' : '禮盒數') + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
+    return { svg: '<svg data-chart viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="每週實際、預估、進貨量與去年的' + unitLabel(metric) + '波動圖，下方有表格版" style="display:block;width:100%;height:auto;max-width:100%;stroke:none;touch-action:pan-y">' +
       g + xl + holi + '<line data-guide x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>' + lines + labels + '</svg>',
       geom: { W: W, L: L, R: R, n: n, iw: iw }, series: series };
   }
 
   function renderChartCard(m, metric, deptName, group) {
-    var gName = groupName(metric === 'qty' && group === 'all' ? 'all3' : group);
+    var gName = metric === 'single' ? singleGroupName(group) : groupName(metric === 'qty' && group === 'all' ? 'all3' : group);
     if (!m) return X.ui.card('每週波動', X.ui.empty('這個檔期、這個部門沒有訂單，也沒有預估資料可以畫。'));
     var c = chartSvg(m, metric);
     var leg = c.series.map(function (s) {
       var t = s.key === 'prev' ? m.prevLabel + (m.cmpName ? '（' + m.cmpName + (m.byHoliday ? '，對齊節日週' : '，同一週對齊') + '）' : '')
-        : s.key === 'act' ? '今年實際進單（' + (m.selName || m.year) + '）' : s.key === 'buy' ? '進貨量（預估 × ' + Math.round(m.ratio * 100) + '% ＝ ' + X.fmt(m.buyTotal) + ' 盒）' : '預估量（' + (m.selName || m.year) + '）';
+        : s.key === 'act' ? '今年實際進單（' + (m.selName || m.year) + '）' : s.key === 'buy' ? '進貨量（預估 × ' + Math.round(m.ratio * 100) + '% ＝ ' + X.fmt(m.buyTotal) + ' ' + m.unit + '）' : s.key === 'ord' ? '已叫貨（採購叫貨紀錄，共 ' + X.fmt(m.ordTotal) + ' 條）' : '預估量（' + (m.selName || m.year) + '）';
       return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px"><svg width="26" height="10" aria-hidden="true" style="width:26px;height:10px"><line x1="0" x2="26" y1="5" y2="5" stroke="' + s.color + '" stroke-width="2.5"' + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : '') + '/></svg>' + esc(t) + '</span>';
     }).join('');
     var miss = [];
@@ -679,10 +730,11 @@
     var sumLine = '<div class="small" style="margin-top:6px"><b>合計（圖上顯示的週）</b>　實際 ' + esc(valText(m.actSum, metric)) +
       (m.hasEst ? '　預估 ' + esc(valText(m.estSum, metric)) : '') + (m.hasPrev ? '　' + esc(m.prevLabel) + ' ' + esc(valText(m.prevSum, metric)) : '') + rate + vsPrev + '</div>';
     var buyLine = '';
-    if (m.hasBuy) {
+    if (m.hasBuy || m.hasOrd) {
+      var what = m.thrIsOrd ? '已叫貨條數' : '進貨量', how = m.thrIsOrd ? '（採購叫貨紀錄）' : '（預估的 ' + Math.round(m.ratio * 100) + '%）';
       buyLine = m.crossIdx >= 0
-        ? X.ui.banner('bad', '<b>要追量進貨：</b>實際累計 ' + esc(X.fmt(m.actSum)) + ' 盒，已超過進貨量 ' + esc(X.fmt(m.buyTotal)) + ' 盒（預估的 ' + Math.round(m.ratio * 100) + '%），圖上紅圈是第一次超過的那一週（' + esc(m.label(m.weeks[m.crossIdx])) + '）。')
-        : X.ui.banner('ok', '實際累計 ' + esc(X.fmt(m.actSum)) + ' 盒，還在進貨量 ' + esc(X.fmt(m.buyTotal)) + ' 盒（預估的 ' + Math.round(m.ratio * 100) + '%）以內，還可以賣 ' + esc(X.fmt(m.buyTotal - m.actSum)) + ' 盒。');
+        ? X.ui.banner('bad', '<b>要追量進貨：</b>實際累計 ' + esc(X.fmt(m.actSum)) + ' ' + m.unit + '，已超過' + what + ' ' + esc(X.fmt(m.thrTotal)) + ' ' + m.unit + how + '，圖上紅圈是第一次超過的那一週（' + esc(m.label(m.weeks[m.crossIdx])) + '）。')
+        : X.ui.banner('ok', '實際累計 ' + esc(X.fmt(m.actSum)) + ' ' + m.unit + '，還在' + what + ' ' + esc(X.fmt(m.thrTotal)) + ' ' + m.unit + how + '以內，還可以賣 ' + esc(X.fmt(m.thrTotal - m.actSum)) + ' ' + m.unit + '。');
       buyLine = '<div style="margin-top:8px">' + buyLine + '</div>';
     } else if (m.buyNeedCum) buyLine = '<p class="small" style="margin:6px 0 0">進貨量線只在「累計」顯示，請按上方「顯示」的「累計」。</p>';
     var wEdit = '';
@@ -694,7 +746,7 @@
         (m.weightsCustom ? '<button type="button" class="btn gray" data-act="wreset" style="min-height:30px;padding:3px 11px;font-size:15px">改回照比較檔期</button>' : '') +
         '</div><div class="small" style="margin-top:4px">四個比例加起來不用剛好是 100，系統會自動換算；預估總量乘上比例，就是每週的預估量。</div></div>';
     }
-    return X.ui.card(deptName + '｜' + (m.cum ? '累計' : '每週') + (metric === 'amt' ? '金額' : '禮盒數') + '（' + gName + '）',
+    return X.ui.card(deptName + '｜' + (m.cum ? '累計' : '每週') + unitLabel(metric) + '（' + gName + '）',
       '<div style="margin-bottom:6px;font-size:15px">' + leg + '</div>' +
       '<div data-chartbox style="position:relative;max-width:720px">' + c.svg + '<div data-tip role="status" style="display:none;position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:14.5px;line-height:1.7;white-space:nowrap;z-index:2"></div></div>' +
       sumLine + buyLine +
@@ -720,7 +772,7 @@
       guide.setAttribute('x1', gx); guide.setAttribute('x2', gx); guide.style.display = '';
       var row = function (name, color, v, range) { return v == null ? '' : '<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px"></span>' + name + '：<b>' + esc(valText(v, metric)) + '</b>' + (range ? ' <span style="color:var(--text-3)">' + esc(range) + '</span>' : '') + '</div>'; };
       var wk = m.weeks[i];
-      tip.innerHTML = '<div style="font-weight:700">' + esc(m.label(wk)) + '</div>' + row('實際', C_ACT, m.act[i], m.rangeSel(wk)) + row('預估', C_EST, m.est[i], m.rangeSel(wk)) + row('進貨量', C_BUY, m.buy && m.buy[i], '') + row(m.prevLabel + '同週', C_PREV, m.prev[i], m.rangePrev(wk));
+      tip.innerHTML = '<div style="font-weight:700">' + esc(m.label(wk)) + '</div>' + row('實際', C_ACT, m.act[i], m.rangeSel(wk)) + row('預估', C_EST, m.est[i], m.rangeSel(wk)) + row('進貨量', C_BUY, m.buy && m.buy[i], '') + row('已叫貨', C_ORD, m.ord && m.ord[i], '') + row(m.prevLabel + '同週', C_PREV, m.prev[i], m.rangePrev(wk));
       tip.style.display = 'block';
       var bx = box.getBoundingClientRect(), left = (gx / vb.width) * r.width + (r.left - bx.left) + 12;
       if (left + tip.offsetWidth > box.clientWidth) left -= tip.offsetWidth + 24;
@@ -818,6 +870,74 @@
     return out;
   };
 
+  // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數
+  // 有叫貨紀錄就拿已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準＝要追量進貨
+  function purchasePlanSingles(list, selC, ctx, sgroup) {
+    var ratio = purchaseRatio(), parts = conv(), res = { ratio: ratio, hasForecast: false, rows: [], reason: '' }, fo = forecastOf(selC);
+    var estFull = Object.create(null), buy = Object.create(null), sold = Object.create(null), ord = Object.create(null), prod = Object.create(null);
+    if (!fo) res.reason = selC.season && selC.season.status !== 'active' ? '「' + selC.name + '」不是進行中的檔期，沒有存到業績預估，只能看已叫貨與已販售。' : '「' + selC.name + '」還沒有業績預估，只能看已叫貨與已販售。';
+    else Object.keys(fo.rows || {}).forEach(function (code) {
+      var r = fo.rows[code];
+      if (!r || !r.lines) return;
+      var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null, ps = p && !isSingle(p) ? parts(p) : null;
+      if (!ps) return;
+      var sum = 0;
+      Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
+      if (!(sum > 0)) return;
+      var boxes = Math.ceil(sum * ratio - 1e-9);
+      ps.forEach(function (pt) {
+        var k = String(pt.single.id);
+        prod[k] = pt.single; estFull[k] = (estFull[k] || 0) + sum * pt.qty; buy[k] = (buy[k] || 0) + boxes * pt.qty; res.hasForecast = true;
+      });
+    });
+    var cur = sumPeriod(list, selC.kind, selC.year, 'all');
+    Object.keys(cur.items).forEach(function (k) {
+      var it = cur.items[k], ps = it.p ? parts(it.p) : null;
+      if (!ps) return;
+      ps.forEach(function (pt) { var id = String(pt.single.id); prod[id] = pt.single; sold[id] = (sold[id] || 0) + it.qty * pt.qty; });
+    });
+    var sid = selC.season && selC.season.id, act = !!(selC.season && selC.season.status === 'active');
+    X.get('purchaseOrders').forEach(function (o) {
+      if (!o || !(X.num(o.qty) > 0)) return;
+      if (o.seasonId ? o.seasonId !== sid : !act) return;
+      var id = String(o.singleId), p = ctx.byId[id];
+      if (!p) return;
+      prod[id] = p; ord[id] = (ord[id] || 0) + X.num(o.qty);
+    });
+    Object.keys(prod).forEach(function (id) {
+      if (sgroup && sgroup !== 'all' && id !== String(sgroup)) return;
+      var e = estFull[id] || 0, b = buy[id] || 0, o = ord[id] || 0, s0 = sold[id] || 0, base = o > 0 ? o : b;
+      if (!(e > 0) && !(o > 0) && !(s0 > 0)) return;
+      res.rows.push({ id: id, label: (prod[id].code ? prod[id].code + ' ' : '') + prod[id].name, est: e, buy: b, ordered: o, sold: s0, base: base, baseIsOrd: o > 0, left: base - s0,
+        status: base > 0 ? (s0 >= base ? 'over' : 'ok') : 'nofc' });
+    });
+    var rank = { over: 0, ok: 1, nofc: 2 };
+    res.rows.sort(function (a, b) { return (rank[a.status] - rank[b.status]) || ((b.base > 0 ? b.sold / b.base : 0) - (a.base > 0 ? a.sold / a.base : 0)) || (b.sold - a.sold); });
+    return res;
+  }
+  function renderPurchaseSinglesCard(plan, selC) {
+    var pctText = Math.round(plan.ratio * 100) + '%';
+    var go = '<button type="button" class="btn gray" data-go="xPurchase" style="min-height:30px;padding:3px 11px;font-size:15px">到「採購叫貨」</button>';
+    if (!plan.rows.length) return X.ui.card('進貨管理（單條，' + esc(selC.name) + '）', X.ui.empty(plan.reason || '沒有資料。') + '<p class="small" style="margin:8px 0 0">進貨條數來自「採購叫貨」頁的叫貨紀錄與業績預估換算。</p>', go);
+    var over = plan.rows.filter(function (r) { return r.status === 'over'; });
+    var banner = over.length
+      ? X.ui.banner('bad', '<b>' + over.length + ' 種單條要追量進貨：</b>' + over.slice(0, 6).map(function (r) { return esc(r.label); }).join('、') + (over.length > 6 ? '…' : '') + '（實際販售已超過' + (over.every(function (r) { return r.baseIsOrd; }) ? '已叫貨條數' : '進貨條數') + '）。')
+      : X.ui.banner('ok', '目前所有單條的販售都還在進貨條數以內，不用追量。');
+    var tag = function (r) { return r.status === 'over' ? X.ui.tag('要追量進貨', 'bad') : (r.status === 'nofc' ? X.ui.tag('沒有進貨基準', 'muted') : X.ui.tag('正常', 'ok')); };
+    var tbl = X.ui.table([
+      { label: '單條', render: function (r) { return esc(r.label); } },
+      { label: '預估換算（條）', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.est) : DASH; } },
+      { label: '進貨量（預估×' + pctText + '，條）', num: true, render: function (r) { return r.buy > 0 ? X.fmt(r.buy) : DASH; } },
+      { label: '已叫貨（條）', num: true, render: function (r) { return r.ordered > 0 ? '<b>' + X.fmt(r.ordered) + '</b>' : DASH; } },
+      { label: '已販售（條）', num: true, render: function (r) { return X.fmt(r.sold); } },
+      { label: '還可販售（條）', num: true, render: function (r) { return r.base > 0 ? (r.left >= 0 ? X.fmt(r.left) : '<b style="color:var(--bad)">超過 ' + X.fmt(-r.left) + '</b>') : DASH; } },
+      { label: '判斷基準', render: function (r) { return r.base > 0 ? '<span class="small">' + (r.baseIsOrd ? '已叫貨' : '進貨量') + '</span>' : DASH; } },
+      { label: '狀態', render: tag }
+    ], plan.rows);
+    return X.ui.card('進貨管理（單條，' + esc(selC.name) + '）', banner + '<div style="margin-top:10px">' + tbl + '</div>' +
+      '<p class="small" style="margin:10px 0 0">已叫貨＝「採購叫貨」頁這個檔期記的叫貨條數（已叫貨＋已到貨）；進貨量＝業績預估盒數 × ' + pctText + ' 依單條內容物換算（禮盒 1 盒＝配方裡的條數）；已販售＝這個檔期的實際訂單換算成條（單賣的單條直接算）。有叫貨紀錄就用已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」。</p>', go);
+  }
+
   // 可以選的檔期（按鈕）：檔期設定裡的過年、中秋（新的在前）＋ 有訂單但還沒有檔期資料的 ＋ 各年全年
   function seasonChoices(list) {
     var out = [], seen = Object.create(null);
@@ -847,6 +967,7 @@
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
+    CONV = null;
     if (!rows.length) { el.innerHTML = html + X.ui.empty('還沒有過去訂單資料。'); return; }
 
     var t0 = now();
@@ -874,6 +995,16 @@
     var prev = cmpC ? sumPeriod(list, cmpC.kind, cmpC.year, sd.dept) : sumPeriod(list, 'year', '0000', sd.dept);
     var ms = Math.round(now() - t0);
     var deptName = (deptOpts.find(function (d) { return d.key === sd.dept; }) || {}).label;
+    var unitSingle = sd.unit === 'single', mtr = unitSingle ? 'single' : sd.metric, gsel = unitSingle ? sd.sgroup : sd.group;
+    // 單條檢視的單條按鈕：配方裡用到的單條、單賣的單條
+    var singleChoices = [];
+    if (unitSingle) {
+      var seenS = Object.create(null);
+      X.components().forEach(function (cc) { var sp = cc && X.productById(cc.componentProductId); if (sp && !seenS[sp.id]) { seenS[sp.id] = true; singleChoices.push(sp); } });
+      X.singles().forEach(function (sp) { if (sp && !seenS[sp.id]) { seenS[sp.id] = true; singleChoices.push(sp); } });
+      singleChoices.sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+      if (sd.sgroup !== 'all' && !seenS[sd.sgroup]) { sd.sgroup = 'all'; gsel = 'all'; }
+    }
 
     // 用按鈕選：檔期、比較檔期、部門、金額／禮盒數、禮盒規格
     var chip = function (act, id, label, on) {
@@ -890,18 +1021,34 @@
     html += row('週期', chip('span', '4', '四週（節前 3 週～節日週）', sd.span !== 'all') + chip('span', 'all', '全部週', sd.span === 'all') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">顯示</span>' + chip('cum', 'cum', '累計', sd.cum !== 'week') + chip('cum', 'week', '每週', sd.cum === 'week'));
     if (SHOW_DEPT) html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
-    html += row(SHOW_AMT ? '看' : '規格', (SHOW_AMT ? chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
+    html += row('單位', chip('unit', 'box', '禮盒（盒）', !unitSingle) + chip('unit', 'single', '單條（條）', unitSingle) +
+      '<span class="small">' + (unitSingle ? '禮盒依單條內容物換算成條，單賣的單條直接算' : '') + '</span>');
+    if (unitSingle) html += row('單條', chip('sgroup', 'all', '全部單條', sd.sgroup === 'all') + singleChoices.map(function (sp) { return chip('sgroup', sp.id, (sp.code ? sp.code + ' ' : '') + sp.name, String(sp.id) === String(sd.sgroup)); }).join(''));
+    else html += row(SHOW_AMT ? '看' : '規格', (SHOW_AMT ? chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">規格</span>' : '') +
       GROUPS.filter(function (g) { return !(sd.metric === 'qty' && g[0] === 'all'); }).map(function (g) { return chip('group', g[0], g[1], g[0] === sd.group); }).join(''));
     html += '<p class="small" style="margin:0 0 10px">' +
       esc('今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + (cmpC ? '；比較（' + periodLabel(cmpKind, lastYear) + '）：' + shortRange(prev) : '') + '。') +
       (cmpC && prev.minDate && cur.minDate && (prev.minDate.slice(5) !== cur.minDate.slice(5) || prev.maxDate.slice(5) !== cur.maxDate.slice(5)) ? ' <b>兩個檔期的訂單日期範圍不一樣，比較時請留意。</b>' : '') + '</p>';
 
-    var weekly = buildWeekly(list, salesCtx(), selC, cmpC, sd.dept, sd.metric, sd.group, sd.span, sd.cum !== 'week');
-    html += renderChartCard(weekly, sd.metric, deptName, sd.group);
-    html += renderPurchaseCard(purchasePlanFor(list, selC, salesCtx(), sd.group), selC);
+    var weekly = buildWeekly(list, salesCtx(), selC, cmpC, sd.dept, mtr, gsel, sd.span, sd.cum !== 'week');
+    html += renderChartCard(weekly, mtr, deptName, gsel);
+    html += unitSingle ? renderPurchaseSinglesCard(purchasePlanSingles(list, selC, salesCtx(), sd.sgroup), selC) : renderPurchaseCard(purchasePlanFor(list, selC, salesCtx(), sd.group), selC);
+
+    // 單條檢視：今年、去年各賣了幾條（全部單條合計與各單條）
+    var singlesFrom = function (sum) {
+      var out = { total: 0, by: Object.create(null) }, parts = conv();
+      Object.keys(sum.items).forEach(function (k) {
+        var it = sum.items[k], ps = it.p ? parts(it.p) : null;
+        if (!ps) return;
+        ps.forEach(function (pt) { var id = String(pt.single.id), g = out.by[id] || (out.by[id] = { p: pt.single, qty: 0 }); g.qty += it.qty * pt.qty; out.total += it.qty * pt.qty; });
+      });
+      return out;
+    };
+    var sCur = unitSingle ? singlesFrom(cur) : null, sPrev = unitSingle ? singlesFrom(prev) : null;
 
     html += X.ui.kpis([
+      sCur ? { label: deptName + '｜單條販售條數', value: X.fmt(sCur.total) + ' 條', tone: 'info', sub: '去年 ' + X.fmt(sPrev.total) + (growthText(sCur.total, sPrev.total) ? '，' + growthText(sCur.total, sPrev.total) : '') + '；禮盒依單條內容物換算，單賣的單條直接算' } :
       { label: deptName + '｜訂單數量', value: X.fmt(cur.qty), tone: 'info', sub: '去年 ' + X.fmt(prev.qty) + (growthText(cur.qty, prev.qty) ? '，' + growthText(cur.qty, prev.qty) : '') + (cur.singleQty ? '；含單條 ' + X.fmt(cur.singleQty) + ' 條' : '') },
       SHOW_AMT && { label: deptName + '｜金額', value: money(cur.amt), tone: 'ok', sub: '去年 ' + money(prev.amt) + (growthText(cur.amt, prev.amt) ? '，' + growthText(cur.amt, prev.amt) : '') +
         (cur.nonRevAmt ? '；公關贈、執行長 ' + money(cur.nonRevAmt) + ' 不算營收' : '') },
@@ -933,6 +1080,20 @@
         (Object.keys(nr).length ? '公關贈、執行長的數量照算，金額不算營收（可在「計算規則」修改）。' : '') + '對照在「對照設定」頁修改。</p>');
     }
 
+    if (sCur) {
+      var sKeys = Object.create(null);
+      Object.keys(sCur.by).concat(Object.keys(sPrev.by)).forEach(function (k) { sKeys[k] = true; });
+      var sRows = Object.keys(sKeys).map(function (k) { var a = sCur.by[k], b = sPrev.by[k], base = a || b; return { p: base.p, qa: a ? a.qty : 0, qb: b ? b.qty : 0 }; })
+        .sort(function (x, y) { return (y.qa - x.qa) || (y.qb - x.qb); });
+      html += X.ui.card('依單條（今年條數排序）', X.ui.table([
+        { label: '單條', render: function (x) { return esc((x.p.code ? x.p.code + ' ' : '') + x.p.name); } },
+        { label: '今年（條）', num: true, render: function (x) { return X.fmt(x.qa); } },
+        { label: '去年（條）', num: true, render: function (x) { return X.fmt(x.qb); } },
+        { label: '成長', num: true, render: function (x) { return growth(x.qa, x.qb); } }
+      ], sRows, { empty: '這兩年都沒有可以換算成單條的訂單' }) +
+        '<p class="small" style="margin:10px 0 0">沒有單條內容物、名稱也對不到單條的禮盒，以及品號還沒對照的訂單，不會算進單條。到「禮盒資料」設定單條內容物。</p>');
+    }
+
     // 依品項（今年金額排序，前 N 名，見「計算規則」）
     var topN = window.CMSRules ? CMSRules.get('salesTopN') : 15;
     var keys = Object.create(null);
@@ -943,7 +1104,7 @@
     }).sort(function (x, y) { return SHOW_AMT ? ((y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb)) : ((y.qa - x.qa) || (y.qb - x.qb)); });
     var shown = items.slice(0, topN);
     shown.forEach(function (x, i) { x.rank = i + 1; });
-    html += X.ui.card('依品項（今年' + (SHOW_AMT ? '金額' : '數量') + '前 ' + topN + ' 名）', X.ui.table([
+    if (!sCur) html += X.ui.card('依品項（今年' + (SHOW_AMT ? '金額' : '數量') + '前 ' + topN + ' 名）', X.ui.table([
       { label: '#', num: true, render: function (x) { return String(x.rank); } },
       { label: '品號', render: function (x) { return x.code ? esc(x.code) : DASH; } },
       { label: '名稱', render: function (x) { return esc(x.name || '（沒有名稱）'); } },
@@ -981,7 +1142,7 @@
 
     html += '<p class="small" style="margin:4px 0 0">共 ' + X.fmt(rows.length) + ' 筆訂單明細' + (c.ignored ? '（品號設為「不計算」的 ' + X.fmt(c.ignored) + ' 筆不算）' : '') + '，計算 ' + ms + ' 毫秒。</p>';
     el.innerHTML = html;
-    bindChart(el, weekly, sd.metric);
+    bindChart(el, weekly, mtr);
 
     el.onclick = function (e) {
       var go = e.target.closest ? e.target.closest('[data-go]') : null;
@@ -993,6 +1154,8 @@
       else if (a === 'cmp') sd.cmp = v;
       else if (a === 'dept') sd.dept = v;
       else if (a === 'group') sd.group = v;
+      else if (a === 'unit') sd.unit = v;
+      else if (a === 'sgroup') sd.sgroup = v;
       else if (a === 'span') sd.span = v;
       else if (a === 'cum') sd.cum = v;
       else if (a === 'wsave' || a === 'wreset') {

@@ -7,7 +7,7 @@
  *   建議叫貨       ＝ 單條需求 － 單條現貨（入口網站總表，「現貨同步」帶入）－ 在途（已叫貨、還沒到貨），最少 0
  * 可選「扣除已裝好的禮盒現貨」：禮盒要備的盒數先扣掉總表的禮盒現貨再換算。
  * 資料（都會同步給所有人）：
- *   db.purchaseOrders 叫貨紀錄：{ id, date, eta（預計到貨日）, singleId, qty, supplierId, supplier（廠商名稱，建檔當下的名字）, status, receivedDate, note, by, at }
+ *   db.purchaseOrders 叫貨紀錄：{ id, seasonId（叫貨當時進行中的檔期）, date, eta（預計到貨日）, singleId, qty, supplierId, supplier（廠商名稱，建檔當下的名字）, status, receivedDate, note, by, at }
  *     status：'ordered' 已叫貨（算在途）｜'received' 已到貨（不算在途；實際庫存仍以總表現貨為準）
  *   db.suppliers 廠商資料表：{ id, name, contact, phone, leadDays（預設交期，天）, singleIds（供應哪些單條）, note, active, by, at }
  * 只讀「業績預估」「禮盒資料」「總表現貨」，只寫 purchaseOrders、suppliers。
@@ -231,7 +231,7 @@
       var list = X.ensure('purchaseOrders'), o = rec ? list.find(function (x) { return x && x.id === rec.id; }) : null;
       if (rec && !o) { X.toast('找不到這筆紀錄，可能已被刪除'); return false; }
       var received = f.status === 'received', s = f.supplierId ? supplierById(f.supplierId) : null;
-      if (!o) { o = { id: X.uid('po') }; list.push(o); }
+      if (!o) { o = { id: X.uid('po'), seasonId: (X.activeSeason() || {}).id || '' }; list.push(o); } // seasonId：叫貨當時進行中的檔期，儀表板單條檢視用來對檔期
       o.date = f.date; o.eta = f.eta; o.singleId = f.singleId; o.qty = f.qty; o.supplierId = f.supplierId; o.supplier = s ? s.name : ''; o.status = f.status; o.note = f.note;
       o.receivedDate = received ? (o.receivedDate || X.today()) : '';
       o.by = X.userName(); o.at = Date.now();
