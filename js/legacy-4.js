@@ -693,13 +693,14 @@ function backfillGiftPricesOnce(){
 }
 
 
-// 第一次升級時，把初始折扣（門市 9、官網 8、執行長 8.5、通路 7）補進還沒填折扣的禮盒；已經填過的不動，之後使用者怎麼改都不會被覆蓋
+// 第一次升級時，把所有禮盒的折扣統一改成初始折扣（門市 9、官網 8.5、執行長 8.5、通路 7.5，2026/11/04 使用者指定）。
+// 只跑這一次（db.giftDiscountSeed 記下版本）；之後使用者在禮盒資料怎麼改都不會再被蓋掉
 function applyDefaultGiftDiscountsOnce(){
- const version='v1';
+ const version='v2';
  if(db.giftDiscountSeed===version)return;
  (db.products||[]).forEach(p=>{
    if(String(p.category||'禮盒').trim()==='單條')return;
-   Object.keys(GIFT_DISCOUNT_DEFAULTS).forEach(k=>{if(p[k]===undefined)p[k]=GIFT_DISCOUNT_DEFAULTS[k];});
+   Object.keys(GIFT_DISCOUNT_DEFAULTS).forEach(k=>{p[k]=GIFT_DISCOUNT_DEFAULTS[k];});
  });
  db.giftDiscountSeed=version;
  try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('初始折扣儲存失敗',e);}

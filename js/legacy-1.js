@@ -227,8 +227,8 @@ function deleteSingleItem(i){
 
 
 
-// 折扣成數的初始值（8.5＝8.5 折）：新增禮盒時帶入表單；第一次升級時補進還沒填折扣的禮盒。之後都可以在禮盒資料自行修改
-var GIFT_DISCOUNT_DEFAULTS={discount:9,discountWeb:8,discountCeo:8.5,discountChannel:7};
+// 折扣成數的初始值（8.5＝8.5 折）：新增禮盒時帶入表單；2026/11/04 統一改成這組數字（見 applyDefaultGiftDiscountsOnce）。之後都可以在禮盒資料自行修改
+var GIFT_DISCOUNT_DEFAULTS={discount:9,discountWeb:8.5,discountCeo:8.5,discountChannel:7.5};
 function renderGiftListTables(){
  const body=document.getElementById('prodBody'),other=document.getElementById('prodBodyOther');if(!body||!other)return;
  const all=db.products.filter(x=>(x.category||'禮盒')!=='單條')
