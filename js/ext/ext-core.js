@@ -106,6 +106,10 @@
         '說明': '來源是入口網站「生產駕駛艙 → 訂單」（API /api/internal/preorders/processed），見 js/ext/page-hqstock.js；只有還沒完成的訂單，所以同步時保留預訂交貨日已到的、刪除預訂交貨日還沒到卻不在名單上的'
       }
     },
+    singleForecast: {
+      label: '單條預估量（採購叫貨直接填）', type: 'object',
+      fields: { '（單條 id）': '{ qty: 單賣預估條數, date: 預估單日期 YYYY-MM-DD, seasonId: 填寫時進行中的檔期, by, at }：單條單賣的預估量，在「採購叫貨」頁的「轉換單條」直接填；只算進行中檔期，儀表板的單條預估、採購叫貨用' }
+    },
     purchaseOrders: {
       label: '採購叫貨紀錄', type: 'array',
       fields: {

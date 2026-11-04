@@ -525,10 +525,26 @@
     var f = ch.season.status === 'active' ? (X.db() && X.db().salesForecastV5) : ((X.get('seasonForecasts')[ch.season.id] || {}).forecast);
     return f && f.rows && typeof f.rows === 'object' ? f : null;
   }
+  // 預估資料的各品項列：進行中檔期的業績預估（只留禮盒）＋「採購叫貨」直接填的單條預估量（單條只從那裡來，不重複算）
+  function forecastRows(fo) {
+    var rows = (fo && fo.rows) || {}, db0 = X.db();
+    if (!fo || !db0 || fo !== db0.salesForecastV5) return rows;
+    var act = X.activeSeason(), sf = X.get('singleForecast'), out = {}, cx = salesCtx();
+    Object.keys(rows).forEach(function (code) {
+      var p = cx.byCode[normCode(code)] || cx.byId[String(code)] || null;
+      if (!(p && isSingle(p))) out[code] = rows[code];
+    });
+    Object.keys(sf).forEach(function (id) {
+      var e = sf[id], p = X.productById(id);
+      if (!e || !p || !(X.num(e.qty) > 0) || (e.seasonId && act && e.seasonId !== act.id)) return;
+      out[String(p.code || p.id)] = { lines: { sf: { channel: { est: X.num(e.qty) } } } };
+    });
+    return out;
+  }
   function forecastHasData(fo) { return forecastTotal({ byCode: Object.create(null), byId: Object.create(null) }, fo, 'all', 'qty', 'all').any; }
   // 預估總量（整個檔期）：每個禮盒所有日期、所選部門的預估盒數加總；金額＝盒數 × 售價 × 折扣成數（禮盒資料依部門分門市／官網／執行長／通路；沒填＝原價）
   function forecastTotal(ctx, fo, dept, metric, group) {
-    var rows = (fo && fo.rows) || {}, nonRev = nonRevenue(), any = false, total = 0, buy = 0;
+    var rows = forecastRows(fo), nonRev = nonRevenue(), any = false, total = 0, buy = 0;
     if (dept === 'unmatched') return { total: 0, any: false };
     Object.keys(rows).forEach(function (code) {
       var r = rows[code];
@@ -893,16 +909,27 @@
 
   // 給「採購叫貨」用：進行中檔期的業績預估，每個品項（禮盒、單條）的預估量（所有部門、所有日期加總）
   X.forecastBoxes = function () {
-    var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
-    if (!fo || !fo.rows) return out;
-    Object.keys(fo.rows).forEach(function (code) {
+    var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), dates: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
+    if (fo && fo.rows) Object.keys(fo.rows).forEach(function (code) {
       var r = fo.rows[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
-      if (!p) return;
-      var sum = 0;
-      Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
-      if (sum > 0) { out.byId[String(p.id)] = (out.byId[String(p.id)] || 0) + sum; out.any = true; }
+      if (!p || isSingle(p)) return; // 單條的預估量只看「採購叫貨」直接填的
+      var sum = 0, ds = [];
+      Object.keys(r.lines).forEach(function (n) {
+        var line = r.lines[n] || {}, ls = 0;
+        Object.keys(line).forEach(function (k) { ls += X.num((line[k] || {}).est); });
+        sum += ls;
+        var d = r.dates && r.dates[n];
+        if (ls > 0 && d && ds.indexOf(d) < 0) ds.push(d); // 這個禮盒有填預估的日期（業績預估頁的日期欄＝預估單日期）
+      });
+      if (sum > 0) { var id = String(p.id); out.byId[id] = (out.byId[id] || 0) + sum; out.dates[id] = (out.dates[id] || []).concat(ds).sort(); out.any = true; }
+    });
+    var act = X.activeSeason(), sf = X.get('singleForecast');
+    Object.keys(sf).forEach(function (id) {
+      var e = sf[id], p = X.productById(id);
+      if (!e || !p || !(X.num(e.qty) > 0) || (e.seasonId && act && e.seasonId !== act.id)) return;
+      out.byId[String(p.id)] = X.num(e.qty); out.dates[String(p.id)] = e.date ? [e.date] : []; out.any = true;
     });
     return out;
   };
@@ -910,11 +937,11 @@
   // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數
   // 有叫貨紀錄就拿已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準＝要追量進貨
   function purchasePlanSingles(list, selC, ctx, sgroup) {
-    var parts = conv(), res = { ratioText: ratioText(), hasForecast: false, rows: [], reason: '' }, fo = forecastOf(selC);
+    var parts = conv(), res = { ratioText: ratioText(), hasForecast: false, rows: [], reason: '' }, fo = forecastOf(selC), rowsAll = null;
     var estFull = Object.create(null), buy = Object.create(null), sold = Object.create(null), ord = Object.create(null), prod = Object.create(null);
     if (!fo) res.reason = selC.season && selC.season.status !== 'active' ? '「' + selC.name + '」不是進行中的檔期，沒有存到業績預估，只能看已叫貨與已販售。' : '「' + selC.name + '」還沒有業績預估，只能看已叫貨與已販售。';
-    else Object.keys(fo.rows || {}).forEach(function (code) {
-      var r = fo.rows[code];
+    else Object.keys(rowsAll = forecastRows(fo)).forEach(function (code) {
+      var r = rowsAll[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null, ps = p ? parts(p) : null;
       if (!ps) return;
