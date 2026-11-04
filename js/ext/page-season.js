@@ -823,7 +823,7 @@
   }
   // 開檔檢查／首頁提醒用：進行中檔期的進貨管理
   X.purchasePlan = function () {
-    var ctx = salesCtx(), c = classifyOrders(X.orders(), ctx);
+    var ctx = salesCtx(), c = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), ctx);
     var act = seasonChoices(c.list).find(function (ch) { return ch.season && ch.season.status === 'active'; });
     if (!act) return { ratio: purchaseRatio(), hasForecast: false, rows: [], reason: '目前沒有進行中的檔期，無法算進貨量。' };
     return purchasePlanFor(c.list, act, ctx, 'all');
@@ -959,7 +959,7 @@
   var SHOW_AMT = false, SHOW_DEPT = false;
 
   function renderSalesDash(el) {
-    var rows = X.orders();
+    var rows = typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders();
     var html = intro('選檔期、單位與規格，看全公司每週的實際、預估、去年同檔期與進貨量；賣超過進貨量會標紅，提醒追量進貨（不顯示客戶資料，金額與各部門先不顯示）。');
     el.onchange = null;
     el.oninput = null;

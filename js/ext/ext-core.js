@@ -95,7 +95,15 @@
       label: '總表現貨', type: 'object',
       fields: {
         date: '總表日期 YYYY-MM-DD', updatedAt: '同步時間（毫秒）', updatedBy: '同步的人', source: '資料來源說明',
-        items: '{ 品號: 現貨數量 }，來自入口網站總表的「剩餘庫存 → 現貨」（見 js/ext/page-hqstock.js）'
+        items: '{ 品號: 現貨數量 }，來自入口網站總表的「剩餘庫存 → 現貨」（見 js/ext/page-hqstock.js）',
+        salesAt: '實際銷售（入口網站訂單）上次同步時間（毫秒）', salesBy: '同步的人', salesCount: '上次同步時入口網站名單上的明細筆數'
+      }
+    },
+    portalOrders: {
+      label: '入口網站訂單（實際銷售）', type: 'array',
+      fields: {
+        id: '單號|品號|第幾筆（唯一）', no: '訂單單號（入口網站 orderNo，分批交貨的後面會加 -交貨日）', d: '預訂交貨日 YYYY-MM-DD（實際銷售用這個日期）', c: '品號', n: '品名', q: '數量',
+        '說明': '來源是入口網站「生產駕駛艙 → 訂單」（API /api/internal/preorders/processed），見 js/ext/page-hqstock.js；只有還沒完成的訂單，所以同步時保留預訂交貨日已到的、刪除預訂交貨日還沒到卻不在名單上的'
       }
     },
     purchaseOrders: {

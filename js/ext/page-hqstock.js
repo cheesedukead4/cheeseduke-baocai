@@ -12,6 +12,13 @@
  * 資料：db.hqStock = { date, updatedAt, updatedBy, source, items: { 品號: 現貨 },
  *                      picks: { 品號: 今天實際揀貨 }, orders: { 品號: 4 週累計訂單量 }, ordersAt }
  * 品號對應：禮盒、單條的「品號」要和入口網站的品號一樣；對不到的品號，首頁現貨顯示「—」。
+ *
+ * 實際銷售（2026-11-04 起）：入口網站「生產駕駛艙 → 訂單」頁的資料（API /api/internal/preorders/processed 的 lines，
+ *   每筆有 orderNo、deliveryDate（預訂交貨日）、productCode、productName、quantity）。另一顆書籤讀取後放在網址的 #orders=，
+ *   App 登入後存進 db.portalOrders（陣列 { id, no, d（預訂交貨日）, c（品號）, n（品名）, q（數量） }）。
+ *   入口網站這份只有「還沒完成」的訂單，出貨過的會從名單消失，所以每次同步時：名單上的更新；名單上沒有、預訂交貨日 ≤ 今天的保留（視為已出貨）；
+ *   名單上沒有、預訂交貨日還沒到的刪除（視為取消或改單）。日期一律用預訂交貨日。
+ *   X.salesOrders()＝過去訂單匯入（orderHistory）＋這份（同單號已經在過去訂單裡的不重複算），業績儀表板的「實際」用它。
  * 算式在 js/stock-calc.js（giftStock、stockByCode、preorderByCode）。
  */
 (function (X, root) {
@@ -24,11 +31,12 @@
 
   // ---------- 網址帶來的資料 ----------
   // 越早收起來越好：先存進 sessionStorage 並把網址的 # 清掉（登入畫面或重新載入都不會弄丟）
+  var ORDERS_KEY = 'cms_portal_orders_pending';
   (function stash() {
     var h = String(location.hash || '');
-    var m = /^#hqstock=([A-Za-z0-9_-]+)$/.exec(h);
-    if (!m) return;
-    try { sessionStorage.setItem(PENDING_KEY, m[1]); } catch (e) {}
+    var m = /^#hqstock=([A-Za-z0-9_-]+)$/.exec(h), m2 = /^#orders=([A-Za-z0-9_-]+)$/.exec(h);
+    if (!m && !m2) return;
+    try { sessionStorage.setItem(m ? PENDING_KEY : ORDERS_KEY, (m || m2)[1]); } catch (e) {}
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   })();
 
@@ -58,7 +66,7 @@
   }
 
   // 登入並載入完成後由 app-shell 呼叫：有待處理的資料就存進系統
-  function applyPending() {
+  function applyStockPending() {
     var raw = null;
     try { raw = sessionStorage.getItem(PENDING_KEY); } catch (e) {}
     if (!raw) return;
@@ -83,6 +91,73 @@
     }
   }
 
+  // ---------- 實際銷售：入口網站「訂單」----------
+  var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function cleanOrders(p) {
+    if (!p || !Array.isArray(p.l)) throw new Error('資料格式不對');
+    var out = [], seen = {}, bad = 0;
+    p.l.slice(0, 30000).forEach(function (a) {
+      if (!Array.isArray(a)) { bad++; return; }
+      var no = String(a[0] == null ? '' : a[0]).trim(), d = String(a[1] || ''), c = String(a[2] == null ? '' : a[2]).trim(), q = Number(a[3]);
+      if (!no || no.length > 60 || !DATE_RE.test(d) || !/^[\w.|\-]{1,60}$/.test(c) || !(q > 0) || q >= 1e6) { bad++; return; }
+      var k = no + '|' + c, n = (seen[k] = (seen[k] || 0) + 1);
+      out.push({ id: k + '|' + n, no: no, d: d, c: c, n: String(a[4] == null ? '' : a[4]).slice(0, 40), q: Math.round(q * 100) / 100 });
+    });
+    if (!out.length) throw new Error('沒有讀到任何訂單');
+    return { lines: out, bad: bad };
+  }
+  // 新名單更新舊資料：名單上有的用新的；名單上沒有、預訂交貨日 ≤ 今天的保留（視為已出貨）；沒有、預訂交貨日還沒到的刪除（取消或改單）
+  function mergeOrders(prev, fresh, today) {
+    var have = {};
+    fresh.forEach(function (x) { have[x.id] = true; });
+    var kept = (prev || []).filter(function (x) { return x && !have[x.id] && x.d <= today; });
+    return fresh.concat(kept);
+  }
+  function applyOrdersPending() {
+    var raw = null;
+    try { raw = sessionStorage.getItem(ORDERS_KEY); } catch (e) {}
+    if (!raw) return;
+    try { sessionStorage.removeItem(ORDERS_KEY); } catch (e) {}
+    if (!X.isAdmin() && !(root.CMSAccess && CMSAccess.canOpen('xHqStock'))) {
+      X.toast('你沒有「現貨與預購單同步」的權限，這次的訂單沒有存。');
+      return;
+    }
+    try {
+      var c = cleanOrders(decode(raw)), list = X.ensure('portalOrders'), before = list.length, today = X.today();
+      var merged = mergeOrders(list, c.lines, today);
+      list.length = 0;
+      merged.forEach(function (x) { list.push(x); });
+      var o = X.ensure('hqStock'), now = Date.now();
+      o.salesAt = now; o.salesBy = X.userName(); o.salesCount = c.lines.length;
+      if (!X.save()) throw new Error('儲存失敗');
+      var kept = merged.length - c.lines.length;
+      X.toast('已更新實際銷售：入口網站 ' + c.lines.length + ' 筆訂單明細' + (kept > 0 ? '，另保留已出貨的 ' + kept + ' 筆' : '') + (c.bad ? '（' + c.bad + ' 筆格式不對略過）' : '') + '，共 ' + merged.length + ' 筆');
+      if (typeof root.render === 'function') { try { root.render(); } catch (e) {} }
+      var cur = document.querySelector('#nav .navbtn[data-page="xHqStock"]');
+      if (cur) cur.click();
+    } catch (e) {
+      X.toast('入口網站訂單讀取失敗：' + e.message);
+    }
+  }
+  function applyPending() { applyStockPending(); applyOrdersPending(); }
+
+  // 業績儀表板用的實際銷售＝過去訂單匯入＋入口網站訂單（同單號已經在過去訂單裡的不重複算），日期用預訂交貨日
+  function salesOrders() {
+    var hist = X.orders(), pl = X.get('portalOrders');
+    if (!pl.length) return hist;
+    var inHist = {};
+    hist.forEach(function (r) { if (r) { if (r.sourceOrderNo) inHist[String(r.sourceOrderNo)] = true; if (r.orderNo) inHist[String(r.orderNo)] = true; } });
+    var rows = hist.slice();
+    pl.forEach(function (x) {
+      if (!x) return;
+      var src = String(x.no).replace(/-\d{8}$/, '');
+      if (inHist[src] || inHist[x.no]) return;
+      rows.push({ id: 'P' + x.id, date: x.d, orderNo: x.no, sourceOrderNo: src, productCode: x.c, name: x.n, customer: '', channel: '', qty: x.q, orderDepartment: '', department: '' });
+    });
+    return rows;
+  }
+  X.salesOrders = salesOrders;
+
   // ---------- 書籤 ----------
   function bookmarklet() {
     var app = location.origin + location.pathname;
@@ -101,6 +176,19 @@
       "if(!Object.keys(od).length)throw new Error('排單頁沒有訂單資料')}catch(e2){w='預購單沒有更新（'+e2.message+'）'}" +
       "var b=btoa(unescape(encodeURIComponent(JSON.stringify({d:j.date||ds,i:it,p:pc,o:od,w:w})))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');" +
       "location.href='" + app + "#hqstock='+b}catch(e){alert('讀取入口網站失敗：'+e.message+'\\n\\n請確認已經登入入口網站，並且在總表或排單頁面按這個書籤')}})()";
+    return 'javascript:' + encodeURIComponent(code);
+  }
+
+  // 實際銷售書籤：只讀入口網站「訂單」頁用的 API，把每筆明細 [單號, 預訂交貨日, 品號, 數量, 品名] 放進網址的 #orders=
+  function ordersBookmarklet() {
+    var app = location.origin + location.pathname;
+    var code = "(async()=>{try{var u=location.origin+'/api/internal/preorders/processed';" +
+      "var r=await fetch(u,{credentials:'include',headers:{Accept:'application/json'}});" +
+      "if(!r.ok){var tx='';try{tx=(await r.text()).slice(0,200)}catch(e){}throw new Error('HTTP '+r.status+'\\n網址：'+u+'\\n回應：'+tx)}" +
+      "var j=await r.json(),L=(j.lines||[]).map(function(x){return [x.orderNo,x.deliveryDate,x.productCode,x.quantity,String(x.productName||'').slice(0,20)]}).filter(function(a){return a[0]&&a[1]&&a[2]&&a[3]>0});" +
+      "if(!L.length)throw new Error('訂單頁沒有資料');" +
+      "var b=btoa(unescape(encodeURIComponent(JSON.stringify({l:L})))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');" +
+      "location.href='" + app + "#orders='+b}catch(e){alert('讀取入口網站訂單失敗：'+e.message+'\\n\\n請確認已經登入入口網站，並且在「生產駕駛艙」頁面按這個書籤')}})()";
     return 'javascript:' + encodeURIComponent(code);
   }
 
@@ -137,14 +225,28 @@
       '<li>打開<a href="' + PORTAL + '" target="_blank" rel="noopener">入口網站的總表</a>並登入（用 Google 登入），等表格出現（排單頁也可以）。</li>' +
       '<li>按書籤列的「同步現貨與預購單」→ 會回到這個 App，自動存好並同步給大家，畫面右下角會顯示「已更新」。</li></ol>' +
       '<p class="small" style="margin:8px 0 0">書籤只在入口網站讀資料（只讀，不會改動入口網站的任何資料），數字放在網址 # 後面，不會傳給任何伺服器。數字是「按書籤當下」的，要最新就再按一次。手機沒有書籤列時，請用電腦操作。</p>');
+    var pl = X.get('portalOrders'), dts = pl.map(function (x) { return x.d; }).sort(), ords = {};
+    pl.forEach(function (x) { ords[x.no] = true; });
+    html += X.ui.card('同步實際銷售（入口網站「訂單」）',
+      X.ui.kpis([
+        { label: '上次同步', value: o && o.salesAt ? X.fmtTime(o.salesAt) : '還沒同步過', tone: o && o.salesAt ? 'ok' : 'warn', sub: o && o.salesBy || '' },
+        { label: '訂單', value: Object.keys(ords).length + ' 張', tone: 'info', sub: pl.length + ' 筆明細' },
+        { label: '預訂交貨日範圍', value: dts.length ? dts[0].slice(5) + '～' + dts[dts.length - 1].slice(5) : '—', tone: 'muted', sub: dts.length ? dts[0].slice(0, 4) + '～' + dts[dts.length - 1].slice(0, 4) : '' }
+      ]) +
+      '<ol style="margin:12px 0 0;padding-left:20px;line-height:2">' +
+      '<li>把這顆按鈕<b>拖曳到瀏覽器的書籤列</b>（和上面的書籤是不同的一顆）：<br><a class="btn primary" id="xhqBm2" style="display:inline-block;margin:6px 0;text-decoration:none;cursor:grab">同步實際銷售訂單</a></li>' +
+      '<li>打開<a href="https://cheeseduke.flowings.app/bake-console/dashboard" target="_blank" rel="noopener">入口網站的生產駕駛艙</a>並登入，切到「訂單」頁。</li>' +
+      '<li>按書籤列的「同步實際銷售訂單」→ 回到這個 App，自動存好並同步給大家。</li></ol>' +
+      '<p class="small" style="margin:8px 0 0">日期用<b>預訂交貨日</b>算在哪一週。入口網站這份只有還沒完成的訂單，出貨過的會從名單消失，所以：名單上有的更新；名單上沒有、預訂交貨日已經到了或過了的保留（視為已出貨）；名單上沒有、預訂交貨日還沒到的刪除（視為取消或改單）。同單號已經在「過去訂單」匯入的不會重複算。業績儀表板的「實際」用這份加上過去訂單。</p>');
     html += X.ui.card('禮盒（' + gifts.length + ' 項）', tab(gifts));
     html += X.ui.card('單條（' + singles.length + ' 項）', tab(singles));
     el.innerHTML = html;
-    var a = el.querySelector('#xhqBm');
-    if (a) {
-      a.setAttribute('href', bookmarklet());
-      a.addEventListener('click', function (e) { e.preventDefault(); X.toast('請把這顆按鈕「拖曳」到書籤列，不是在這裡按。'); });
-    }
+    [['#xhqBm', bookmarklet], ['#xhqBm2', ordersBookmarklet]].forEach(function (x) {
+      var b = el.querySelector(x[0]);
+      if (!b) return;
+      b.setAttribute('href', x[1]());
+      b.addEventListener('click', function (e) { e.preventDefault(); X.toast('請把這顆按鈕「拖曳」到書籤列，不是在這裡按。'); });
+    });
   }
 
   X.registerPage({
@@ -154,5 +256,5 @@
     render: function (el) { render(el); }
   });
 
-  root.CMSHqStock = { applyPending: applyPending, stockOf: stockOf, _clean: clean, _decode: decode };
+  root.CMSHqStock = { applyPending: applyPending, stockOf: stockOf, salesOrders: salesOrders, _clean: clean, _decode: decode, _cleanOrders: cleanOrders, _mergeOrders: mergeOrders };
 })(window.CMSX, window);
