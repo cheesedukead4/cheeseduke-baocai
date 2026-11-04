@@ -462,14 +462,27 @@
   }
   function conv() { return CONV || (CONV = convMap()); }
   function singleMatch(group, sg) { return group === 'all' || String(sg.id) === String(group); }
-  // 這個檔期「採購叫貨」記的叫貨條數（已叫貨＋已到貨；進行中檔期也算沒記檔期的舊紀錄）
-  function orderedSingles(selC, group) {
-    var sid = selC.season && selC.season.id, act = !!(selC.season && selC.season.status === 'active'), t = 0;
+  // 這個檔期「採購叫貨」記的叫貨量（已叫貨＋已到貨；進行中檔期也算沒記檔期的舊紀錄）：{ 品項 id: 數量 }；禮盒是盒，舊的單條紀錄是條
+  function orderedByProduct(selC) {
+    var sid = selC.season && selC.season.id, act = !!(selC.season && selC.season.status === 'active'), out = Object.create(null);
     X.get('purchaseOrders').forEach(function (o) {
       if (!o || !(X.num(o.qty) > 0)) return;
       if (o.seasonId ? o.seasonId !== sid : !act) return;
-      if (group !== 'all' && String(o.singleId) !== String(group)) return;
-      t += X.num(o.qty);
+      var id = String(o.productId || o.singleId);
+      out[id] = (out[id] || 0) + X.num(o.qty);
+    });
+    return out;
+  }
+  // 圖上「已叫貨」線的總量：盒＝叫貨的禮盒盒數（依規格篩選）；條＝叫貨的禮盒依單條內容物換算（再加舊的單條紀錄）
+  function orderedTotal(selC, metric, group) {
+    var ordP = orderedByProduct(selC), t = 0;
+    Object.keys(ordP).forEach(function (pid) {
+      var p = X.productById(pid);
+      if (!p) return;
+      if (metric === 'single') {
+        var ps = conv()(p);
+        if (ps) ps.forEach(function (pt) { if (singleMatch(group, pt.single)) t += ordP[pid] * pt.qty; });
+      } else if (!isSingle(p) && inGroup(p, group === 'all' ? 'all3' : group)) t += ordP[pid];
     });
     return t;
   }
@@ -500,7 +513,13 @@
   // 進行中檔期的預估＝業績預估頁正在編輯的那份（db.salesForecastV5）；檔期結束、或換成別的進行中檔期時，
   // 目前的預估會存進 db.seasonForecasts[檔期id]（見 season-items.js），之後選到那個檔期就用存下來的那份。過去的預估沒存，所以沒有。
   // 進貨量＝業績預估盒數 × 這個比例（預設 70%，「計算規則」可改）；實際販售超過進貨量就要追量進貨
+  // 費雪（預設 70%）和蛋捲（預設 100%，預估多少就下單多少）的進貨比例不同，都可以在「計算規則」改
   function purchaseRatio() { var v = window.CMSRules ? Number(CMSRules.get('purchaseRatio')) : 70; return (v > 0 ? v : 70) / 100; }
+  function purchaseRatioEgg() { var v = window.CMSRules ? Number(CMSRules.get('purchaseRatioEgg')) : 100; return (v > 0 ? v : 100) / 100; }
+  function isEggGift(p) { return !!p && /蛋捲/.test(String(p.name || '')); } // 名稱有「蛋捲」的禮盒、單條
+  function giftRatio(p) { return isEggGift(p) ? purchaseRatioEgg() : purchaseRatio(); }
+  function ratioText() { var a = Math.round(purchaseRatio() * 100), b = Math.round(purchaseRatioEgg() * 100); return a === b ? a + '%' : '費雪 ' + a + '%、蛋捲 ' + b + '%'; }
+  function buyOf(p, est) { return Math.ceil(est * giftRatio(p) - 1e-9); } // 這個禮盒要進（叫）幾盒
   function forecastOf(ch) {
     if (!ch || !ch.season) return null;
     var f = ch.season.status === 'active' ? (X.db() && X.db().salesForecastV5) : ((X.get('seasonForecasts')[ch.season.id] || {}).forecast);
@@ -509,7 +528,7 @@
   function forecastHasData(fo) { return forecastTotal({ byCode: Object.create(null), byId: Object.create(null) }, fo, 'all', 'qty', 'all').any; }
   // 預估總量（整個檔期）：每個禮盒所有日期、所選部門的預估盒數加總；金額＝盒數 × 售價 × 折扣成數（禮盒資料依部門分門市／官網／執行長／通路；沒填＝原價）
   function forecastTotal(ctx, fo, dept, metric, group) {
-    var rows = (fo && fo.rows) || {}, nonRev = nonRevenue(), any = false, total = 0;
+    var rows = (fo && fo.rows) || {}, nonRev = nonRevenue(), any = false, total = 0, buy = 0;
     if (dept === 'unmatched') return { total: 0, any: false };
     Object.keys(rows).forEach(function (code) {
       var r = rows[code];
@@ -525,6 +544,7 @@
       }
       var price = 0;
       if (metric === 'amt') price = p ? X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(p) : X.productPrice(p)) : X.num(r.price);
+      var rowSum = 0;
       Object.keys(r.lines).forEach(function (n) {
         var line = r.lines[n];
         if (!line) return;
@@ -533,11 +553,13 @@
           if (dept !== 'all' && dk !== dept) return;
           var est = X.num((line[dk0] || {}).est);
           if (est > 0) any = true;
+          rowSum += est;
           total += metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est * mult;
         });
       });
+      if (metric !== 'amt' && p) buy += buyOf(p, rowSum) * mult;
     });
-    return { total: total, any: any };
+    return { total: total, any: any, buy: buy };
   }
 
   function axisFmt(v, metric) {
@@ -628,14 +650,14 @@
     // 進貨量線：預估總量 × 進貨比例（只在「禮盒數」的「累計」圖畫，是一條水平線）；實際累計第一次碰到它的那一週標紅色
     // 「單條數」檢視還有一條「已叫貨」線：採購叫貨記的叫貨條數；有叫貨紀錄時，販售超過已叫貨條數就要追量
     var isQty = metric === 'qty' || metric === 'single';
-    var ratio = purchaseRatio(), buyTotal = (isQty && ft.any) ? Math.ceil(ft.total * ratio - 1e-9) : 0;
-    var ordTotal = metric === 'single' ? orderedSingles(selC, group) : 0;
+    var ratioTxt = ratioText(), buyTotal = (isQty && ft.any) ? ft.buy : 0;
+    var ordTotal = isQty ? orderedTotal(selC, metric, group) : 0;
     var thr = ordTotal > 0 ? ordTotal : buyTotal;
     var buyArr = (cum && thr > 0) ? pick(function () { return thr; }) : pick(function () { return null; });
     var crossIdx = -1;
     if (any(buyArr)) for (var ci = 0; ci < actArr.length; ci++) if (actArr[ci] != null && actArr[ci] >= thr) { crossIdx = ci; break; }
     return {
-      buy: buyArr, hasBuy: any(buyArr), buyTotal: buyTotal, ratio: ratio, crossIdx: crossIdx, buyNeedCum: isQty && thr > 0 && !cum,
+      buy: buyArr, hasBuy: any(buyArr), buyTotal: buyTotal, ratioText: ratioTxt, crossIdx: crossIdx, buyNeedCum: isQty && thr > 0 && !cum,
       ord: [], hasOrd: false, ordTotal: ordTotal, thrTotal: thr, thrIsOrd: ordTotal > 0, unit: metric === 'single' ? '條' : '盒',
       cum: !!cum, actSum: actSum, estSum: estSum, prevSum: prevSum, estTotal: ft.total, weights: wts, weightsCustom: wtsCustom, estNoHoliday: ft.any && !byHoliday,
 
@@ -718,7 +740,7 @@
     var c = chartSvg(m, metric);
     var leg = c.series.map(function (s) {
       var t = s.key === 'prev' ? m.prevLabel + (m.cmpName ? '（' + m.cmpName + (m.byHoliday ? '，對齊節日週' : '，同一週對齊') + '）' : '')
-        : s.key === 'act' ? '今年實際進單（' + (m.selName || m.year) + '）' : s.key === 'buy' ? (m.thrIsOrd ? '已叫貨（採購叫貨紀錄，共 ' + X.fmt(m.ordTotal) + ' 條）' : '進貨量（預估 × ' + Math.round(m.ratio * 100) + '% ＝ ' + X.fmt(m.buyTotal) + ' ' + m.unit + '）') : '預估量（' + (m.selName || m.year) + '）';
+        : s.key === 'act' ? '今年實際進單（' + (m.selName || m.year) + '）' : s.key === 'buy' ? (m.thrIsOrd ? '已叫貨（採購叫貨紀錄，共 ' + X.fmt(m.ordTotal) + ' ' + m.unit + '）' : '進貨量（預估 × ' + m.ratioText + ' ＝ ' + X.fmt(m.buyTotal) + ' ' + m.unit + '）') : '預估量（' + (m.selName || m.year) + '）';
       return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px"><svg width="26" height="10" aria-hidden="true" style="width:26px;height:10px"><line x1="0" x2="26" y1="5" y2="5" stroke="' + s.color + '" stroke-width="2.5"' + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : '') + '/></svg>' + esc(t) + '</span>';
     }).join('');
     var miss = [];
@@ -752,7 +774,7 @@
       (m.hasEst ? '　預估 ' + esc(valText(m.estSum, metric)) : '') + (m.hasPrev ? '　' + esc(m.prevLabel) + ' ' + esc(valText(m.prevSum, metric)) : '') + rate + vsPrev + '</div>';
     var buyLine = '';
     if (m.hasBuy) {
-      var what = m.thrIsOrd ? '已叫貨條數' : '進貨量', how = m.thrIsOrd ? '（採購叫貨紀錄）' : '（預估的 ' + Math.round(m.ratio * 100) + '%）';
+      var what = m.thrIsOrd ? (m.unit === '條' ? '已叫貨條數' : '已叫貨盒數') : '進貨量', how = m.thrIsOrd ? '（採購叫貨紀錄）' : '（預估的 ' + m.ratioText + '）';
       buyLine = '<p class="small" style="margin:8px 0 0' + (m.crossIdx >= 0 ? ';color:var(--bad);font-weight:700' : '') + '">' + (m.crossIdx >= 0
         ? esc('要追量進貨：實際累計 ' + X.fmt(m.actSum) + ' ' + m.unit + '，已超過' + what + ' ' + X.fmt(m.thrTotal) + ' ' + m.unit + how + '，圖上紅圈是第一次超過的那一週（' + m.label(m.weeks[m.crossIdx]) + '）。')
         : esc('實際累計 ' + X.fmt(m.actSum) + ' ' + m.unit + '，還在' + what + ' ' + X.fmt(m.thrTotal) + ' ' + m.unit + how + '以內，還可以賣 ' + X.fmt(m.thrTotal - m.actSum) + ' ' + m.unit + '。')) + '</p>';
@@ -808,14 +830,10 @@
   // 進貨量＝業績預估盒數 × 進貨比例（預設 70%）。每個禮盒比較「這個檔期已販售的盒數」和進貨量：
   // 已販售 ≥ 進貨量＝要追量進貨（over）；有預估但還沒賣到＝正常（ok）；沒有預估但有賣＝沒有預估（nofc）。
   function purchasePlanFor(list, selC, ctx, group) {
-    var ratio = purchaseRatio(), res = { ratio: ratio, hasForecast: false, rows: [], reason: '' };
-    var fo = forecastOf(selC);
-    if (!fo) {
-      res.reason = selC.season && selC.season.status !== 'active' ? '「' + selC.name + '」不是進行中的檔期，沒有存到業績預估，算不出進貨量。' : '「' + selC.name + '」還沒有業績預估，算不出進貨量。';
-      return res;
-    }
-    var est = Object.create(null);
-    Object.keys(fo.rows || {}).forEach(function (code) {
+    var res = { ratioText: ratioText(), hasForecast: false, rows: [], reason: '' };
+    var fo = forecastOf(selC), est = Object.create(null);
+    if (!fo) res.reason = selC.season && selC.season.status !== 'active' ? '「' + selC.name + '」不是進行中的檔期，沒有存到業績預估，只能看已叫貨與已販售。' : '「' + selC.name + '」還沒有業績預估，只能看已叫貨與已販售。';
+    else Object.keys(fo.rows || {}).forEach(function (code) {
       var r = fo.rows[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
@@ -824,24 +842,24 @@
       Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
       est[String(p.id)] = (est[String(p.id)] || 0) + sum;
     });
-    var cur = sumPeriod(list, selC.kind, selC.year, 'all'), sold = Object.create(null);
+    var cur = sumPeriod(list, selC.kind, selC.year, 'all'), sold = Object.create(null), ordP = orderedByProduct(selC), ord = Object.create(null);
     Object.keys(cur.items).forEach(function (k) { var it = cur.items[k]; if (it.p && !isSingle(it.p)) sold[String(it.p.id)] = (sold[String(it.p.id)] || 0) + it.qty; });
+    Object.keys(ordP).forEach(function (id) { var p = ctx.byId[id]; if (p && !isSingle(p)) ord[id] = ordP[id]; });
     var ids = Object.create(null);
-    Object.keys(est).concat(Object.keys(sold)).forEach(function (id) { ids[id] = true; });
+    Object.keys(est).concat(Object.keys(sold), Object.keys(ord)).forEach(function (id) { ids[id] = true; });
     Object.keys(ids).forEach(function (id) {
       var p = ctx.byId[id];
       if (!p) return;
       if (group && group !== 'all' && group !== 'all3' && !inGroup(p, group)) return;
-      var e = est[id] || 0, s0 = sold[id] || 0;
-      if (!(e > 0) && !(s0 > 0)) return;
-      var buy = e > 0 ? Math.ceil(e * ratio - 1e-9) : 0;
+      var e = est[id] || 0, s0 = sold[id] || 0, o = ord[id] || 0;
+      if (!(e > 0) && !(s0 > 0) && !(o > 0)) return;
+      var buy = e > 0 ? buyOf(p, e) : 0, base = o > 0 ? o : buy;
       if (e > 0) res.hasForecast = true;
-      res.rows.push({ id: id, label: (p.code ? p.code + ' ' : '') + (p.name || ''), est: e, buy: buy, sold: s0, pct: e > 0 ? s0 / e : null, left: buy - s0,
-        status: e > 0 ? (s0 >= buy ? 'over' : 'ok') : 'nofc' });
+      res.rows.push({ id: id, label: (p.code ? p.code + ' ' : '') + (p.name || ''), line: isEggGift(p) ? '蛋捲' : '費雪', est: e, buy: buy, ordered: o, sold: s0, base: base, baseIsOrd: o > 0,
+        pct: e > 0 ? s0 / e : null, left: base - s0, status: base > 0 ? (s0 >= base ? 'over' : 'ok') : 'nofc' });
     });
     var rank = { over: 0, ok: 1, nofc: 2 };
-    res.rows.sort(function (a, b) { return (rank[a.status] - rank[b.status]) || ((b.pct || 0) - (a.pct || 0)) || (b.sold - a.sold); });
-    if (!res.hasForecast) res.reason = '「' + selC.name + '」的業績預估還沒有填盒數，算不出進貨量。';
+    res.rows.sort(function (a, b) { return (rank[a.status] - rank[b.status]) || ((b.base > 0 ? b.sold / b.base : 0) - (a.base > 0 ? a.sold / a.base : 0)) || (b.sold - a.sold); });
     return res;
   }
   // 開檔檢查／首頁提醒用：進行中檔期的進貨管理
@@ -849,33 +867,31 @@
     SW_CACHE = null;
     var ctx = salesCtx(), c = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), ctx);
     var act = seasonChoices(c.list).find(function (ch) { return ch.season && ch.season.status === 'active'; });
-    if (!act) return { ratio: purchaseRatio(), hasForecast: false, rows: [], reason: '目前沒有進行中的檔期，無法算進貨量。' };
+    if (!act) return { ratioText: ratioText(), hasForecast: false, rows: [], reason: '目前沒有進行中的檔期，無法算進貨量。' };
     return purchasePlanFor(c.list, act, ctx, 'all');
   };
+  // 給「採購叫貨」頁用：費雪、蛋捲的進貨比例規則與規格
+  X.giftRatio = giftRatio; X.giftRatioText = ratioText; X.buyBoxes = buyOf; X.isEggGift = isEggGift; X.giftGroupKey = giftGroup;
 
   function renderPurchaseCard(plan, selC) {
-    var pctText = Math.round(plan.ratio * 100) + '%';
-    var go = '<button type="button" class="btn gray" data-go="xCalcRules" style="min-height:30px;padding:3px 11px;font-size:15px">調整進貨比例（目前 ' + pctText + '）</button>';
-    if (!plan.hasForecast || !plan.rows.length) return X.ui.card('進貨管理（' + esc(selC.name) + '）', X.ui.empty(plan.reason || '沒有資料。') + '<p class="small" style="margin:8px 0 0">進貨量＝業績預估盒數 × ' + pctText + '，請先到「業績預估」頁填預估。</p>', go);
-    var over = plan.rows.filter(function (r) { return r.status === 'over'; });
-    var banner = over.length
-      ? X.ui.banner('bad', '<b>' + over.length + ' 個禮盒要追量進貨：</b>' + over.slice(0, 6).map(function (r) { return esc(r.label); }).join('、') + (over.length > 6 ? '…' : '') + '（實際販售已超過進貨量）。')
-      : X.ui.banner('ok', '目前所有禮盒的販售都還在進貨量以內，不用追量。');
-    var tag = function (r) { return r.status === 'over' ? X.ui.tag('要追量進貨', 'bad') : (r.status === 'nofc' ? X.ui.tag('沒有預估', 'muted') : X.ui.tag('正常', 'ok')); };
+    var go = '<button type="button" class="btn gray" data-go="xCalcRules" style="min-height:30px;padding:3px 11px;font-size:15px">調整進貨比例（目前 ' + plan.ratioText + '）</button>';
+    if (!plan.rows.length) return X.ui.card('進貨管理（' + esc(selC.name) + '）', X.ui.empty(plan.reason || '沒有資料。') + '<p class="small" style="margin:8px 0 0">進貨量＝業績預估盒數 × 進貨比例（' + plan.ratioText + '），請先到「業績預估」頁填預估。</p>', go);
+    var tag = function (r) { return r.status === 'over' ? X.ui.tag('要追量進貨', 'bad') : (r.status === 'nofc' ? X.ui.tag('沒有進貨基準', 'muted') : X.ui.tag('正常', 'ok')); };
     var tbl = X.ui.table([
-      { label: '禮盒', render: function (r) { return esc(r.label); } },
+      { label: '禮盒', render: function (r) { return esc(r.label) + ' <span class="small">' + r.line + '</span>'; } },
       { label: '業績預估（盒）', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.est) : DASH; } },
-      { label: '進貨量（預估×' + pctText + '）', num: true, render: function (r) { return r.est > 0 ? '<b>' + X.fmt(r.buy) + '</b>' : DASH; } },
+      { label: '進貨量（預估×比例，盒）', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.buy) : DASH; } },
+      { label: '已叫貨（盒）', num: true, render: function (r) { return r.ordered > 0 ? '<b>' + X.fmt(r.ordered) + '</b>' : DASH; } },
       { label: '已販售（盒）', num: true, render: function (r) { return X.fmt(r.sold); } },
-      { label: '販售佔預估', num: true, render: function (r) { return r.pct == null ? DASH : '<b style="color:' + (r.status === 'over' ? 'var(--bad)' : 'inherit') + '">' + (Math.round(r.pct * 1000) / 10) + '%</b>'; } },
-      { label: '還可販售（盒）', num: true, render: function (r) { return r.est > 0 ? (r.left >= 0 ? X.fmt(r.left) : '<b style="color:var(--bad)">超過 ' + X.fmt(-r.left) + '</b>') : DASH; } },
+      { label: '還可販售（盒）', num: true, render: function (r) { return r.base > 0 ? (r.left >= 0 ? X.fmt(r.left) : '<b style="color:var(--bad)">超過 ' + X.fmt(-r.left) + '</b>') : DASH; } },
+      { label: '判斷基準', render: function (r) { return r.base > 0 ? '<span class="small">' + (r.baseIsOrd ? '已叫貨' : '進貨量') + '</span>' : DASH; } },
       { label: '狀態', render: tag }
     ], plan.rows);
     return X.ui.card('進貨管理（' + esc(selC.name) + '）', '<div>' + tbl + '</div>' +
-      '<p class="small" style="margin:10px 0 0">進貨量＝「業績預估」頁各部門、各日期預估盒數加總 × ' + pctText + '（無條件進位）；已販售＝這個檔期的實際訂單（只算禮盒，不含單條與品號未對照的訂單）。已販售 ≥ 進貨量就標「要追量進貨」，首頁上方的提醒列也會顯示。上方圖的「規格」按鈕會同時篩選這張表。</p>', go);
+      '<p class="small" style="margin:10px 0 0">進貨量＝「業績預估」頁各部門、各日期預估盒數加總 × 進貨比例（' + plan.ratioText + '，每個禮盒各自無條件進位）；廠商以禮盒進貨，所以已叫貨是「採購叫貨」頁記的禮盒盒數（已叫貨＋已到貨）；已販售＝這個檔期的實際訂單（只算禮盒，不含單條與品號未對照的訂單）。有叫貨紀錄就用已叫貨盒數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」，首頁上方的提醒列也會顯示。</p>', go);
   }
 
-  // 給「採購叫貨」用：進行中檔期的業績預估，每個禮盒的預估盒數（所有部門、所有日期加總）
+  // 給「採購叫貨」用：進行中檔期的業績預估，每個品項（禮盒、單條）的預估量（所有部門、所有日期加總）
   X.forecastBoxes = function () {
     var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
     if (!fo || !fo.rows) return out;
@@ -883,7 +899,7 @@
       var r = fo.rows[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
-      if (!p || isSingle(p)) return;
+      if (!p) return;
       var sum = 0;
       Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
       if (sum > 0) { out.byId[String(p.id)] = (out.byId[String(p.id)] || 0) + sum; out.any = true; }
@@ -894,18 +910,18 @@
   // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數
   // 有叫貨紀錄就拿已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準＝要追量進貨
   function purchasePlanSingles(list, selC, ctx, sgroup) {
-    var ratio = purchaseRatio(), parts = conv(), res = { ratio: ratio, hasForecast: false, rows: [], reason: '' }, fo = forecastOf(selC);
+    var parts = conv(), res = { ratioText: ratioText(), hasForecast: false, rows: [], reason: '' }, fo = forecastOf(selC);
     var estFull = Object.create(null), buy = Object.create(null), sold = Object.create(null), ord = Object.create(null), prod = Object.create(null);
     if (!fo) res.reason = selC.season && selC.season.status !== 'active' ? '「' + selC.name + '」不是進行中的檔期，沒有存到業績預估，只能看已叫貨與已販售。' : '「' + selC.name + '」還沒有業績預估，只能看已叫貨與已販售。';
     else Object.keys(fo.rows || {}).forEach(function (code) {
       var r = fo.rows[code];
       if (!r || !r.lines) return;
-      var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null, ps = p && !isSingle(p) ? parts(p) : null;
+      var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null, ps = p ? parts(p) : null;
       if (!ps) return;
       var sum = 0;
       Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
       if (!(sum > 0)) return;
-      var boxes = Math.ceil(sum * ratio - 1e-9);
+      var boxes = buyOf(p, sum);
       ps.forEach(function (pt) {
         var k = String(pt.single.id);
         prod[k] = pt.single; estFull[k] = (estFull[k] || 0) + sum * pt.qty; buy[k] = (buy[k] || 0) + boxes * pt.qty; res.hasForecast = true;
@@ -917,13 +933,11 @@
       if (!ps) return;
       ps.forEach(function (pt) { var id = String(pt.single.id); prod[id] = pt.single; sold[id] = (sold[id] || 0) + it.qty * pt.qty; });
     });
-    var sid = selC.season && selC.season.id, act = !!(selC.season && selC.season.status === 'active');
-    X.get('purchaseOrders').forEach(function (o) {
-      if (!o || !(X.num(o.qty) > 0)) return;
-      if (o.seasonId ? o.seasonId !== sid : !act) return;
-      var id = String(o.singleId), p = ctx.byId[id];
-      if (!p) return;
-      prod[id] = p; ord[id] = (ord[id] || 0) + X.num(o.qty);
+    var ordP = orderedByProduct(selC);
+    Object.keys(ordP).forEach(function (pid) {
+      var p = ctx.byId[pid], ps = p ? parts(p) : null;
+      if (!ps) return;
+      ps.forEach(function (pt) { var id = String(pt.single.id); prod[id] = pt.single; ord[id] = (ord[id] || 0) + ordP[pid] * pt.qty; });
     });
     Object.keys(prod).forEach(function (id) {
       if (sgroup && sgroup !== 'all' && id !== String(sgroup)) return;
@@ -937,7 +951,7 @@
     return res;
   }
   function renderPurchaseSinglesCard(plan, selC) {
-    var pctText = Math.round(plan.ratio * 100) + '%';
+    var pctText = plan.ratioText;
     var go = '<button type="button" class="btn gray" data-go="xPurchase" style="min-height:30px;padding:3px 11px;font-size:15px">到「採購叫貨」</button>';
     if (!plan.rows.length) return X.ui.card('進貨管理（單條，' + esc(selC.name) + '）', X.ui.empty(plan.reason || '沒有資料。') + '<p class="small" style="margin:8px 0 0">進貨條數來自「採購叫貨」頁的叫貨紀錄與業績預估換算。</p>', go);
     var over = plan.rows.filter(function (r) { return r.status === 'over'; });
@@ -956,7 +970,7 @@
       { label: '狀態', render: tag }
     ], plan.rows);
     return X.ui.card('進貨管理（單條，' + esc(selC.name) + '）', '<div>' + tbl + '</div>' +
-      '<p class="small" style="margin:10px 0 0">已叫貨＝「採購叫貨」頁這個檔期記的叫貨條數（已叫貨＋已到貨）；進貨量＝業績預估盒數 × ' + pctText + ' 依單條內容物換算（禮盒 1 盒＝配方裡的條數）；已販售＝這個檔期的實際訂單換算成條（單賣的單條直接算）。有叫貨紀錄就用已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」。</p>', go);
+      '<p class="small" style="margin:10px 0 0">已叫貨＝「採購叫貨」頁這個檔期叫的禮盒依單條內容物換算成條（已叫貨＋已到貨）；進貨量＝業績預估盒數 × 進貨比例（' + pctText + '）依單條內容物換算（禮盒 1 盒＝配方裡的條數）；已販售＝這個檔期的實際訂單換算成條（單賣的單條直接算）。有叫貨紀錄就用已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」。</p>', go);
   }
 
   // 可以選的檔期（按鈕）：檔期設定裡的過年、中秋（新的在前）＋ 有訂單但還沒有檔期資料的 ＋ 各年全年
@@ -1082,7 +1096,7 @@
         { label: '實際累計', value: X.fmt(actAll) + ' ' + uTxt, tone: 'info', sub: selC.name + ' 到今天的合計' },
         { label: '預估達成率', value: estAll > 0 ? (Math.round(actAll / estAll * 1000) / 10) + '%' : '—', tone: estAll > 0 ? (actAll >= estAll ? 'ok' : 'info') : 'muted', sub: estAll > 0 ? '業績預估 ' + X.fmt(estAll) + ' ' + uTxt : '還沒有預估（到「業績預估」填）' },
         { label: weekly.thrIsOrd ? '已叫貨還可賣' : '進貨量還可賣', value: thrV > 0 ? (left >= 0 ? X.fmt(left) + ' ' + uTxt : '超過 ' + X.fmt(-left) + ' ' + uTxt) : '—', tone: thrV > 0 ? (left < 0 ? 'bad' : 'ok') : 'muted',
-          sub: thrV > 0 ? (weekly.thrIsOrd ? '已叫貨 ' : '進貨量（預估 × ' + Math.round(weekly.ratio * 100) + '%） ') + X.fmt(thrV) + ' ' + uTxt : '沒有預估也沒有叫貨紀錄' },
+          sub: thrV > 0 ? (weekly.thrIsOrd ? '已叫貨 ' : '進貨量（預估 × ' + weekly.ratioText + '） ') + X.fmt(thrV) + ' ' + uTxt : '沒有預估也沒有叫貨紀錄' },
         { label: '去年同檔期', value: cmpC && prevAll > 0 ? X.fmt(prevAll) + ' ' + uTxt : '—', tone: 'muted', sub: cmpC ? (prevAll > 0 ? cmpC.name + '整檔' + (growthText(actAll, prevAll) ? '，今年' + growthText(actAll, prevAll) : '') : '去年沒有資料') : '不比較' }
       ]);
     }

@@ -347,12 +347,12 @@
     restock: function (c) {
       if (typeof X.purchasePlan !== 'function') return { level: 'skip', count: 0, countText: '—', desc: '進貨管理還沒載入，無法檢查。' };
       var plan = X.purchasePlan();
-      if (!plan || !plan.hasForecast) return { level: 'skip', count: 0, countText: '—', desc: plan && plan.reason ? plan.reason : '進行中的檔期還沒有業績預估，無法算進貨量。' };
+      if (!plan || !plan.rows.length) return { level: 'skip', count: 0, countText: '—', desc: plan && plan.reason ? plan.reason : '進行中的檔期還沒有業績預估或叫貨紀錄，無法算進貨量。' };
       var over = plan.rows.filter(function (r) { return r.status === 'over'; });
-      var l = listOf(over, function (r) { return r.label + '：已販售 ' + X.fmt(r.sold) + ' 盒，進貨量 ' + X.fmt(r.buy) + ' 盒，超過 ' + X.fmt(r.sold - r.buy) + ' 盒'; });
+      var l = listOf(over, function (r) { return r.label + '：已販售 ' + X.fmt(r.sold) + ' 盒，' + (r.baseIsOrd ? '已叫貨 ' : '進貨量 ') + X.fmt(r.base) + ' 盒，超過 ' + X.fmt(r.sold - r.base) + ' 盒'; });
       return {
         level: over.length ? 'bad' : 'ok', count: over.length, countText: over.length + ' 個', countSub: '共 ' + plan.rows.length + ' 個禮盒',
-        desc: over.length ? '這些禮盒實際販售已超過進貨量（業績預估的 ' + Math.round(plan.ratio * 100) + '%），要追量進貨。' : '所有禮盒的販售都還在進貨量（業績預估的 ' + Math.round(plan.ratio * 100) + '%）以內。',
+        desc: over.length ? '這些禮盒實際販售已超過已叫貨盒數或進貨量（業績預估的 ' + plan.ratioText + '），要追量進貨。' : '所有禮盒的販售都還在已叫貨盒數或進貨量（業績預估的 ' + plan.ratioText + '）以內。',
         list: l.list, more: l.more, pill: over.length + ' 個禮盒販售超過進貨量，要追量進貨'
       };
     },

@@ -116,9 +116,15 @@
     },
     {
       key: 'purchaseRatio', group: 'sales', type: 'number', default: 70, min: 10, max: 200, step: 1, integer: true, unit: '%',
-      label: '進貨量＝業績預估的幾成（超過就要追量進貨）',
+      label: '費雪禮盒：進貨量＝業績預估的幾成（超過就要追量進貨）',
       help: '進貨量＝業績預估盒數 × 這個比例（無條件進位，預設 70%）。實際販售的盒數超過進貨量時，儀表板的進貨管理、波動圖和首頁提醒會顯示「要追量進貨」。',
       uses: ['首頁業績儀表板「進貨管理」與波動圖的進貨量線', '開檔檢查「禮盒販售超過進貨量」']
+    },
+    {
+      key: 'purchaseRatioEgg', group: 'sales', type: 'number', default: 100, min: 10, max: 200, step: 1, integer: true, unit: '%',
+      label: '蛋捲禮盒：進貨量＝業績預估的幾成（預設 100%，預估多少就下單多少）',
+      help: '名稱有「蛋捲」的禮盒（例如蛋捲10入）用這個比例；其他禮盒（費雪）用上一個「費雪禮盒」的比例。',
+      uses: ['採購叫貨的建議叫貨盒數', '首頁業績儀表板「進貨管理」與波動圖的進貨量線', '開檔檢查「禮盒販售超過進貨量」']
     },
     {
       key: 'salesTopN', group: 'sales', type: 'number', default: 15, min: 1, max: 500, step: 1, integer: true, unit: '名',

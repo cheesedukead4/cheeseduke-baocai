@@ -109,14 +109,14 @@
     purchaseOrders: {
       label: '採購叫貨紀錄', type: 'array',
       fields: {
-        id: '唯一代號', seasonId: '叫貨當時進行中的檔期 id（儀表板單條檢視用；舊紀錄沒有，算進行中檔期）', date: '叫貨日期 YYYY-MM-DD', eta: '預計到貨日 YYYY-MM-DD', singleId: '單條 id', qty: '叫貨數量（條）', supplierId: '廠商 id（廠商資料表，沒建檔時空白）', supplier: '廠商名稱（隨廠商資料表更新；沒選廠商時空白）',
+        id: '唯一代號', seasonId: '叫貨當時進行中的檔期 id（儀表板單條檢視用；舊紀錄沒有，算進行中檔期）', date: '叫貨日期 YYYY-MM-DD', eta: '預計到貨日 YYYY-MM-DD', productId: '品項 id（禮盒或單條；舊紀錄叫 singleId＝單條）', qty: '叫貨數量（禮盒是盒、單條是條）', supplierId: '廠商 id（廠商資料表，沒建檔時空白）', supplier: '廠商名稱（隨廠商資料表更新；沒選廠商時空白）',
         status: "'ordered' 已叫貨（在途）｜'received' 已到貨", receivedDate: '到貨日期', note: '備註', by: '記錄者', at: '記錄時間（毫秒）'
       }
     },
     suppliers: {
       label: '廠商資料表', type: 'array',
       fields: {
-        id: '唯一代號', name: '廠商名稱', contact: '聯絡人', phone: '電話', leadDays: '預設交期（天，叫貨到到貨）', singleIds: '[單條 id 字串]：這個廠商供應哪些單條',
+        id: '唯一代號', name: '廠商名稱', contact: '聯絡人', phone: '電話', leadDays: '預設交期（天，叫貨到到貨）', productIds: '[品項 id 字串]：這個廠商供應哪些禮盒、單條（舊資料叫 singleIds）',
         note: '備註', active: '是否啟用 true/false（停用的不出現在叫貨選單）', by: '最後修改者', at: '最後修改時間（毫秒）'
       }
     },
