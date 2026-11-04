@@ -465,9 +465,10 @@
       Object.keys(r.lines).forEach(function (n) {
         var line = r.lines[n];
         if (!line) return;
-        Object.keys(line).forEach(function (dk) {
+        Object.keys(line).forEach(function (dk0) {
+          var dk = dk0 === 'grandduchy' ? 'channel' : dk0; // 大公國已併入通路（舊的預估存檔還有大公國的數字）
           if (dept !== 'all' && dk !== dept) return;
-          var est = X.num((line[dk] || {}).est);
+          var est = X.num((line[dk0] || {}).est);
           if (est > 0) any = true;
           total += metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est;
         });
