@@ -468,8 +468,10 @@
     X.get('purchaseOrders').forEach(function (o) {
       if (!o || !(X.num(o.qty) > 0)) return;
       if (o.seasonId ? o.seasonId !== sid : !act) return;
-      var id = String(o.productId || o.singleId);
-      out[id] = (out[id] || 0) + X.num(o.qty);
+      var id = String(o.productId || o.singleId), p = X.productById(id), q = X.num(o.qty);
+      // 新紀錄（unit＝條）禮盒的數量是條：換回盒（÷ 每盒條數），這裡的禮盒一律以盒計；單條與舊的禮盒紀錄（盒）不變
+      if (p && !isSingle(p) && o.unit === '條') { var ps0 = conv()(p), per0 = ps0 ? ps0.reduce(function (t, pt) { return t + pt.qty; }, 0) : 0; if (per0 > 0) q = q / per0; }
+      out[id] = (out[id] || 0) + q;
     });
     return out;
   }
@@ -866,7 +868,7 @@
   }
   // 開檔檢查／首頁提醒用：進行中檔期的進貨管理
   X.purchasePlan = function () {
-    SW_CACHE = null;
+    SW_CACHE = null; CONV = null;
     var ctx = salesCtx(), c = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), ctx);
     var act = seasonChoices(c.list).find(function (ch) { return ch.season && ch.season.status === 'active'; });
     if (!act) return { ratioText: ratioText(), hasForecast: false, rows: [], reason: '目前沒有進行中的檔期，無法算進貨量。' };
@@ -890,7 +892,7 @@
       { label: '狀態', render: tag }
     ], plan.rows);
     return X.ui.card('進貨管理（' + esc(selC.name) + '）', '<div>' + tbl + '</div>' +
-      '<p class="small" style="margin:10px 0 0">進貨量＝「業績預估」頁各部門、各日期預估盒數加總 × 進貨比例（' + plan.ratioText + '，每個禮盒各自無條件進位）；廠商以禮盒進貨，所以已叫貨是「採購叫貨」頁記的禮盒盒數（已叫貨＋已到貨）；已販售＝這個檔期的實際訂單（只算禮盒，不含單條與品號未對照的訂單）。有叫貨紀錄就用已叫貨盒數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」，首頁上方的提醒列也會顯示。</p>', go);
+      '<p class="small" style="margin:10px 0 0">進貨量＝「業績預估」頁各部門、各日期預估盒數加總 × 進貨比例（' + plan.ratioText + '，每個禮盒各自無條件進位）；廠商以禮盒進貨，所以已叫貨是「採購叫貨」頁記的叫貨量（禮盒換回盒）（已叫貨＋已到貨）；已販售＝這個檔期的實際訂單（只算禮盒，不含單條與品號未對照的訂單）。有叫貨紀錄就用已叫貨盒數當基準，沒有就用進貨量；已販售 ≥ 基準就標「要追量進貨」，首頁上方的提醒列也會顯示。</p>', go);
   }
 
   // 給「採購叫貨」用：進行中檔期的業績預估，每個品項（禮盒、單條）的預估量（所有部門、所有日期加總）
