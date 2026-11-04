@@ -208,7 +208,7 @@
   }
   function supplierOptions(currentId) {
     var list = suppliers().filter(function (s) { return s.active !== false || s.id === currentId; });
-    return [{ value: '', label: '（不指定／其他）' }].concat(list.map(function (s) { return { value: s.id, label: s.name + (s.active === false ? '（停用）' : '') }; }));
+    return [{ value: '', label: '（不指定）' }].concat(list.map(function (s) { return { value: s.id, label: s.name + (s.active === false ? '（停用）' : '') }; }));
   }
   function orderDialog(rec, preset) {
     var isNew = !rec;
@@ -220,8 +220,7 @@
       { name: 'date', label: '叫貨日期', type: 'date', value: v.date, required: true },
       { name: 'singleId', label: '單條', type: 'select', options: singleOptions(), value: v.singleId, required: true },
       { name: 'qty', label: '數量（條）', type: 'number', value: v.qty, min: 0, step: 'any', required: true },
-      { name: 'supplierId', label: '廠商（廠商資料表）', type: 'select', options: supplierOptions(sid), value: sid },
-      { name: 'supplier', label: '其他廠商（沒建檔時填）', type: 'text', value: sid ? '' : (v.supplier || ''), placeholder: '選填' },
+      { name: 'supplierId', label: '廠商', type: 'select', options: supplierOptions(sid), value: sid },
       { name: 'eta', label: '預計到貨日', type: 'date', value: v.eta || '' },
       { name: 'status', label: '狀態', type: 'select', options: [{ value: 'ordered', label: '已叫貨（在途）' }, { value: 'received', label: '已到貨' }], value: v.status },
       { name: 'note', label: '備註', type: 'textarea', value: v.note || '', full: true }
@@ -233,7 +232,7 @@
       if (rec && !o) { X.toast('找不到這筆紀錄，可能已被刪除'); return false; }
       var received = f.status === 'received', s = f.supplierId ? supplierById(f.supplierId) : null;
       if (!o) { o = { id: X.uid('po') }; list.push(o); }
-      o.date = f.date; o.eta = f.eta; o.singleId = f.singleId; o.qty = f.qty; o.supplierId = f.supplierId; o.supplier = s ? s.name : f.supplier; o.status = f.status; o.note = f.note;
+      o.date = f.date; o.eta = f.eta; o.singleId = f.singleId; o.qty = f.qty; o.supplierId = f.supplierId; o.supplier = s ? s.name : ''; o.status = f.status; o.note = f.note;
       o.receivedDate = received ? (o.receivedDate || X.today()) : '';
       o.by = X.userName(); o.at = Date.now();
       X.save();

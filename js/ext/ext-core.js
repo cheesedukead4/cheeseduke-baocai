@@ -101,7 +101,7 @@
     purchaseOrders: {
       label: '採購叫貨紀錄', type: 'array',
       fields: {
-        id: '唯一代號', date: '叫貨日期 YYYY-MM-DD', eta: '預計到貨日 YYYY-MM-DD', singleId: '單條 id', qty: '叫貨數量（條）', supplierId: '廠商 id（廠商資料表，沒建檔時空白）', supplier: '廠商名稱（建檔廠商隨資料表更新；沒建檔時是手填的名稱）',
+        id: '唯一代號', date: '叫貨日期 YYYY-MM-DD', eta: '預計到貨日 YYYY-MM-DD', singleId: '單條 id', qty: '叫貨數量（條）', supplierId: '廠商 id（廠商資料表，沒建檔時空白）', supplier: '廠商名稱（隨廠商資料表更新；沒選廠商時空白）',
         status: "'ordered' 已叫貨（在途）｜'received' 已到貨", receivedDate: '到貨日期', note: '備註', by: '記錄者', at: '記錄時間（毫秒）'
       }
     },
