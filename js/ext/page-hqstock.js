@@ -119,7 +119,7 @@
     if (!raw) return;
     try { sessionStorage.removeItem(ORDERS_KEY); } catch (e) {}
     if (!X.isAdmin() && !(root.CMSAccess && CMSAccess.canOpen('xHqStock'))) {
-      X.toast('你沒有「現貨與預購單同步」的權限，這次的訂單沒有存。');
+      X.toast('你沒有「入口網站同步」的權限，這次的訂單沒有存。');
       return;
     }
     try {
@@ -211,7 +211,20 @@
         { label: '預購單', render: function (p) { var v = root.CMSStock && CMSStock.preorderByCode(p.code); return v == null ? '<span class="small">—</span>' : '<b>' + esc(v) + '</b>'; } }
       ], list, { empty: '沒有資料' });
     }
-    var html = X.ui.banner('info', '首頁的<b>現貨</b>＝入口網站「總表」的「剩餘庫存 → 現貨」；<b>預購單</b>＝「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0）。入口網站要 Google 登入，所以用下面的書籤一鍵帶過來，不用抄數字。');
+    var pl = X.get('portalOrders'), dts = pl.map(function (x) { return x.d; }).sort(), ords = {};
+    pl.forEach(function (x) { ords[x.no] = true; });
+    var salesHtml = X.ui.card('同步實際銷售（入口網站「訂單」）',
+      X.ui.kpis([
+        { label: '上次同步', value: o && o.salesAt ? X.fmtTime(o.salesAt) : '還沒同步過', tone: o && o.salesAt ? 'ok' : 'warn', sub: o && o.salesBy || '' },
+        { label: '訂單', value: Object.keys(ords).length + ' 張', tone: 'info', sub: pl.length + ' 筆明細' },
+        { label: '預訂交貨日範圍', value: dts.length ? dts[0].slice(5) + '～' + dts[dts.length - 1].slice(5) : '—', tone: 'muted', sub: dts.length ? dts[0].slice(0, 4) + '～' + dts[dts.length - 1].slice(0, 4) : '' }
+      ]) +
+      '<ol style="margin:12px 0 0;padding-left:20px;line-height:2">' +
+      '<li>把這顆按鈕<b>拖曳到瀏覽器的書籤列</b>（和下面現貨的書籤是不同的一顆）：<br><a class="btn primary" id="xhqBm2" style="display:inline-block;margin:6px 0;text-decoration:none;cursor:grab">同步實際銷售訂單</a></li>' +
+      '<li>打開<a href="https://cheeseduke.flowings.app/bake-console/dashboard" target="_blank" rel="noopener">入口網站的生產駕駛艙</a>並登入，切到「訂單」頁。</li>' +
+      '<li>按書籤列的「同步實際銷售訂單」→ 回到這個 App，自動存好並同步給大家。</li></ol>' +
+      '<p class="small" style="margin:8px 0 0">日期用<b>預訂交貨日</b>算在哪一週。入口網站這份只有還沒完成的訂單，出貨過的會從名單消失，所以：名單上有的更新；名單上沒有、預訂交貨日已經到了或過了的保留（視為已出貨）；名單上沒有、預訂交貨日還沒到的刪除（視為取消或改單）。同單號已經在「過去訂單」匯入的不會重複算。業績儀表板的「實際」用這份加上過去訂單。</p>');
+    var html = salesHtml + X.ui.banner('info', '首頁的<b>現貨</b>＝入口網站「總表」的「剩餘庫存 → 現貨」；<b>預購單</b>＝「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0）。入口網站要 Google 登入，所以用下面的書籤一鍵帶過來，不用抄數字。');
     html += X.ui.kpis([
       { label: '上次更新', value: got ? X.fmtTime(o.updatedAt) : '還沒同步過', tone: got ? 'ok' : 'warn', sub: got ? (o.updatedBy || '') : '' },
       { label: '總表日期', value: got && o.date ? o.date : '—', tone: 'info' },
@@ -225,19 +238,6 @@
       '<li>打開<a href="' + PORTAL + '" target="_blank" rel="noopener">入口網站的總表</a>並登入（用 Google 登入），等表格出現（排單頁也可以）。</li>' +
       '<li>按書籤列的「同步現貨與預購單」→ 會回到這個 App，自動存好並同步給大家，畫面右下角會顯示「已更新」。</li></ol>' +
       '<p class="small" style="margin:8px 0 0">書籤只在入口網站讀資料（只讀，不會改動入口網站的任何資料），數字放在網址 # 後面，不會傳給任何伺服器。數字是「按書籤當下」的，要最新就再按一次。手機沒有書籤列時，請用電腦操作。</p>');
-    var pl = X.get('portalOrders'), dts = pl.map(function (x) { return x.d; }).sort(), ords = {};
-    pl.forEach(function (x) { ords[x.no] = true; });
-    html += X.ui.card('同步實際銷售（入口網站「訂單」）',
-      X.ui.kpis([
-        { label: '上次同步', value: o && o.salesAt ? X.fmtTime(o.salesAt) : '還沒同步過', tone: o && o.salesAt ? 'ok' : 'warn', sub: o && o.salesBy || '' },
-        { label: '訂單', value: Object.keys(ords).length + ' 張', tone: 'info', sub: pl.length + ' 筆明細' },
-        { label: '預訂交貨日範圍', value: dts.length ? dts[0].slice(5) + '～' + dts[dts.length - 1].slice(5) : '—', tone: 'muted', sub: dts.length ? dts[0].slice(0, 4) + '～' + dts[dts.length - 1].slice(0, 4) : '' }
-      ]) +
-      '<ol style="margin:12px 0 0;padding-left:20px;line-height:2">' +
-      '<li>把這顆按鈕<b>拖曳到瀏覽器的書籤列</b>（和上面的書籤是不同的一顆）：<br><a class="btn primary" id="xhqBm2" style="display:inline-block;margin:6px 0;text-decoration:none;cursor:grab">同步實際銷售訂單</a></li>' +
-      '<li>打開<a href="https://cheeseduke.flowings.app/bake-console/dashboard" target="_blank" rel="noopener">入口網站的生產駕駛艙</a>並登入，切到「訂單」頁。</li>' +
-      '<li>按書籤列的「同步實際銷售訂單」→ 回到這個 App，自動存好並同步給大家。</li></ol>' +
-      '<p class="small" style="margin:8px 0 0">日期用<b>預訂交貨日</b>算在哪一週。入口網站這份只有還沒完成的訂單，出貨過的會從名單消失，所以：名單上有的更新；名單上沒有、預訂交貨日已經到了或過了的保留（視為已出貨）；名單上沒有、預訂交貨日還沒到的刪除（視為取消或改單）。同單號已經在「過去訂單」匯入的不會重複算。業績儀表板的「實際」用這份加上過去訂單。</p>');
     html += X.ui.card('禮盒（' + gifts.length + ' 項）', tab(gifts));
     html += X.ui.card('單條（' + singles.length + ' 項）', tab(singles));
     el.innerHTML = html;
@@ -251,7 +251,7 @@
 
   X.registerPage({
     id: 'xHqStock', group: 'system', order: 4, stage: 'ready',
-    title: '現貨與預購單同步', sub: '從入口網站帶入現貨、預購單',
+    title: '入口網站同步', sub: '從入口網站帶入現貨、預購單、實際銷售（訂單）',
     icon: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
     render: function (el) { render(el); }
   });

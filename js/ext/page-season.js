@@ -961,6 +961,11 @@
   function renderSalesDash(el) {
     var rows = typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders();
     var html = intro('選檔期、單位與規格，看全公司每週的實際、預估、去年同檔期與進貨量；賣超過進貨量會標紅，提醒追量進貨（不顯示客戶資料，金額與各部門先不顯示）。');
+    // 實際銷售的資料來源與上次同步時間；入口網站的訂單要用書籤手動同步
+    var syncInfo = X.get('hqStock'), pOrders = X.get('portalOrders');
+    html += '<div class="small" style="margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">實際銷售＝過去訂單匯入 ＋ 入口網站訂單（預訂交貨日）：' +
+      (pOrders.length ? '入口網站 ' + X.fmt(pOrders.length) + ' 筆，上次同步 ' + esc(X.fmtTime(syncInfo.salesAt)) : '<b style="color:var(--warn)">還沒同步過入口網站的訂單</b>') +
+      '<button type="button" class="btn ' + (pOrders.length ? 'gray' : 'primary') + '" data-go="xHqStock" style="min-height:30px;padding:3px 11px;font-size:15px">' + (pOrders.length ? '再同步一次（書籤）' : '怎麼同步（書籤）') + '</button></div>';
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
