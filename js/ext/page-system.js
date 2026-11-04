@@ -32,6 +32,11 @@
   function navBtn(id) { try { return document.querySelector('#nav .navbtn[data-page="' + id + '"]'); } catch (e) { return null; } }
   function go(id) {
     if (!id) return;
+    if (id === 'dashboard:sales') { // 首頁的「業績儀表板」分頁
+      if (!X.goPage('dashboard')) { X.toast('找不到這一頁'); return; }
+      setTimeout(function () { try { var b = document.querySelector('#dashboard .home-switch-btn[data-home-tab="salesDash"]'); if (b && !b.classList.contains('active')) b.click(); } catch (e) {} }, 30);
+      return;
+    }
     if (!X.goPage(id)) { X.toast('找不到這一頁'); return; }
     // 前往首頁時直接切到「包材庫存」表（最低水位就在那張表）；等原系統切頁與捲動結束後再切
     if (id === 'dashboard') setTimeout(showHomeMaterials, 30);
@@ -58,7 +63,8 @@
     { key: 'initialStock', title: '初始庫存', page: 'initialStock', pageLabel: '初始庫存' },
     { key: 'forecast', title: '業績預估是否已填', page: 'xSalesForecast', pageLabel: '業績預估' },
     { key: 'orderCode', title: '訂單品號對照', page: 'xMapping', pageLabel: '對照設定' },
-    { key: 'orderDept', title: '通路／接單部門對照', page: 'xMapping', pageLabel: '對照設定' }
+    { key: 'orderDept', title: '通路／接單部門對照', page: 'xMapping', pageLabel: '對照設定' },
+    { key: 'restock', title: '禮盒販售超過進貨量（要追量進貨）', page: 'dashboard:sales', pageLabel: '首頁・業績儀表板' }
   ];
   // bad 紅燈｜warn 黃燈｜ok 通過｜skip 略過（前置條件不成立，無法檢查）
   var LEVEL_ORDER = { bad: 0, warn: 1, ok: 2, skip: 3 };
@@ -337,6 +343,20 @@
     },
 
     // 與「業績儀表板」同一套規則：先看接單部門，對不到再看通路；兩者都沒有對照的訂單才算未對照
+    // 進貨量＝業績預估 × 進貨比例；實際販售超過進貨量的禮盒要追量進貨（算法在業績儀表板 page-season.js 的 X.purchasePlan）
+    restock: function (c) {
+      if (typeof X.purchasePlan !== 'function') return { level: 'skip', count: 0, countText: '—', desc: '進貨管理還沒載入，無法檢查。' };
+      var plan = X.purchasePlan();
+      if (!plan || !plan.hasForecast) return { level: 'skip', count: 0, countText: '—', desc: plan && plan.reason ? plan.reason : '進行中的檔期還沒有業績預估，無法算進貨量。' };
+      var over = plan.rows.filter(function (r) { return r.status === 'over'; });
+      var l = listOf(over, function (r) { return r.label + '：已販售 ' + X.fmt(r.sold) + ' 盒，進貨量 ' + X.fmt(r.buy) + ' 盒，超過 ' + X.fmt(r.sold - r.buy) + ' 盒'; });
+      return {
+        level: over.length ? 'bad' : 'ok', count: over.length, countText: over.length + ' 個', countSub: '共 ' + plan.rows.length + ' 個禮盒',
+        desc: over.length ? '這些禮盒實際販售已超過進貨量（業績預估的 ' + Math.round(plan.ratio * 100) + '%），要追量進貨。' : '所有禮盒的販售都還在進貨量（業績預估的 ' + Math.round(plan.ratio * 100) + '%）以內。',
+        list: l.list, more: l.more, pill: over.length + ' 個禮盒販售超過進貨量，要追量進貨'
+      };
+    },
+
     orderDept: function (c) {
       if (!c.orders.length) return { level: 'skip', count: 0, countText: '—', desc: '還沒有過去訂單，無法檢查。' };
       var ok = Object.create(null);
@@ -443,7 +463,7 @@
     return h + '</div>';
   }
   function goBtnHtml(c) {
-    var exists = !!navBtn(c.page);
+    var exists = !!navBtn(c.page === 'dashboard:sales' ? 'dashboard' : c.page);
     var strong = c.level === 'bad' || c.level === 'warn';
     return '<div class="x-row-actions"><button type="button" class="btn ' + (strong ? 'primary' : 'gray') + '" data-act="go" data-page="' + esc(c.page) + '"' +
       ' aria-label="前往' + esc(c.pageLabel) + '" title="' + (exists ? '前往「' + esc(c.pageLabel) + '」' : '找不到這一頁') + '"' + (exists ? '' : ' disabled') +

@@ -23,7 +23,8 @@
     { key: 'initialStock', title: '初始庫存', def: '紅燈' },
     { key: 'forecast', title: '業績預估是否已填', def: '黃燈' },
     { key: 'orderCode', title: '訂單品號對照', def: '黃燈' },
-    { key: 'orderDept', title: '通路／接單部門對照', def: '黃燈' }
+    { key: 'orderDept', title: '通路／接單部門對照', def: '黃燈' },
+    { key: 'restock', title: '禮盒販售超過進貨量（要追量進貨）', def: '紅燈' }
   ];
   var LEVEL_OPTIONS = [
     { value: 'default', label: '照原本' }, { value: 'bad', label: '紅燈' },
@@ -106,6 +107,12 @@
       label: '禮盒沒設單條內容物、但名稱和某個單條一樣時，當成 1 盒＝1 條',
       help: '例如 CO-46「巧費」沒設內容物，但名稱和單條「巧費」一樣，就算 1 條巧費。關閉後這種禮盒會列在「無法換算」。',
       uses: ['換算成單條的所有數字']
+    },
+    {
+      key: 'purchaseRatio', group: 'sales', type: 'number', default: 70, min: 10, max: 200, step: 1, integer: true, unit: '%',
+      label: '進貨量＝業績預估的幾成（超過就要追量進貨）',
+      help: '進貨量＝業績預估盒數 × 這個比例（無條件進位，預設 70%）。實際販售的盒數超過進貨量時，儀表板的進貨管理、波動圖和首頁提醒會顯示「要追量進貨」。',
+      uses: ['首頁業績儀表板「進貨管理」與波動圖的進貨量線', '開檔檢查「禮盒販售超過進貨量」']
     },
     {
       key: 'salesTopN', group: 'sales', type: 'number', default: 15, min: 1, max: 500, step: 1, integer: true, unit: '名',
