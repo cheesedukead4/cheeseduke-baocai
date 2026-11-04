@@ -730,9 +730,12 @@
     return out;
   }
 
+  // 目前只拿得到今年全公司的銷售金額，沒辦法分部門：先只看全公司的「禮盒數」，金額和部門的畫面先關掉（改成 true 就會回來）
+  var SHOW_AMT = false, SHOW_DEPT = false;
+
   function renderSalesDash(el) {
     var rows = X.orders();
-    var html = intro('用按鈕選檔期、比較的檔期、部門、金額或禮盒數與禮盒規格，下面的波動圖看每週的實際、預估與比較檔期（不顯示客戶資料）；圖下方的表格是整個檔期的合計比較。');
+    var html = intro(SHOW_AMT || SHOW_DEPT ? '用按鈕選檔期、比較的檔期、部門、金額或禮盒數與禮盒規格，下面的波動圖看每週的實際、預估與比較檔期（不顯示客戶資料）；圖下方的表格是整個檔期的合計比較。' : '用按鈕選檔期、比較的檔期與禮盒規格，下面的波動圖看全公司每週的禮盒數：實際、預估與比較檔期（不顯示客戶資料）；圖下方的表格是整個檔期的合計比較。目前只看全公司、只看禮盒數，金額與各部門先不顯示。');
     el.onchange = null;
     el.oninput = null;
     el.onclick = null;
@@ -755,6 +758,8 @@
     }
     var deptOpts = [{ key: 'all', label: '全公司' }].concat(X.DEPTS.map(function (d) { return { key: d.key, label: d.label }; }), [{ key: 'unmatched', label: '未對照' }]);
     if (!deptOpts.some(function (d) { return d.key === sd.dept; })) sd.dept = 'all';
+    if (!SHOW_DEPT) sd.dept = 'all';
+    if (!SHOW_AMT) sd.metric = 'qty';
     if (sd.metric === 'qty' && sd.group === 'all') sd.group = 'all3';
     var lastYear = cmpC ? cmpC.year : '', cmpKind = cmpC ? cmpC.kind : sd.kind;
     var cur = sumPeriod(list, sd.kind, sd.year, sd.dept);
@@ -776,9 +781,9 @@
       '<span class="small">' + (cmpC ? '目前比較：' + esc(cmpC.name) : '目前沒有比較檔期') + '</span>');
     html += row('週期', chip('span', '4', '四週（節前 3 週～節日週）', sd.span !== 'all') + chip('span', 'all', '全部週', sd.span === 'all') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">顯示</span>' + chip('cum', 'cum', '累計', sd.cum !== 'week') + chip('cum', 'week', '每週', sd.cum === 'week'));
-    html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
-    html += row('看', chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
-      '<span class="small" style="margin:0 2px 0 8px;font-weight:700">規格</span>' +
+    if (SHOW_DEPT) html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
+    html += row(SHOW_AMT ? '看' : '規格', (SHOW_AMT ? chip('metric', 'amt', '金額', sd.metric === 'amt') + chip('metric', 'qty', '禮盒數', sd.metric === 'qty') +
+      '<span class="small" style="margin:0 2px 0 8px;font-weight:700">規格</span>' : '') +
       GROUPS.filter(function (g) { return !(sd.metric === 'qty' && g[0] === 'all'); }).map(function (g) { return chip('group', g[0], g[1], g[0] === sd.group); }).join(''));
     html += '<p class="small" style="margin:0 0 10px">' +
       esc('今年（' + periodLabel(sd.kind, sd.year) + '）：' + shortRange(cur) + (cmpC ? '；比較（' + periodLabel(cmpKind, lastYear) + '）：' + shortRange(prev) : '') + '。') +
@@ -789,16 +794,16 @@
 
     html += X.ui.kpis([
       { label: deptName + '｜訂單數量', value: X.fmt(cur.qty), tone: 'info', sub: '去年 ' + X.fmt(prev.qty) + (growthText(cur.qty, prev.qty) ? '，' + growthText(cur.qty, prev.qty) : '') + (cur.singleQty ? '；含單條 ' + X.fmt(cur.singleQty) + ' 條' : '') },
-      { label: deptName + '｜金額', value: money(cur.amt), tone: 'ok', sub: '去年 ' + money(prev.amt) + (growthText(cur.amt, prev.amt) ? '，' + growthText(cur.amt, prev.amt) : '') +
+      SHOW_AMT && { label: deptName + '｜金額', value: money(cur.amt), tone: 'ok', sub: '去年 ' + money(prev.amt) + (growthText(cur.amt, prev.amt) ? '，' + growthText(cur.amt, prev.amt) : '') +
         (cur.nonRevAmt ? '；公關贈、執行長 ' + money(cur.nonRevAmt) + ' 不算營收' : '') },
       { label: '訂單筆數（不重複單號）', value: X.fmt(cur.orderCount), tone: 'muted', sub: '去年 ' + X.fmt(prev.orderCount) },
-      { label: '沒有售價的數量', value: X.fmt(cur.unpricedQty), tone: (cur.unpricedQty || cur.unmatchedQty) ? 'warn' : 'ok',
+      SHOW_AMT && { label: '沒有售價的數量', value: X.fmt(cur.unpricedQty), tone: (cur.unpricedQty || cur.unmatchedQty) ? 'warn' : 'ok',
         sub: [cur.unpricedQty ? '這些沒算到金額，請到禮盒／單條資料填售價' : '',
           cur.unmatchedQty ? '另有品號未對照的 ' + X.fmt(cur.unmatchedQty) + ' 也沒算到金額，請到「對照設定」對照品號' : ''].filter(Boolean).join('；') || '全部都有售價' }
-    ]);
+    ].filter(Boolean));
 
     // 依部門（全公司時才顯示）
-    if (sd.dept === 'all') {
+    if (SHOW_DEPT && sd.dept === 'all') {
       var nr = nonRevenue();
       var deptRows = X.DEPTS.map(function (d) { return { label: d.label, a: cur.byDept[d.key], b: prev.byDept[d.key], nonRev: !!nr[d.key] }; });
       if (cur.byDept.unmatched || prev.byDept.unmatched) deptRows.push({ label: '未對照', tone: 'warn', a: cur.byDept.unmatched, b: prev.byDept.unmatched });
@@ -826,27 +831,27 @@
     var items = Object.keys(keys).map(function (k) {
       var a = cur.items[k], b = prev.items[k], base = a || b;
       return { p: base.p, code: base.code, name: base.name, price: base.price, qa: a ? a.qty : 0, qb: b ? b.qty : 0, ma: a ? a.amt : 0, mb: b ? b.amt : 0 };
-    }).sort(function (x, y) { return (y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb); });
+    }).sort(function (x, y) { return SHOW_AMT ? ((y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb)) : ((y.qa - x.qa) || (y.qb - x.qb)); });
     var shown = items.slice(0, topN);
     shown.forEach(function (x, i) { x.rank = i + 1; });
-    html += X.ui.card('依品項（今年金額前 ' + topN + ' 名）', X.ui.table([
+    html += X.ui.card('依品項（今年' + (SHOW_AMT ? '金額' : '數量') + '前 ' + topN + ' 名）', X.ui.table([
       { label: '#', num: true, render: function (x) { return String(x.rank); } },
       { label: '品號', render: function (x) { return x.code ? esc(x.code) : DASH; } },
       { label: '名稱', render: function (x) { return esc(x.name || '（沒有名稱）'); } },
       { label: '類別', render: function (x) { return !x.p ? X.ui.tag('未對照', 'warn') : (isSingle(x.p) ? X.ui.tag('單條', 'muted') : X.ui.tag('禮盒', 'info')); } },
-      { label: '售價', num: true, render: function (x) { return !x.p ? DASH : (x.price > 0 ? money(x.price) : X.ui.tag('沒有售價', 'warn')); } },
+      SHOW_AMT && { label: '售價', num: true, render: function (x) { return !x.p ? DASH : (x.price > 0 ? money(x.price) : X.ui.tag('沒有售價', 'warn')); } },
       { label: '今年數量', num: true, render: function (x) { return X.fmt(x.qa); } },
       { label: '去年數量', num: true, render: function (x) { return X.fmt(x.qb); } },
       { label: '成長', num: true, render: function (x) { return growth(x.qa, x.qb); } },
-      { label: '今年金額', num: true, render: function (x) { return money(x.ma); } },
-      { label: '去年金額', num: true, render: function (x) { return money(x.mb); } }
-    ], shown, { empty: '這兩年都沒有訂單' }) +
+      SHOW_AMT && { label: '今年金額', num: true, render: function (x) { return money(x.ma); } },
+      SHOW_AMT && { label: '去年金額', num: true, render: function (x) { return money(x.mb); } }
+    ].filter(Boolean), shown, { empty: '這兩年都沒有訂單' }) +
       (items.length > topN ? '<p class="small" style="margin:10px 0 0">另外還有 ' + (items.length - topN) + ' 個品項未列出（顯示幾名可在「計算規則」修改）。</p>' : '') +
-      '<p class="small" style="margin:6px 0 0">品號先看「對照設定」的品號對照，沒有設定的再直接比對禮盒／單條資料的品號（不分大小寫、忽略空白）。售價用目前「禮盒資料」「單條資料」填的售價；禮盒沒填售價時，是否改用內建備用售價見「計算規則」。</p>');
+      '<p class="small" style="margin:6px 0 0">品號先看「對照設定」的品號對照，沒有設定的再直接比對禮盒／單條資料的品號（不分大小寫、忽略空白）。' + (SHOW_AMT ? '售價用目前「禮盒資料」「單條資料」填的售價；禮盒沒填售價時，是否改用內建備用售價見「計算規則」。' : '') + '</p>');
 
     // 沒有售價的品項
     var unpriced = items.filter(function (x) { return x.p && !(x.price > 0) && (x.qa || x.qb); });
-    if (unpriced.length) {
+    if (SHOW_AMT && unpriced.length) {
       html += X.ui.card('沒有售價的品項（金額沒算到）', X.ui.table([
         { label: '品號', render: function (x) { return x.code ? esc(x.code) : DASH; } },
         { label: '名稱', render: function (x) { return esc(x.name); } },
@@ -857,7 +862,7 @@
     }
 
     var unCh = Object.keys(cur.unCh).sort(function (a, b) { return cur.unCh[b] - cur.unCh[a]; });
-    if (sd.dept === 'all' && unCh.length) {
+    if (SHOW_DEPT && sd.dept === 'all' && unCh.length) {
       var chRows = unCh.slice(0, 10).map(function (k) { return { name: k, qty: cur.unCh[k] }; });
       html += X.ui.card('還沒對照部門的通路（今年，前 10 名）', X.ui.table([
         { label: '訂單上的通路／接單部門', render: function (x) { return esc(x.name); } },
@@ -901,7 +906,7 @@
 
   X.salesTools = { classifyOrders: classifyOrders, salesCtx: salesCtx, inPeriod: inPeriod };
   X.registerPage({
-    id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '今年和去年同檔期的訂單數量與金額比較', stage: 'ready',
+    id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '今年和去年同檔期的訂單數量比較（全公司）', stage: 'ready',
     icon: '<path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5a9 9 0 0 1 5.5 5.5H15z"/>',
     render: function (el) { renderSalesDash(el); },
     _fn: { classifyOrders: classifyOrders, salesCtx: salesCtx, sumPeriod: sumPeriod, yearsOf: yearsOf, state: sd }
