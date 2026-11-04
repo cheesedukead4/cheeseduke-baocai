@@ -171,17 +171,24 @@
       html += X.ui.banner('warn', '這些禮盒還沒有設單條內容物，沒辦法換算成條（先按 1 盒算，單位顯示「盒」）：' + c.noComp.map(function (r) { return esc(label(r.p)); }).join('、') + '。請到「禮盒資料」設定單條內容物。');
     }
 
-    // 統計：依規格（條）
+    // 統計：依規格列小計，底下接這個規格每個品項的個別名稱（條）
+    var statRows = [];
+    c.stats.forEach(function (g) {
+      statRows.push({ head: true, g: g, u100: g.u100, u70: g.u70, target: g.target, ordered: g.ordered, transit: g.transit, remaining: g.remaining });
+      c.rows.filter(function (r) { return r.spec === g.key && (r.est > 0 || r.ordered > 0 || r.remaining > 0); }).forEach(function (r) {
+        statRows.push({ head: false, r: r, u100: r.u100, u70: r.u70, target: r.target, ordered: r.ordered, transit: r.transit, remaining: r.remaining });
+      });
+    });
     var scols = [
-      { label: '規格', render: function (g) { return '<b>' + SPEC[g.key] + '</b> <span class="small">' + g.n + ' 項</span>'; } },
-      { label: '100%（條）', num: true, render: function (g) { return X.fmt(g.u100); } },
-      { label: fee + '%（條）', num: true, render: function (g) { return X.fmt(g.u70); } },
-      { label: '目標叫貨（條）', num: true, render: function (g) { return '<b>' + X.fmt(g.target) + '</b>'; } },
-      { label: '已叫貨（條）', num: true, render: function (g) { return X.fmt(g.ordered); } },
-      { label: '在途（條）', num: true, render: function (g) { return g.transit ? X.fmt(g.transit) : '—'; } },
-      { label: '建議再叫（條）', num: true, render: function (g) { return g.remaining ? '<b style="color:var(--bad)">' + X.fmt(g.remaining) + '</b>' : X.ui.tag('已叫足', 'ok'); } }
+      { label: '規格／品項', render: function (x) { return x.head ? '<b>' + SPEC[x.g.key] + '小計</b> <span class="small">' + x.g.n + ' 項</span>' : '<span style="padding-left:18px;display:inline-block">' + esc(label(x.r.p)) + (x.r.single ? '' : ' <span class="small">' + (x.r.egg ? '蛋捲' : '費雪') + '</span>') + '</span>'; } },
+      { label: '100%（條）', num: true, render: function (x) { return x.head ? '<b>' + X.fmt(x.u100) + '</b>' : X.fmt(x.u100); } },
+      { label: fee + '%（條）', num: true, render: function (x) { return x.head ? '<b>' + X.fmt(x.u70) + '</b>' : X.fmt(x.u70); } },
+      { label: '目標叫貨（條）', num: true, render: function (x) { return '<b>' + X.fmt(x.target) + '</b>'; } },
+      { label: '已叫貨（條）', num: true, render: function (x) { return x.head ? '<b>' + X.fmt(x.ordered) + '</b>' : X.fmt(x.ordered); } },
+      { label: '在途（條）', num: true, render: function (x) { return x.transit ? X.fmt(x.transit) : '—'; } },
+      { label: '建議再叫（條）', num: true, render: function (x) { return x.remaining ? '<b style="color:var(--bad)">' + X.fmt(x.remaining) + '</b>' : (x.head ? X.ui.tag('已叫足', 'ok') : '—'); } }
     ];
-    html += X.ui.card('叫貨條數統計（依規格，都以條計）', X.ui.table(scols, c.stats, { empty: '還沒有預估量。' }) +
+    html += X.ui.card('叫貨條數統計（依規格小計，底下列各品項名稱，都以條計）', X.ui.table(scols, statRows, { empty: '還沒有預估量。' }) +
       '<p class="small" style="margin:10px 0 0"><b>全部合計：100% ' + X.fmt(sum(c.rows, 'u100')) + ' 條、' + fee + '% ' + X.fmt(sum(c.rows, 'u70')) + ' 條、目標叫貨 ' + X.fmt(sum(c.rows, 'target')) + ' 條</b>，已叫 ' + X.fmt(sum(c.rows, 'ordered')) + ' 條，建議再叫 ' + X.fmt(sum(c.rows, 'remaining')) + ' 條。目標叫貨＝費雪 ' + fee + '%、蛋捲 ' + egg + '%（每個品項各自無條件進位後再換算成條）。</p>',
       '<button type="button" class="btn gray" data-act="copy" style="min-height:34px">複製叫貨清單</button>');
 
