@@ -511,7 +511,7 @@
     return out;
   }
   // ---- 業績預估（從今年開始，每個檔期各存一份）----
-  // 預估仍在「業績預估」頁照品項填（每個禮盒 4 個日期 × 各部門的預估盒數，頁面和填法不變）；這裡把整份加總成 5 入／8 入／蛋捲 10 入。
+  // 預估仍在「業績預估」頁照品項填（每個禮盒 5 個日期（週）× 各部門的預估盒數）；這裡把整份加總成 5 入／8 入／蛋捲 10 入。
   // 進行中檔期的預估＝業績預估頁正在編輯的那份（db.salesForecastV5）；檔期結束、或換成別的進行中檔期時，
   // 目前的預估會存進 db.seasonForecasts[檔期id]（見 season-items.js），之後選到那個檔期就用存下來的那份。過去的預估沒存，所以沒有。
   // 進貨量＝業績預估盒數 × 這個比例（預設 70%，「計算規則」可改）；實際販售超過進貨量就要追量進貨
@@ -527,12 +527,12 @@
     var f = ch.season.status === 'active' ? (X.db() && X.db().salesForecastV5) : ((X.get('seasonForecasts')[ch.season.id] || {}).forecast);
     return f && f.rows && typeof f.rows === 'object' ? f : null;
   }
-  // 預估資料的各品項列（業績預估頁：禮盒與單條，各品項 4 個日期 × 各部門的預估量）
+  // 預估資料的各品項列（業績預估頁：禮盒與單條，各品項 5 個日期（週）× 各部門的預估量）
   function forecastRows(fo) { return (fo && fo.rows) || {}; }
   function forecastHasData(fo) { return forecastTotal({ byCode: Object.create(null), byId: Object.create(null) }, fo, 'all', 'qty', 'all').any; }
   // 預估總量（整個檔期）：每個禮盒所有日期、所選部門的預估盒數加總；金額＝盒數 × 售價 × 折扣成數（禮盒資料依部門分門市／官網／執行長／通路；沒填＝原價）
-  function forecastTotal(ctx, fo, dept, metric, group) {
-    var rows = forecastRows(fo), nonRev = nonRevenue(), any = false, total = 0, buy = 0;
+  function forecastTotal(ctx, fo, dept, metric, group, keyFn) {
+    var rows = forecastRows(fo), nonRev = nonRevenue(), any = false, total = 0, buy = 0, byWeek = Object.create(null), undated = 0;
     if (dept === 'unmatched') return { total: 0, any: false };
     Object.keys(rows).forEach(function (code) {
       var r = rows[code];
@@ -558,12 +558,17 @@
           var est = X.num((line[dk0] || {}).est);
           if (est > 0) any = true;
           rowSum += est;
-          total += metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est * mult;
+          var vv = metric === 'amt' ? (nonRev[dk] ? 0 : est * price * (p && typeof sfDiscountFactor === 'function' ? sfDiscountFactor(p, dk) : 1)) : est * mult;
+          total += vv;
+          if (keyFn) { // 有填日期的預估量放進那個日期所在的週；沒填日期的另外算（照週別比例分）
+            var dtm = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null;
+            if (dtm != null) { var wk = keyFn(dtm); byWeek[wk] = (byWeek[wk] || 0) + vv; } else undated += vv;
+          }
         });
       });
       if (metric !== 'amt' && p) buy += buyOf(p, rowSum) * mult;
     });
-    return { total: total, any: any, buy: buy };
+    return { total: total, any: any, buy: buy, byWeek: byWeek, undated: undated };
   }
 
   function axisFmt(v, metric) {
@@ -605,7 +610,7 @@
     var NW = seasonWeeks(), KS = [];
     for (var q0 = -(NW - 1); q0 <= 0; q0++) KS.push(q0);
     var fo = forecastOf(selC);
-    var ft = fo ? forecastTotal(ctx, fo, dept, metric, group) : { total: 0, any: false };
+    var ft = fo ? forecastTotal(ctx, fo, dept, metric, group, keySel) : { total: 0, any: false };
     var wts = null, wtsCustom = false;
     if (byHoliday) {
       var cw0 = selC.season && selC.season.forecastWeights, cw = null;
@@ -623,7 +628,12 @@
       }
     }
     var f = { map: Object.create(null), any: false };
-    if (ft.any && wts) { f.any = true; KS.forEach(function (k, i) { f.map[k] = ft.total * wts[i]; }); }
+    // 預估量放進每一週：有填日期的（業績預估每個品項 5 個日期）放進那個日期所在的週；沒填日期的照週別比例分到檔期的每一週
+    if (ft.any) {
+      var dated = ft.byWeek || {};
+      Object.keys(dated).forEach(function (k) { f.map[k] = (f.map[k] || 0) + dated[k]; f.any = true; });
+      if (ft.undated > 0 && wts) { KS.forEach(function (k, i) { f.map[k] = (f.map[k] || 0) + ft.undated * wts[i]; }); f.any = true; }
+    }
     var keysOf = function (m) { return Object.keys(m).map(Number); };
     var ka = keysOf(a), kb = keysOf(b), kf = f.any ? keysOf(f.map) : [];
     var all = ka.concat(kb, kf);
@@ -663,7 +673,7 @@
     return {
       buy: buyArr, hasBuy: any(buyArr), buyTotal: buyTotal, ratioText: ratioTxt, crossIdx: crossIdx, buyNeedCum: isQty && thr > 0 && !cum,
       ord: [], hasOrd: false, ordTotal: ordTotal, thrTotal: thr, thrIsOrd: ordTotal > 0, unit: metric === 'single' ? '條' : '盒',
-      cum: !!cum, actSum: actSum, estSum: estSum, prevSum: prevSum, estTotal: ft.total, weights: wts, weightsCustom: wtsCustom, estNoHoliday: ft.any && !byHoliday,
+      cum: !!cum, actSum: actSum, estSum: estSum, prevSum: prevSum, estTotal: ft.total, weights: wts, weightsCustom: wtsCustom, estNoHoliday: ft.any && !byHoliday && !f.any,
 
       weeks: weeks, year: year, lastYear: prevYear, byHoliday: byHoliday, selName: selC.name, cmpName: cmpC ? cmpC.name : '', prevLabel: cmpIsLast ? '去年' : '比較檔期',
       spanSeason: span !== 'all' && !spanNote, spanNote: spanNote,
