@@ -978,13 +978,9 @@
     var selC = choices.find(function (ch) { return ch.id === sd.sel; }) || choices.find(hasData) || choices[0] || null;
     if (!selC) { el.innerHTML = html + X.ui.empty('還沒有檔期，也沒有可以分檔期的訂單。請到「檔期設定」建立檔期。'); return; }
     sd.sel = selC.id; sd.kind = selC.kind; sd.year = selC.year;
+    // 檔期比較只比「去年同種類的檔期」（過年比去年過年、中秋比去年中秋、全年比去年全年），或選「不比較」
     var cmpC = null;
-    if (sd.cmp && sd.cmp !== 'auto' && sd.cmp !== 'none') cmpC = choices.find(function (ch) { return ch.id === sd.cmp && ch.id !== selC.id; }) || null;
-    if (!cmpC && sd.cmp !== 'none') { // 自動：檔期資料裡的「比較用檔期」，沒有就找去年同種類的檔期
-      var cid = selC.season && selC.season.compareSeasonId;
-      cmpC = (cid && choices.find(function (ch) { return ch.id === cid; })) ||
-        choices.find(function (ch) { return ch.kind === selC.kind && Number(ch.year) === Number(selC.year) - 1; }) || null;
-    }
+    if (sd.cmp !== 'none') cmpC = choices.find(function (ch) { return ch.kind === selC.kind && Number(ch.year) === Number(selC.year) - 1; }) || null;
     var deptOpts = [{ key: 'all', label: '全公司' }].concat(X.DEPTS.map(function (d) { return { key: d.key, label: d.label }; }), [{ key: 'unmatched', label: '未對照' }]);
     if (!deptOpts.some(function (d) { return d.key === sd.dept; })) sd.dept = 'all';
     if (!SHOW_DEPT) sd.dept = 'all';
@@ -1014,10 +1010,8 @@
       return '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span class="small" style="min-width:60px;font-weight:700">' + label + '</span>' + chips + '</div>';
     };
     html += row('檔期', choices.map(function (ch) { return chip('sel', ch.id, ch.name, ch.id === selC.id); }).join(''));
-    html += row('比較', chip('cmp', 'auto', '自動', sd.cmp !== 'none' && (!sd.cmp || sd.cmp === 'auto' || !choices.some(function (ch) { return ch.id === sd.cmp && ch.id !== selC.id; }))) +
-      choices.filter(function (ch) { return ch.id !== selC.id; }).map(function (ch) { return chip('cmp', ch.id, ch.name, sd.cmp === ch.id); }).join('') +
-      chip('cmp', 'none', '不比較', sd.cmp === 'none') +
-      '<span class="small">' + (cmpC ? '目前比較：' + esc(cmpC.name) : '目前沒有比較檔期') + '</span>');
+    html += row('比較', chip('cmp', 'auto', '去年同檔期', sd.cmp !== 'none') + chip('cmp', 'none', '不比較', sd.cmp === 'none') +
+      '<span class="small">' + (sd.cmp === 'none' ? '不比較' : (cmpC ? '目前比較：' + esc(cmpC.name) : '去年沒有同種類的檔期，沒有比較資料')) + '</span>');
     html += row('週期', chip('span', '4', '四週（節前 3 週～節日週）', sd.span !== 'all') + chip('span', 'all', '全部週', sd.span === 'all') +
       '<span class="small" style="margin:0 2px 0 8px;font-weight:700">顯示</span>' + chip('cum', 'cum', '累計', sd.cum !== 'week') + chip('cum', 'week', '每週', sd.cum === 'week'));
     if (SHOW_DEPT) html += row('部門', deptOpts.map(function (d) { return chip('dept', d.key, d.label, d.key === sd.dept); }).join(''));
