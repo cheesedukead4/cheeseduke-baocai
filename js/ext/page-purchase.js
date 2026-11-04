@@ -5,8 +5,9 @@
  *   進貨比例：費雪 70%、蛋捲 100%（預估多少就下單多少），「計算規則」可改；名稱有「蛋捲」的禮盒、單條用蛋捲比例，其他用費雪比例
  *   目標叫貨量 ＝ 業績預估量（所有部門、所有日期）× 進貨比例，每個品項各自無條件進位（禮盒是盒、單條是條）
  *   建議再叫貨 ＝ 目標 － 已叫貨（這個檔期叫貨紀錄的已叫貨＋已到貨），最少 0；可選「先扣掉現貨」（入口網站總表的現貨，「入口網站同步」帶入）
- * 單條分兩塊整合在「轉換單條」同一列：禮盒目標盒數依單條內容物換算成條（禮盒換算），加上單條單賣的預估量（直接在這張表填，存在 db.singleForecast）× 進貨比例；
- *   每列最前面是「預估單日期」（單條自己填；禮盒則顯示業績預估頁有填預估的日期）。
+ * 單條整合在同一張表：每個禮盒那一列後面直接多一欄「轉換單條」（目標盒數 × 單條內容物＝要幾條）；
+ *   單條單賣的預估量（直接在表裡填，存在 db.singleForecast）列在禮盒後面，用同樣的欄位算目標、已叫貨、建議再叫。每列最前面是「預估單日期」
+ *   （禮盒顯示業績預估頁有填預估的日期；單條自己填）。
  * 資料（都會同步給所有人）：
  *   db.purchaseOrders 叫貨紀錄：{ id, seasonId（叫貨當時進行中的檔期）, date, eta（預計到貨日）, productId（禮盒或單條 id；舊紀錄叫 singleId＝單條）, qty（禮盒是盒、單條是條）,
  *     supplierId, supplier（廠商名稱）, status, receivedDate, note, by, at }
@@ -84,9 +85,9 @@
     });
     rows.sort(function (a, b) { return (b.remaining - a.remaining) || (b.est - a.est); });
     var gifts = rows;
-    // 轉換單條：禮盒目標盒數 × 單條內容物（禮盒換算）＋ 單條單賣的預估量（直接填）× 進貨比例，整合在同一列
-    var conv = {};
+    // 每個禮盒的「轉換單條」：目標叫貨盒數 × 單條內容物（直接加在禮盒那一列）
     gifts.forEach(function (r) {
+      r.conv = [];
       if (!(r.aim > 0)) return;
       var parts = comps[r.id];
       if (!parts || !parts.length) {
@@ -94,26 +95,22 @@
         if (same) parts = [{ single: same, qty: 1 }];
       }
       if (!parts || !parts.length) { r.noComp = true; return; }
-      parts.forEach(function (pt) {
-        var k = String(pt.single.id), c = conv[k] || (conv[k] = { fromGifts: 0, from: [] });
-        c.fromGifts += r.aim * pt.qty;
-        c.from.push({ gift: r.p, boxes: r.aim, per: pt.qty, qty: r.aim * pt.qty });
-      });
+      parts.forEach(function (pt) { r.conv.push({ p: pt.single, n: r.aim * pt.qty }); });
     });
+    // 單條單賣：本期上架的單條都列出來，預估量與預估單日期直接在表裡填
     var sf = X.get('singleForecast'), sids = {};
     X.products().forEach(function (p) { if (p && isSingle(p) && p.isListedCurrent === true) sids[String(p.id)] = true; });
-    Object.keys(conv).forEach(function (k) { sids[k] = true; });
     Object.keys(ordered).forEach(function (k) { if (byId[k] && isSingle(byId[k])) sids[k] = true; });
     Object.keys(sf).forEach(function (k) { var e = sf[k]; if (e && byId[k] && isSingle(byId[k]) && X.num(e.qty) > 0 && (!e.seasonId || e.seasonId === actId)) sids[k] = true; });
     var singles = Object.keys(sids).map(function (id) {
       var p = byId[id], e = sf[id], ok = e && (!e.seasonId || e.seasonId === actId);
-      var direct = ok ? X.num(e.qty) : 0, date = ok ? (e.date || '') : '';
-      var fromGifts = conv[id] ? conv[id].fromGifts : 0, ratio = X.giftRatio(p), target = direct > 0 ? X.buyBoxes(p, direct) : 0, need = fromGifts + target;
+      var est = ok ? X.num(e.qty) : 0, date = ok ? (e.date || '') : '';
+      var ratio = X.giftRatio(p), target = est > 0 ? X.buyBoxes(p, est) : 0;
       var stock = window.CMSStock ? CMSStock.stockByCode(p.code) : null;
-      var aim = (st.deduct && stock != null) ? Math.max(0, need - Math.max(0, stock)) : need, ord = ordered[id] || 0;
-      return { p: p, id: id, single: true, egg: X.isEggGift(p), spec: 'single', est: direct, date: date, ratio: ratio, target: target, fromGifts: fromGifts, from: conv[id] ? conv[id].from : [], need: need,
-        stock: stock, aim: aim, ordered: ord, transit: transit[id] || 0, remaining: Math.max(0, aim - ord), supplier: supplierOf(id) };
-    }).sort(function (a, b) { return (b.remaining - a.remaining) || (b.need - a.need) || String(a.p.code || '').localeCompare(String(b.p.code || ''), 'zh-TW', { numeric: true }); });
+      var aim = (st.deduct && stock != null) ? Math.max(0, target - Math.max(0, stock)) : target, ord = ordered[id] || 0;
+      return { p: p, id: id, single: true, egg: X.isEggGift(p), spec: 'single', est: est, date: date, dates: date ? [date] : [], ratio: ratio, target: target, need: target, stock: stock, aim: aim,
+        ordered: ord, transit: transit[id] || 0, remaining: Math.max(0, aim - ord), supplier: supplierOf(id), conv: [] };
+    }).sort(function (a, b) { return (b.remaining - a.remaining) || (b.est - a.est) || String(a.p.code || '').localeCompare(String(b.p.code || ''), 'zh-TW', { numeric: true }); });
     rows = gifts.concat(singles);
     // 統計：依規格（5 入、8 入、蛋捲 10 入、其他禮盒、單條）
     var stats = {};
@@ -140,36 +137,15 @@
     var late = X.daysBetween(o.eta, X.today());
     return esc(o.eta) + (late > 0 ? ' ' + X.ui.tag('逾期 ' + late + ' 天', 'bad') : (late === 0 ? ' ' + X.ui.tag('今天到', 'warn') : ''));
   }
-  function fromHtml(c) {
-    if (!c.from.length) return '';
-    return '<details style="margin-top:4px"><summary class="small" style="cursor:pointer">從哪些禮盒來（' + c.from.length + ' 個）</summary><ul class="small" style="margin:4px 0 0;padding-left:18px;line-height:1.7">' +
-      c.from.map(function (f) { return '<li>' + esc(label(f.gift)) + '：' + X.fmt(f.boxes) + ' 盒 × ' + X.fmt(f.per, 2) + ' 條 ＝ ' + X.fmt(f.qty, 1) + ' 條</li>'; }).join('') + '</ul></details>';
-  }
   function datesText(r) { return r.dates && r.dates.length ? esc(r.dates.map(md).join('、')) : '<span class="small">未填日期</span>'; }
-  function orderCols(unit) {
-    return [
-      { label: '預估單日期', render: datesText },
-      { label: '品項', render: function (r) { return '<b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>' + (r.extra ? ' ' + X.ui.tag('預估沒填', 'muted') : '') + (r.noComp ? ' ' + X.ui.tag('沒設單條內容物', 'warn') : ''); } },
-      { label: '廠商', render: function (r) { return r.supplier ? esc(r.supplier.name) : '<span class="small">未指定</span>'; } },
-      { label: '業績預估（' + unit + '）', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.est) : '—'; } },
-      { label: '進貨比例', num: true, render: function (r) { return r.est > 0 ? pctText(r) : '—'; } },
-      { label: '目標叫貨（' + unit + '）', num: true, render: function (r) { return r.est > 0 ? '<b>' + X.fmt(r.target) + '</b>' : '—'; } },
-      { label: '現貨', num: true, render: function (r) { return stockText(r.stock); } },
-      { label: '已叫貨（' + unit + '）', num: true, render: function (r) { return r.ordered ? X.fmt(r.ordered) : '—'; } },
-      { label: '在途', num: true, render: function (r) { return r.transit ? X.fmt(r.transit) : '—'; } },
-      { label: '建議再叫（' + unit + '）', num: true, render: function (r) { return r.remaining ? '<b style="color:var(--bad)">' + X.fmt(r.remaining) + '</b>' : (r.aim > 0 ? X.ui.tag('已叫足', 'ok') : '—'); } },
-      { label: '', render: function (r) { return '<button type="button" class="btn ' + (r.remaining ? 'primary' : 'gray') + '" data-act="order" data-id="' + esc(r.id) + '" data-qty="' + r.remaining + '" style="min-height:34px;padding:4px 12px;white-space:nowrap">叫貨</button>'; } }
-    ];
-  }
-
   function render(el) {
     var c = compute(), ratioTxt = X.giftRatioText();
-    var html = '<p class="small" style="margin:0 0 12px">廠商是以<b>禮盒</b>進貨，所以這頁分成「<b>禮盒</b>」和「<b>轉換單條</b>」兩塊：<b>費雪禮盒叫預估的 70%、蛋捲禮盒預估多少就叫多少</b>（比例在「計算規則」可改，目前：' + esc(ratioTxt) + '）；單條的預估量直接填在「轉換單條」，和禮盒換算的條數整合在同一列，每列前面是預估單日期。叫貨後在下方記錄（含預計到貨日），已叫的會自動扣掉。這頁只算數字，不會送出任何訂單給廠商。</p>';
+    var html = '<p class="small" style="margin:0 0 12px">廠商是以<b>禮盒</b>進貨，所以這頁以<b>禮盒</b>為主，每個禮盒那一列直接帶出<b>轉換單條</b>的條數：<b>費雪禮盒叫預估的 70%、蛋捲禮盒預估多少就叫多少</b>（比例在「計算規則」可改，目前：' + esc(ratioTxt) + '）；單條單賣的預估量直接填在同一張表（列在禮盒後面），每列前面是預估單日期。叫貨後在下方記錄（含預計到貨日），已叫的會自動扣掉。這頁只算數字，不會送出任何訂單給廠商。</p>';
     html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px"><span class="small" style="min-width:60px;font-weight:700">現貨</span>' +
       chip('deduct', '0', '不扣', !st.deduct) + chip('deduct', '1', '先扣掉總表現貨', st.deduct) + '</div>';
 
     if (!c.fb.any) {
-      html += X.ui.banner('warn', '「業績預估」頁還沒有填預估量（目前檔期：' + esc(c.fb.name || '未命名') + '），算不出要叫多少貨。禮盒的預估量到「業績預估」頁填；單條直接填在下面的「轉換單條」。') +
+      html += X.ui.banner('warn', '「業績預估」頁還沒有填預估量（目前檔期：' + esc(c.fb.name || '未命名') + '），算不出要叫多少貨。禮盒的預估量到「業績預估」頁填；單條直接填在下面表格的單條列。') +
         '<div style="margin:8px 0"><button type="button" class="btn primary" data-go="xSalesForecast">到「業績預估」</button></div>';
     }
 
@@ -205,25 +181,28 @@
       '<p class="small" style="margin:10px 0 0"><b>禮盒合計：預估 ' + X.fmt(totalGift.est) + ' 盒 → 目標叫貨 ' + X.fmt(totalGift.target) + ' 盒</b>，已叫 ' + X.fmt(totalGift.ordered) + ' 盒（在途 ' + X.fmt(totalGift.transit) + ' 盒），建議再叫 ' + X.fmt(totalGift.remaining) + ' 盒。費雪禮盒目標＝預估 × ' + Math.round(X.giftRatio({ name: '' }) * 100) + '%、蛋捲禮盒目標＝預估 × ' + Math.round(X.giftRatio({ name: '蛋捲' }) * 100) + '%，每個禮盒各自無條件進位後再加總。</p>',
       '<button type="button" class="btn gray" data-act="copy" style="min-height:34px">複製叫貨清單</button>');
 
-    html += X.ui.card('禮盒', X.ui.table(orderCols('盒'), c.gifts, { empty: '業績預估還沒有填禮盒的預估盒數。' }) +
-      '<p class="small" style="margin:10px 0 0">「預估單日期」是業績預估頁這個禮盒有填預估的日期。目標叫貨＝業績預估盒數 × 進貨比例。已叫貨＝這個檔期叫貨紀錄的已叫貨＋已到貨；建議再叫＝目標 － 已叫貨（最少 0）' + (st.deduct ? '；目前已先扣掉總表的禮盒現貨' : '') + '。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。按「叫貨」會帶入建議的盒數、廠商與預計到貨日。</p>');
-
-    var scols2 = [
-      { label: '預估單日期', render: function (r) { return '<input type="date" data-f="sdate" data-id="' + esc(r.id) + '" value="' + esc(r.date) + '" style="padding:5px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;min-width:130px">'; } },
-      { label: '單條', render: function (r) { return '<b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.egg ? '蛋捲' : '費雪') + '</span>' + fromHtml(r); } },
+    var convText = function (r) {
+      if (r.single) return '<span class="small">—</span>';
+      if (r.noComp) return X.ui.tag('沒設單條內容物', 'warn');
+      return r.conv.length ? r.conv.map(function (x) { return esc(x.p.name) + ' <b>' + X.fmt(x.n, 1) + '</b> 條'; }).join('<br>') : '<span class="small">—</span>';
+    };
+    var cols = [
+      { label: '預估單日期', render: function (r) { return r.single ? '<input type="date" data-f="sdate" data-id="' + esc(r.id) + '" value="' + esc(r.date) + '" style="padding:5px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;min-width:130px">' : datesText(r); } },
+      { label: '品項', render: function (r) { return '<b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>' + (r.extra ? ' ' + X.ui.tag('預估沒填', 'muted') : ''); } },
+      { label: '單位', render: function (r) { return r.single ? '條' : '盒'; } },
       { label: '廠商', render: function (r) { return r.supplier ? esc(r.supplier.name) : '<span class="small">未指定</span>'; } },
-      { label: '禮盒換算（條）', num: true, render: function (r) { return r.fromGifts ? X.fmt(r.fromGifts, 1) : '—'; } },
-      { label: '單賣預估（條）', num: true, render: function (r) { return '<input type="number" min="0" step="1" data-f="sest" data-id="' + esc(r.id) + '" value="' + (r.est > 0 ? esc(r.est) : '') + '" placeholder="直接填" style="width:96px;padding:5px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;text-align:right;background:#fffdf0">'; } },
-      { label: '單賣目標（條）', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.target) + ' <span class="small">（' + pctText(r) + '）</span>' : '—'; } },
-      { label: '合計需求（條）', num: true, render: function (r) { return r.need ? '<b>' + X.fmt(r.need, 1) + '</b>' : '—'; } },
+      { label: '業績預估', num: true, render: function (r) { return r.single ? '<input type="number" min="0" step="1" data-f="sest" data-id="' + esc(r.id) + '" value="' + (r.est > 0 ? esc(r.est) : '') + '" placeholder="直接填" style="width:96px;padding:5px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;text-align:right;background:#fffdf0">' : (r.est > 0 ? X.fmt(r.est) : '—'); } },
+      { label: '進貨比例', num: true, render: function (r) { return r.est > 0 ? pctText(r) : '—'; } },
+      { label: '目標叫貨', num: true, render: function (r) { return r.est > 0 ? '<b>' + X.fmt(r.target) + '</b>' : '—'; } },
+      { label: '轉換單條（目標 × 單條內容物）', render: convText },
       { label: '現貨', num: true, render: function (r) { return stockText(r.stock); } },
-      { label: '已叫貨（條）', num: true, render: function (r) { return r.ordered ? X.fmt(r.ordered) : '—'; } },
+      { label: '已叫貨', num: true, render: function (r) { return r.ordered ? X.fmt(r.ordered) : '—'; } },
       { label: '在途', num: true, render: function (r) { return r.transit ? X.fmt(r.transit) : '—'; } },
-      { label: '建議再叫（條）', num: true, render: function (r) { return r.remaining ? '<b style="color:var(--bad)">' + X.fmt(r.remaining) + '</b>' : (r.aim > 0 ? X.ui.tag('已叫足', 'ok') : '—'); } },
+      { label: '建議再叫', num: true, render: function (r) { return r.remaining ? '<b style="color:var(--bad)">' + X.fmt(r.remaining) + '</b>' : (r.aim > 0 ? X.ui.tag('已叫足', 'ok') : '—'); } },
       { label: '', render: function (r) { return '<button type="button" class="btn ' + (r.remaining ? 'primary' : 'gray') + '" data-act="order" data-id="' + esc(r.id) + '" data-qty="' + r.remaining + '" style="min-height:34px;padding:4px 12px;white-space:nowrap">叫貨</button>'; } }
     ];
-    html += X.ui.card('轉換單條', X.ui.table(scols2, c.singles, { empty: '還沒有單條。到「單條資料」勾選「本期上架」的單條會列在這裡。' }) +
-      '<p class="small" style="margin:10px 0 0"><b>單條直接在這張表填：</b>「預估單日期」和「單賣預估（條）」填完離開欄位就自動存（同步給所有人）。同一列整合兩個來源：<b>禮盒換算</b>＝上面「禮盒」的目標盒數 × 單條內容物；<b>單賣預估</b> × 進貨比例（費雪 70%、蛋捲 100%）＝單賣目標。<b>合計需求＝禮盒換算 ＋ 單賣目標</b>，建議再叫＝合計需求 －（已叫貨）（最少 0）' + (st.deduct ? '，目前已先扣掉單條現貨' : '') + '。單條的預估量只在這裡填，業績預估頁不用填；儀表板「單條（條）」檢視的預估也用這裡的數字。</p>');
+    html += X.ui.card('禮盒（含轉換單條）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '業績預估還沒有填禮盒的預估盒數。' }) +
+      '<p class="small" style="margin:10px 0 0">「預估單日期」：禮盒是業績預估頁這個禮盒有填預估的日期；單條是自己填的日期。目標叫貨＝預估 × 進貨比例（費雪 70%、蛋捲 100%，各自無條件進位）。<b>轉換單條</b>＝這個禮盒的目標盒數 × 單條內容物，直接列在禮盒那一列。<b>單條（列在禮盒後面，單位是條）</b>的「預估單日期」和「業績預估」直接在表裡填，離開欄位就自動存、同步給所有人（單賣的預估量只在這裡填，業績預估頁不用填；儀表板單條檢視也用這裡的數字）。已叫貨＝這個檔期叫貨紀錄的已叫貨＋已到貨；建議再叫＝目標 － 已叫貨（最少 0）' + (st.deduct ? '；目前已先扣掉總表現貨' : '') + '。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。按「叫貨」會帶入建議的數量、廠商與預計到貨日。</p>');
 
     // 叫貨紀錄
     var byId = {}; X.products().forEach(function (p) { if (p) byId[String(p.id)] = p; });
@@ -415,7 +394,7 @@
 
   X.registerPage({
     id: 'xPurchase', group: 'plan', order: 20, stage: 'ready',
-    title: '採購叫貨', sub: '禮盒與轉換單條（單條直接填預估量），費雪 70%、蛋捲 100%',
+    title: '採購叫貨', sub: '禮盒含轉換單條（單條直接填預估量），費雪 70%、蛋捲 100%',
     icon: '<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/>',
     render: render,
     _fn: { compute: compute }
