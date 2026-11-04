@@ -349,3 +349,9 @@ th{font-size:16.5px!important}
 @media (min-width:901px){
   #products .tablewrap th:nth-child(4){width:240px!important}
 }
+
+/* 業績預估：部門別／預估業績總額／去年業績這一列固定在最上方，往下捲動時隨時看得到目前預估的營業額（電腦版） */
+@media (min-width:901px){
+  [data-home-panel="salesForecast"]{overflow:visible!important}
+  .forecast-summary-wrap{position:sticky;top:calc(var(--topbar-h) + env(safe-area-inset-top, 0px));z-index:7;overflow:visible!important;background:var(--surface,#fff);box-shadow:0 6px 12px -8px rgba(16,24,40,.35)}
+}
