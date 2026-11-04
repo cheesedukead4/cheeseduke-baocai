@@ -164,7 +164,9 @@
     // 現貨、今天實際揀貨：logistics-console 的 hq-ledger（日期優先用頁面上選的日期，找不到就用今天）
     // 4 週累計訂單量：bake-console 的 cockpit（products[].demand.actualTotal）；這支讀不到時只同步現貨，並在 App 提醒
     // 失敗時把網址、狀態與回應內容顯示出來，方便找原因
-    var code = "(async()=>{var u='';try{var p=function(n){return String(n).padStart(2,'0')},d=new Date(),ds=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),pk=document.querySelector('input[type=date]');" +
+    var code = "(async()=>{" +
+      "if(location.hostname.indexOf('flowings.app')<0){if(confirm('這顆書籤要在「入口網站」的頁面按，你現在在別的網站。\\n\\n要現在打開入口網站嗎？打開後請登入，再按一次這顆書籤。'))window.open('https://cheeseduke.flowings.app/logistics-console','_blank');return}" +
+      "var u='';try{var p=function(n){return String(n).padStart(2,'0')},d=new Date(),ds=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),pk=document.querySelector('input[type=date]');" +
       "if(pk&&/^\\d{4}-\\d{2}-\\d{2}$/.test(pk.value))ds=pk.value;" +
       "u=location.origin+'/api/internal/logistics-console/hq-ledger?date='+ds;" +
       "var r=await fetch(u,{credentials:'include',headers:{Accept:'application/json'}});" +
@@ -182,7 +184,9 @@
   // 實際銷售書籤：只讀入口網站「訂單」頁用的 API，把每筆明細 [單號, 預訂交貨日, 品號, 數量, 品名] 放進網址的 #orders=
   function ordersBookmarklet() {
     var app = location.origin + location.pathname;
-    var code = "(async()=>{try{var u=location.origin+'/api/internal/preorders/processed';" +
+    var code = "(async()=>{" +
+      "if(location.hostname.indexOf('flowings.app')<0){if(confirm('這顆書籤要在「入口網站」的頁面按，你現在在別的網站。\\n\\n要現在打開入口網站嗎？打開後請登入，再按一次這顆書籤。'))window.open('https://cheeseduke.flowings.app/bake-console/dashboard','_blank');return}" +
+      "try{var u=location.origin+'/api/internal/preorders/processed';" +
       "var r=await fetch(u,{credentials:'include',headers:{Accept:'application/json'}});" +
       "if(!r.ok){var tx='';try{tx=(await r.text()).slice(0,200)}catch(e){}throw new Error('HTTP '+r.status+'\\n網址：'+u+'\\n回應：'+tx)}" +
       "var j=await r.json(),L=(j.lines||[]).map(function(x){return [x.orderNo,x.deliveryDate,x.productCode,x.quantity,String(x.productName||'').slice(0,20)]}).filter(function(a){return a[0]&&a[1]&&a[2]&&a[3]>0});" +
@@ -222,7 +226,7 @@
       '<ol style="margin:12px 0 0;padding-left:20px;line-height:2">' +
       '<li>把這顆按鈕<b>拖曳到瀏覽器的書籤列</b>（和下面現貨的書籤是不同的一顆）：<br><a class="btn primary" id="xhqBm2" style="display:inline-block;margin:6px 0;text-decoration:none;cursor:grab">同步實際銷售訂單</a></li>' +
       '<li>打開<a href="https://cheeseduke.flowings.app/bake-console/dashboard" target="_blank" rel="noopener">入口網站的生產駕駛艙</a>並登入，切到「訂單」頁。</li>' +
-      '<li>按書籤列的「同步實際銷售訂單」→ 回到這個 App，自動存好並同步給大家。</li></ol>' +
+      '<li>在<b>入口網站的頁面上</b>按書籤列的「同步實際銷售訂單」（<b>不要在這個 App 裡按</b>，在 App 按會出現 HTTP 404）→ 會自動回到這個 App，存好並同步給大家。</li></ol>' +
       '<p class="small" style="margin:8px 0 0">日期用<b>預訂交貨日</b>算在哪一週。入口網站這份只有還沒完成的訂單，出貨過的會從名單消失，所以：名單上有的更新；名單上沒有、預訂交貨日已經到了或過了的保留（視為已出貨）；名單上沒有、預訂交貨日還沒到的刪除（視為取消或改單）。同單號已經在「過去訂單」匯入的不會重複算。業績儀表板的「實際」用這份加上過去訂單。</p>');
     var html = salesHtml + X.ui.banner('info', '首頁的<b>現貨</b>＝入口網站「總表」的「剩餘庫存 → 現貨」；<b>預購單</b>＝「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0）。入口網站要 Google 登入，所以用下面的書籤一鍵帶過來，不用抄數字。');
     html += X.ui.kpis([
