@@ -989,12 +989,28 @@
     var ms = Math.round(now() - t0);
     var deptName = (deptOpts.find(function (d) { return d.key === sd.dept; }) || {}).label;
     var unitSingle = sd.unit === 'single', mtr = unitSingle ? 'single' : sd.metric, gsel = unitSingle ? sd.sgroup : sd.group;
+    // 這個檔期需要的品項＝檔期品項清單 ＋ 業績預估有填的 ＋ 這個檔期有賣的；只因為去年有賣的品項不列出來
+    var needG = Object.create(null), needS = Object.create(null), ctxN = salesCtx();
+    var addNeed = function (p) {
+      if (!p) return;
+      if (isSingle(p)) needS[String(p.id)] = true;
+      else { needG[String(p.id)] = true; (conv()(p) || []).forEach(function (pt) { needS[String(pt.single.id)] = true; }); }
+    };
+    if (selC.season && X.seasonItems) X.seasonItems.itemsOf(selC.season).forEach(function (id) { addNeed(X.productById(id)); });
+    Object.keys(cur.items).forEach(function (k) { var it = cur.items[k]; if (it.p && it.qty > 0) addNeed(it.p); });
+    var foN = forecastOf(selC);
+    if (foN) Object.keys(foN.rows || {}).forEach(function (code) {
+      var r = foN.rows[code];
+      if (!r || !r.lines) return;
+      var sum = 0;
+      Object.keys(r.lines).forEach(function (n) { var line = r.lines[n] || {}; Object.keys(line).forEach(function (k) { sum += X.num((line[k] || {}).est); }); });
+      if (sum > 0) addNeed(ctxN.byCode[normCode(code)] || ctxN.byId[String(code)] || null);
+    });
     // 單條檢視的單條按鈕：配方裡用到的單條、單賣的單條
     var singleChoices = [];
     if (unitSingle) {
       var seenS = Object.create(null);
-      X.components().forEach(function (cc) { var sp = cc && X.productById(cc.componentProductId); if (sp && !seenS[sp.id]) { seenS[sp.id] = true; singleChoices.push(sp); } });
-      X.singles().forEach(function (sp) { if (sp && !seenS[sp.id]) { seenS[sp.id] = true; singleChoices.push(sp); } });
+      X.singles().forEach(function (sp) { if (sp && needS[String(sp.id)] && !seenS[sp.id]) { seenS[sp.id] = true; singleChoices.push(sp); } });
       singleChoices.sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
       if (sd.sgroup !== 'all' && !seenS[sd.sgroup]) { sd.sgroup = 'all'; gsel = 'all'; }
     }
@@ -1096,7 +1112,7 @@
     if (sCur) {
       var sKeys = Object.create(null);
       Object.keys(sCur.by).concat(Object.keys(sPrev.by)).forEach(function (k) { sKeys[k] = true; });
-      var sRows = Object.keys(sKeys).map(function (k) { var a = sCur.by[k], b = sPrev.by[k], base = a || b; return { p: base.p, qa: a ? a.qty : 0, qb: b ? b.qty : 0 }; })
+      var sRows = Object.keys(sKeys).filter(function (k) { return needS[k]; }).map(function (k) { var a = sCur.by[k], b = sPrev.by[k], base = a || b; return { p: base.p, qa: a ? a.qty : 0, qb: b ? b.qty : 0 }; })
         .sort(function (x, y) { return (y.qa - x.qa) || (y.qb - x.qb); });
       html += X.ui.card('依單條（今年條數排序）', X.ui.table([
         { label: '單條', render: function (x) { return esc((x.p.code ? x.p.code + ' ' : '') + x.p.name); } },
@@ -1114,7 +1130,7 @@
     var items = Object.keys(keys).map(function (k) {
       var a = cur.items[k], b = prev.items[k], base = a || b;
       return { p: base.p, code: base.code, name: base.name, price: base.price, qa: a ? a.qty : 0, qb: b ? b.qty : 0, ma: a ? a.amt : 0, mb: b ? b.amt : 0 };
-    }).sort(function (x, y) { return SHOW_AMT ? ((y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb)) : ((y.qa - x.qa) || (y.qb - x.qb)); });
+    }).filter(function (x) { return x.p ? (needG[String(x.p.id)] || needS[String(x.p.id)]) : x.qa > 0; }).sort(function (x, y) { return SHOW_AMT ? ((y.ma - x.ma) || (y.qa - x.qa) || (y.qb - x.qb)) : ((y.qa - x.qa) || (y.qb - x.qb)); });
     var shown = items.slice(0, topN);
     shown.forEach(function (x, i) { x.rank = i + 1; });
     if (!sCur) html += X.ui.card('依品項（今年' + (SHOW_AMT ? '金額' : '數量') + '前 ' + topN + ' 名）', X.ui.table([
