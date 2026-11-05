@@ -70,7 +70,7 @@
     var info = PAGES[page] || (window.CMSX && CMSX.pageInfo(page)) || [page, ''];
     $('appPageTitle').textContent = info[0];
     $('appPageSub').textContent = info[1];
-    document.title = (page === 'dashboard' ? '' : info[0] + '｜') + '檔期包材管理系統';
+    document.title = (page === 'dashboard' ? '' : info[0] + '｜') + '檔期管理系統';
   }
   function closeNav() { document.body.classList.remove('nav-open'); }
 

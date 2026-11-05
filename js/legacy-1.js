@@ -1092,7 +1092,7 @@ categoryTables.innerHTML=cats.map(c=>{
 
  renderDashboard();
 }
-function exportData(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='檔期包材管理系統_資料備份.json';a.click();URL.revokeObjectURL(a.href)}
+function exportData(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='檔期管理系統_資料備份.json';a.click();URL.revokeObjectURL(a.href)}
 function importData(el){let f=el.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);ensureHomeOrder();
 persist();alert('匯入完成')}catch(e){alert('檔案格式錯誤')}};r.readAsText(f)}
 function wipeAll(){if(confirm('確定清空全部資料？此動作無法復原，建議先匯出備份。')){db={materials:[],products:[],recipes:[],campaigns:[],stock:[]};persist()}}

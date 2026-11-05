@@ -76,7 +76,7 @@
     g.innerHTML =
       '<div class="lg-box">' +
       '<img src="icons/icon.svg" alt="" width="64" height="64">' +
-      '<h1 id="lgTitle">檔期包材管理系統</h1>' +
+      '<h1 id="lgTitle">檔期管理系統</h1>' +
       '<p class="lg-sub">請用 Google 帳號（Gmail）登入</p>' +
       '<div id="lgBtn" class="lg-btn"></div>' +
       '<p id="lgMsg" class="lg-msg" aria-live="polite"></p>' +

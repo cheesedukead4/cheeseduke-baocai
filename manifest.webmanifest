@@ -1,7 +1,7 @@
 {
-  "name": "檔期包材管理系統",
-  "short_name": "包材管理",
-  "description": "檔期包材、禮盒配方、庫存與補貨管理",
+  "name": "檔期管理系統",
+  "short_name": "檔期管理",
+  "description": "檔期、禮盒與單條預估、包材庫存、進貨與採購叫貨管理",
   "lang": "zh-Hant",
   "start_url": "./",
   "scope": "./",
