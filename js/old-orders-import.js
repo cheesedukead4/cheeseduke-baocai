@@ -127,6 +127,88 @@
     reader.readAsText(f, 'utf-8');
   }
 
+  // ---------- 用交易明細匯入檔「取代」過去訂單 ----------
+  // 匯入檔（格式 cms-orders-v1，內容是 orders 陣列：id、date、orderNo、productCode、name、qty、amount、channel、orderDepartment、department…）
+  // 選檔後先顯示筆數、日期範圍、金額合計，確認後：① 先下載一份現有過去訂單的備份 ② 刪除全部現有過去訂單 ③ 換成匯入檔的訂單。只有管理員能做。
+  var txPending = null;
+  function txMsg(t, ok) { var m = document.getElementById('txMsg'); if (!m) return; m.textContent = t; m.style.color = ok === false ? 'var(--bad)' : ok ? 'var(--ok)' : ''; }
+  function txFmt(n) { return Number(n).toLocaleString('en-US'); }
+  function mountReplacePanel() {
+    var page = document.getElementById('backup');
+    if (!page || document.getElementById('txReplacePanel')) return;
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.id = 'txReplacePanel';
+    panel.innerHTML = '<h2>用交易明細匯入檔取代過去訂單</h2>' +
+      '<p class="small">把交易明細表整理成的匯入檔（.json，含金額）換進來：<b>先下載一份現有過去訂單的備份，再刪除全部現有過去訂單，最後匯入檔裡的訂單</b>，並同步給所有同事。選檔後會先顯示筆數、日期範圍和金額合計，確認才會動資料。只有管理員能用。</p>' +
+      '<div class="toolbar"><label class="btn primary">選擇匯入檔（.json）<input id="txFile" type="file" accept=".json,application/json" hidden></label></div>' +
+      '<div id="txMsg" class="small" aria-live="polite"></div><div id="txPreview"></div>';
+    page.appendChild(panel);
+    document.getElementById('txFile').addEventListener('change', onTxFile);
+  }
+  function onTxFile(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    txPending = null;
+    document.getElementById('txPreview').innerHTML = '';
+    if (!f) return;
+    if (!(typeof root.adminIsLoggedIn === 'function' && root.adminIsLoggedIn())) { txMsg('只有管理員能取代過去訂單', false); return; }
+    txMsg('讀取中…');
+    var reader = new FileReader();
+    reader.onerror = function () { txMsg('無法讀取這個檔案', false); };
+    reader.onload = function () {
+      var pkg;
+      try { pkg = JSON.parse(reader.result); } catch (e) { txMsg('檔案格式錯誤（不是 JSON）', false); return; }
+      if (!pkg || pkg.format !== 'cms-orders-v1' || !Array.isArray(pkg.orders) || !pkg.orders.length) { txMsg('這不是交易明細匯入檔（找不到 cms-orders-v1 的訂單）', false); return; }
+      var bad = 0, byMonth = {}, amt = 0, lo = '9999', hi = '0000', ids = {}, dup = 0;
+      pkg.orders.forEach(function (o) {
+        if (!o || !/^\d{4}-\d{2}-\d{2}$/.test(String(o.date || '')) || !String(o.productCode || '').trim() || !isFinite(Number(o.qty)) || (o.amount != null && !isFinite(Number(o.amount)))) { bad++; return; }
+        if (ids[o.id]) dup++; ids[o.id] = 1;
+        var m = o.date.slice(0, 7); byMonth[m] = (byMonth[m] || 0) + 1; amt += Number(o.amount) || 0;
+        if (o.date < lo) lo = o.date; if (o.date > hi) hi = o.date;
+      });
+      if (bad || dup) { txMsg('匯入檔有 ' + bad + ' 筆資料不完整、' + dup + ' 筆 id 重複，沒有動任何資料。請重新產生匯入檔。', false); return; }
+      var cur = Array.isArray(db.orderHistory) ? db.orderHistory.length : 0;
+      txPending = pkg;
+      txMsg('');
+      document.getElementById('txPreview').innerHTML = '<div class="x-banner x-warn" style="margin:8px 0">' +
+        '匯入檔：<b>' + txFmt(pkg.orders.length) + '</b> 筆訂單明細，日期 ' + lo + '～' + hi + '，金額合計 <b>' + txFmt(Math.round(amt)) + '</b>。<br>' +
+        '各月筆數：' + Object.keys(byMonth).sort().map(function (m) { return m + '：' + txFmt(byMonth[m]); }).join('、') + '。<br>' +
+        '目前系統裡有 <b>' + txFmt(cur) + '</b> 筆過去訂單，<b>確認後會全部刪除</b>（刪除前會先下載備份），換成上面這 ' + txFmt(pkg.orders.length) + ' 筆。' +
+        '</div><div class="toolbar"><button type="button" class="btn red" id="txGo">確認：備份後刪除全部，改匯入這份</button> <button type="button" class="btn gray" id="txCancel">取消</button></div>';
+      document.getElementById('txCancel').onclick = function () { txPending = null; document.getElementById('txPreview').innerHTML = ''; txMsg('已取消，沒有動任何資料'); };
+      document.getElementById('txGo').onclick = doTxReplace;
+    };
+    reader.readAsText(f, 'utf-8');
+  }
+  function downloadJson(name, obj) {
+    var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  function doTxReplace() {
+    var pkg = txPending;
+    if (!pkg) return;
+    if (!(typeof root.adminIsLoggedIn === 'function' && root.adminIsLoggedIn())) { txMsg('只有管理員能取代過去訂單', false); return; }
+    var old = Array.isArray(db.orderHistory) ? db.orderHistory : [];
+    if (!confirm('最後確認：會先下載現有 ' + txFmt(old.length) + ' 筆過去訂單的備份，然後全部刪除，改匯入 ' + txFmt(pkg.orders.length) + ' 筆。\n\n要繼續嗎？')) return;
+    var stamp = new Date().toISOString().slice(0, 10);
+    try { downloadJson('過去訂單_取代前備份_' + stamp + '.json', { orderHistory: old, exportedAt: new Date().toISOString(), note: '用交易明細匯入檔取代之前的備份' }); }
+    catch (e) { txMsg('備份下載失敗，沒有動任何資料：' + e.message, false); return; }
+    var before = db.orderHistory;
+    db.orderHistory = pkg.orders.map(function (o) { return Object.assign({}, o); });
+    db.orderHistoryReplacedAt = new Date().toISOString();
+    try { persist(); } catch (e) { db.orderHistory = before; txMsg('儲存失敗，已還原原本的過去訂單：' + e.message, false); return; }
+    try { if (typeof refreshOrderYearOptions === 'function') refreshOrderYearOptions(); } catch (e) {}
+    try { if (typeof refreshOrderFilterChannelOptions === 'function') refreshOrderFilterChannelOptions(); } catch (e) {}
+    txPending = null;
+    document.getElementById('txPreview').innerHTML = '';
+    txMsg('完成：已刪除原本 ' + txFmt(old.length) + ' 筆，匯入 ' + txFmt(pkg.orders.length) + ' 筆過去訂單（含金額）。備份檔已下載，請等右上角變成「已同步」再關閉。', true);
+    if (root.cmsToast) root.cmsToast('已取代過去訂單：' + txFmt(pkg.orders.length) + ' 筆');
+  }
+
   // ---------- 保護：「匯入 JSON」不會無聲刪掉過去訂單 ----------
   // 原系統的 importData 會整份取代資料；舊版備份常常沒有過去訂單，直接取代會讓所有人的訂單從雲端消失。
   var ORDER_FLAGS = ['orderHistoryImportVersion', 'orderHistoryImportJan2026', 'orderHistoryAllCOVersion'];
@@ -218,6 +300,7 @@
   }
   root.addEventListener('load', installGuards);
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountPanel, { once: true });
-  else mountPanel();
+  function mountAll() { mountPanel(); mountReplacePanel(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAll, { once: true });
+  else mountAll();
 })(typeof window !== 'undefined' ? window : this);
