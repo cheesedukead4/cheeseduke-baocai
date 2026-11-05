@@ -23,10 +23,11 @@
     var box = document.getElementById('sf-lock-panel'), d = fdb();
     if (!box || !d) return;
     var L = d.lockDate || '', locked = typeof sfLocked === 'function' && sfLocked(), isAdm = typeof adminIsLoggedIn === 'function' && adminIsLoggedIn(), left = L ? X.daysBetween(X.today(), L) : 0;
+    var pnl = document.querySelector('[data-home-panel="salesForecast"]'); if (pnl) pnl.classList.toggle('sf-locked-mode', !!locked); // 鎖定後整頁改成灰色
     var h = '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 10px"><label style="display:inline-flex;gap:6px;align-items:center;white-space:nowrap"><b>鎖定日期</b><input type="date" id="sf-lock-date" value="' + esc(L) + '"' + (isAdm ? '' : ' disabled') + ' onchange="sfSetLockDate(this.value)"></label>' +
       (locked ? '<button type="button" class="btn primary" onclick="sfOpenChange(null)">業績異動</button>' : '') +
       '<span class="small">' + (!L ? '還沒設定：目前預估量可以直接填。設定後，從那一天（含）起預估量不能直接改，要用「業績異動」。' + (isAdm ? '' : '（只有管理員能設定）') : (locked ? '' : '還有 ' + left + ' 天鎖定，之前可以直接填。') + (isAdm ? '' : '（只有管理員能改）')) + '</span></div>';
-    if (locked) h += '<div class="x-banner x-warn" style="margin:0 0 10px">預估量已鎖定（' + esc(L) + ' 起）：格子不能直接改，<b>點格子或按「業績異動」</b>，填新的預估量和原因，修改前後會記在下面的「業績異動歷程」。</div>';
+    if (locked) h += '<div class="x-banner" style="margin:0 0 10px;background:#ececec;border-color:#bbb;color:#333">預估量已鎖定（' + esc(L) + ' 起）：格子不能直接改，<b>點格子或按「業績異動」</b>，填新的預估量和原因，修改前後會記在下面的「業績異動歷程」。</div>';
     box.innerHTML = h;
   };
 

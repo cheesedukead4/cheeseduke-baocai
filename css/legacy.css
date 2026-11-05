@@ -345,4 +345,14 @@ body.admin-mode #page-orderHistory.active-order-history{display:block!important}
 .forecast-product-table td.sf-date input[type="date"]{box-sizing:border-box;width:100%;min-width:0;max-width:100%;font-size:14.5px;padding:3px 1px;cursor:pointer;color-scheme:light}
 .forecast-product-table td.sf-date{padding:2px 3px}
 
-.forecast-product-table td input.sf-locked{cursor:pointer;background:repeating-linear-gradient(135deg,#fff2cc,#fff2cc 6px,#f3e3a8 6px,#f3e3a8 12px)}
+.forecast-product-table td input.sf-locked{cursor:pointer}
+/* 鎖定後（業績預估頁加上 sf-locked-mode）：整頁改成灰色，不用其他顏色 */
+.sf-locked-mode .forecast-summary-table thead th,.sf-locked-mode .forecast-product-table thead th{background:#6b6b6b!important;color:#fff!important}
+.sf-locked-mode .forecast-summary-table tbody th{background:#808080!important;color:#fff!important}
+.sf-locked-mode .forecast-product-table .sf-est,.sf-locked-mode .forecast-product-table .sf-act,.sf-locked-mode .forecast-sheet td.sf-est,.sf-locked-mode .forecast-sheet td.sf-act{background:#ececec!important}
+.sf-locked-mode .forecast-product-table .sf-total-row th,.sf-locked-mode .forecast-product-table .sf-total-row td{background:#555!important;color:#fff!important}
+.sf-locked-mode .forecast-product-table .sf-amount-row th,.sf-locked-mode .forecast-product-table .sf-amount-row td{background:#e0e0e0!important;color:#333!important}
+.sf-locked-mode .sf-price-wrap input{background:#ececec!important;border:1px solid #bbb!important}
+.sf-locked-mode .forecast-product-table td input{color:#333}
+.sf-locked-mode .forecast-summary-table td,.sf-locked-mode .forecast-summary-table input{color:#333}
+
