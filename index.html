@@ -486,7 +486,7 @@
 
 
 <div class="sheet-block home-table-panel" data-home-panel="salesForecast">
-<div class="sheet-caption">業績預估 <span class="small">金額＝預估盒數 × 售價 × 折扣成數（折扣在「禮盒資料」填；公關贈用原價；大公國已併入通路）</span></div>
+<div class="sheet-caption">業績預估 <span class="small">金額＝預估盒數 × 售價 × 折扣成數（折扣在「禮盒資料」填；公關贈用原價；大公國已併入通路）；每個品項最右邊「小計」的「實際」＝訂單（過去訂單匯入＋入口網站訂單）中品號相同、訂單日期落在該週區間（起 ≤ 日期 ＜ 迄）的數量，整個公司不分門市，金額以原價算</span></div>
 <div class="forecast-top"><label>檔期名稱 <input id="forecast-campaign-name" placeholder="例如：2026中秋" oninput="saveSalesForecastDebounced()"></label><label>搜尋品項 <select id="forecast-product-search" onchange="filterSalesForecastProducts()"><option value="">全部品項</option></select></label><button type="button" class="btn gray" onclick="document.getElementById('forecast-product-search').value='';filterSalesForecastProducts()">清除搜尋</button><span id="forecast-search-count" aria-live="polite"></span></div>
 <div class="tablewrap forecast-summary-wrap"><table class="sheet-table forecast-summary-table"><colgroup><col style="width:12%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"></colgroup><thead><tr><th>部門別</th><th>東橋</th><th>A11</th><th>京站</th><th>官網</th><th>通路</th><th>公關贈</th><th>執行長</th><th>總計</th></tr></thead><tbody>
 <tr><th>預估業績總額</th><td id="sf-summary-dongqiao"></td><td id="sf-summary-a11"></td><td id="sf-summary-jingzhan"></td><td id="sf-summary-web"></td><td id="sf-summary-channel"></td><td id="sf-summary-pr"></td><td id="sf-summary-ceo"></td><td id="sf-summary-total"></td></tr>

@@ -567,6 +567,8 @@ function sfDiscountFactor(product,loc){const f=SF_DISCOUNT_FIELD[loc];if(!f)retu
 function sfForecastPrice(product,loc){return sfUnitPrice(product)*sfDiscountFactor(product,loc);}
 function recalcSalesForecast(){
  ensureSalesForecast();const summary={};SF_LOCATIONS.forEach(k=>summary[k]=0);
+ // 小計的「實際」：訂單裡品號相同、日期落在每一週區間的數量（整個公司，不分門市）；算不出來時退回各部門填的實際
+ let fa=null;try{fa=(window.CMSX&&CMSX.forecastActuals)?CMSX.forecastActuals():null;}catch(e){console.warn('實際訂單數量計算失敗',e);}
  getForecastProducts().forEach(p=>{
   const code=String(p.code||p.id||''),r=sfRow(code),key=code.replace(/[^A-Za-z0-9]/g,'_'),price=sfUnitPrice(p);
   let grandQty=0,grandAmount=0,grandActQty=0,grandActAmount=0;
@@ -580,9 +582,11 @@ function recalcSalesForecast(){
   });
   for(let n=0;n<SF_WEEKS;n++){
    let q=0,qa=0;SF_LOCATIONS.forEach(k=>{q+=Number(r.lines[n][k].est)||0;qa+=Number(r.lines[n][k].act)||0;});
+   if(fa&&fa[code])qa=fa[code][n]||0;
    const el=document.getElementById(`sf-row-${key}-${n}`);if(el)el.textContent=q.toLocaleString();
    const ela=document.getElementById(`sf-row-act-${key}-${n}`);if(ela)ela.textContent=qa.toLocaleString();
   }
+  if(fa&&fa[code]){grandActQty=fa[code].reduce((t,v)=>t+(Number(v)||0),0);grandActAmount=grandActQty*price;}
   const gq=document.getElementById(`sf-${key}-grandqty`),ga=document.getElementById(`sf-${key}-grandamount`),gqa=document.getElementById(`sf-${key}-grandactqty`),gaa=document.getElementById(`sf-${key}-grandactamount`);
   if(gq)gq.textContent=grandQty?grandQty.toLocaleString():'';if(ga)ga.textContent=grandAmount?grandAmount.toLocaleString():'';
   if(gqa)gqa.textContent=grandActQty?grandActQty.toLocaleString():'';if(gaa)gaa.textContent=grandActAmount?grandActAmount.toLocaleString():'';

@@ -932,6 +932,42 @@
     return out;
   };
 
+  // 業績預估頁「小計」的「實際」：訂單（過去訂單匯入＋入口網站訂單）裡品號相同、訂單日期落在每一週區間（起 ≤ 日期 ＜ 迄）的數量合計，整個公司、不分門市
+  // 回傳 { 業績預估的品號（列的 key）: [第 1～5 週的數量] }；品號對應沿用「對照設定」，部門對照設成「不計算」的訂單不算
+  var FA_CACHE = { key: '', list: null };
+  X.forecastActuals = function () {
+    var fo = X.db() && X.db().salesForecastV5, out = {};
+    if (!fo || !fo.rows) return out;
+    var key = [X.orders().length, X.get('portalOrders').length, (X.get('hqStock') || {}).salesAt || 0, X.get('codeMap').length, X.get('deptMap').length, X.products().length].join('|');
+    if (FA_CACHE.key !== key || !FA_CACHE.list) {
+      FA_CACHE.list = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), salesCtx()).list;
+      FA_CACHE.key = key;
+    }
+    var ctx = salesCtx(), byPid = Object.create(null);
+    Object.keys(fo.rows).forEach(function (code) {
+      var r = fo.rows[code], p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
+      if (!r || !p) return;
+      var ranges = [];
+      for (var n = 0; n < 5; n++) {
+        var st = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null, en = r.ends && r.ends[n] ? dateMs(r.ends[n]) : (st != null ? st + 7 * DAY : null);
+        ranges.push(st != null && en != null ? [st, en] : null);
+      }
+      out[code] = [0, 0, 0, 0, 0];
+      (byPid[String(p.id)] = byPid[String(p.id)] || []).push({ code: code, ranges: ranges });
+    });
+    FA_CACHE.list.forEach(function (o) {
+      if (!o.p || o.dk === 'none') return;
+      var tg = byPid[String(o.p.id)];
+      if (!tg) return;
+      var t = dateMs(o.date);
+      if (t == null) return;
+      tg.forEach(function (g) {
+        for (var n = 0; n < 5; n++) { var rg = g.ranges[n]; if (rg && t >= rg[0] && t < rg[1]) out[g.code][n] += o.q; }
+      });
+    });
+    return out;
+  };
+
   // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數
   // 有叫貨紀錄就拿已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準＝要追量進貨
   function purchasePlanSingles(list, selC, ctx, sgroup) {
