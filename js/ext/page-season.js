@@ -935,15 +935,18 @@
   // 業績預估頁「小計」的「實際」：訂單（過去訂單匯入＋入口網站訂單）裡品號相同、訂單日期落在每一週區間（起 ≤ 日期 ＜ 迄）的數量合計，整個公司、不分門市
   // 回傳 { 業績預估的品號（列的 key）: [第 1～5 週的數量] }；品號對應沿用「對照設定」，部門對照設成「不計算」的訂單不算
   var FA_CACHE = { key: '', list: null };
-  X.forecastActuals = function () {
-    var fo = X.db() && X.db().salesForecastV5, out = {};
-    if (!fo || !fo.rows) return out;
+  // 先判別日期、再判別品號，才加總：
+  //   ① 日期：每個訂單的日期要落在某個品項某一週的區間（起 ≤ 日期 ＜ 迄）
+  //   ② 品號：訂單的品號要對得到這個品項（沿用「對照設定」），對不到的另外列在「沒算進去」
+  function faCompute() {
+    var fo = X.db() && X.db().salesForecastV5, det = { sums: {}, rows: {}, unmatched: {}, inWindow: 0, total: 0, matched: 0, lo: null, hi: null };
+    if (!fo || !fo.rows) return det;
     var key = [X.orders().length, X.get('portalOrders').length, (X.get('hqStock') || {}).salesAt || 0, X.get('codeMap').length, X.get('deptMap').length, X.products().length].join('|');
     if (FA_CACHE.key !== key || !FA_CACHE.list) {
       FA_CACHE.list = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), salesCtx()).list;
       FA_CACHE.key = key;
     }
-    var ctx = salesCtx(), byPid = Object.create(null);
+    var ctx = salesCtx(), byPid = Object.create(null), lo = Infinity, hi = -Infinity;
     Object.keys(fo.rows).forEach(function (code) {
       var r = fo.rows[code], p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
       if (!r || !p) return;
@@ -951,21 +954,59 @@
       for (var n = 0; n < 5; n++) {
         var st = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null, en = r.ends && r.ends[n] ? dateMs(r.ends[n]) : (st != null ? st + 7 * DAY : null);
         ranges.push(st != null && en != null ? [st, en] : null);
+        if (st != null && en != null) { if (st < lo) lo = st; if (en > hi) hi = en; }
       }
-      out[code] = [0, 0, 0, 0, 0];
+      det.sums[code] = [0, 0, 0, 0, 0];
+      det.rows[code] = { p: p, weeks: [[], [], [], [], []] };
       (byPid[String(p.id)] = byPid[String(p.id)] || []).push({ code: code, ranges: ranges });
     });
+    det.lo = lo === Infinity ? null : lo; det.hi = hi === -Infinity ? null : hi;
     FA_CACHE.list.forEach(function (o) {
-      if (!o.p || o.dk === 'none') return;
-      var tg = byPid[String(o.p.id)];
-      if (!tg) return;
+      if (o.dk === 'none') return;
+      det.total++;
       var t = dateMs(o.date);
-      if (t == null) return;
+      if (t == null || det.lo == null || t < det.lo || t >= det.hi) return; // ① 日期不在任何區間
+      det.inWindow++;
+      var tg = o.p ? byPid[String(o.p.id)] : null;
+      if (!tg) { // ② 品號對不到業績預估的品項
+        var uk = o.p ? 'p:' + o.p.id : 'c:' + (o.code || o.name || '');
+        var u = det.unmatched[uk] || (det.unmatched[uk] = { code: o.code || '', name: o.name || '', reason: o.p ? '業績預估沒有這個品項（本期沒上架或沒填）' : '品號沒有對照到禮盒或單條（到「對照設定」對照）', n: 0, qty: 0 });
+        u.n++; u.qty += o.q;
+        return;
+      }
+      var hit = false;
       tg.forEach(function (g) {
-        for (var n = 0; n < 5; n++) { var rg = g.ranges[n]; if (rg && t >= rg[0] && t < rg[1]) out[g.code][n] += o.q; }
+        for (var n = 0; n < 5; n++) {
+          var rg = g.ranges[n];
+          if (rg && t >= rg[0] && t < rg[1]) { det.sums[g.code][n] += o.q; det.rows[g.code].weeks[n].push({ date: o.date, no: o.no, qty: o.q, code: o.code }); hit = true; }
+        }
       });
+      if (hit) det.matched++;
     });
-    return out;
+    return det;
+  }
+  // 業績預估頁小計「實際」用：{ 品號（列的 key）: [第 1～5 週的數量] }
+  X.forecastActuals = function () { return faCompute().sums; };
+  // 業績預估頁的「實際判別明細」：先判別日期、再判別品號的過程與沒算進去的訂單
+  X.forecastActualDetailHtml = function () {
+    var d = faCompute(), codes = Object.keys(d.rows);
+    if (!codes.length) return '';
+    var md2 = function (ms) { var t = new Date(ms); return (t.getUTCMonth() + 1) + '/' + (t.getUTCDate()); };
+    var rowsTbl = codes.map(function (c) { var r = d.rows[c], tot = d.sums[c].reduce(function (a, v) { return a + v; }, 0); return { c: c, p: r.p, w: d.sums[c], tot: tot }; })
+      .filter(function (r) { return r.tot > 0; });
+    var un = Object.keys(d.unmatched).map(function (k) { return d.unmatched[k]; }).sort(function (a, b) { return b.qty - a.qty; });
+    var heads = [0, 1, 2, 3, 4].map(function (n) { return '第 ' + (n + 1) + ' 週'; });
+    var cols = [{ label: '品號', render: function (r) { return esc(r.p.code || r.c); } }, { label: '品名', render: function (r) { return esc(r.p.name || ''); } }]
+      .concat(heads.map(function (h, n) { return { label: h, num: true, render: function (r) { return r.w[n] ? X.fmt(r.w[n]) : '<span class="small">—</span>'; } }; }))
+      .concat([{ label: '實際合計', num: true, render: function (r) { return '<b>' + X.fmt(r.tot) + '</b>'; } }]);
+    var span = d.lo != null ? md2(d.lo) + '～' + md2(d.hi) : '（還沒有日期區間）';
+    var html = '<p class="small" style="margin:8px 0">實際＝<b>先判別日期、再判別品號</b>，兩關都過才加進小計：<br>' +
+      '① <b>判別日期</b>：訂單日期要落在品項某一週的區間（起 ≤ 日期 ＜ 迄）。所有區間涵蓋 ' + esc(span) + '，目前有 <b>' + X.fmt(d.inWindow) + '</b> 筆訂單明細的日期落在這段時間內（共 ' + X.fmt(d.total) + ' 筆，其餘日期不在區間內，不算）。<br>' +
+      '② <b>判別品號</b>：區間內的訂單，品號要對得到「業績預估」的品項（品號先看「對照設定」，沒有對照再直接比對品號）。<b>' + X.fmt(d.matched) + '</b> 筆對得到，已加進小計；<b>' + X.fmt(un.reduce(function (a, u) { return a + u.n; }, 0)) + '</b> 筆對不到，列在下面，沒有算進去。整個公司加總，不分門市。</p>' +
+      '<p style="margin:10px 0 4px"><b>已加進小計的實際（依品項、週）</b></p>' + X.ui.table(cols, rowsTbl, { empty: '區間內還沒有對得到品號的訂單' }) +
+      '<p style="margin:14px 0 4px"><b>日期在區間內、但品號沒對到（沒有算進去）</b></p>' +
+      X.ui.table([{ label: '訂單上的品號', render: function (u) { return esc(u.code || '（空白）'); } }, { label: '品名', render: function (u) { return esc(u.name); } }, { label: '筆數', num: true, render: function (u) { return X.fmt(u.n); } }, { label: '數量', num: true, render: function (u) { return X.fmt(u.qty); } }, { label: '原因', render: function (u) { return '<span class="small">' + esc(u.reason) + '</span>'; } }], un.slice(0, 60), { empty: '區間內的訂單品號都對得到' });
+    return '<details style="margin:10px 0"><summary style="cursor:pointer;font-weight:700;padding:6px 0">「實際」是怎麼算出來的：先判別日期、再判別品號（看明細）</summary>' + html + '</details>';
   };
 
   // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數

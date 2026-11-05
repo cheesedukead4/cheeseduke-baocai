@@ -593,6 +593,8 @@ function recalcSalesForecast(){
  });
  let all=0;SF_LOCATIONS.forEach(k=>{all+=summary[k];const e=document.getElementById(`sf-summary-${k}`);if(e)e.textContent=summary[k]?summary[k].toLocaleString():'';});
  const st=document.getElementById('sf-summary-total');if(st)st.textContent=all?all.toLocaleString():'';
+ // 「實際」怎麼算出來的（先判別日期、再判別品號）明細，保留展開狀態
+ try{const bx=document.getElementById('sf-actual-detail');if(bx&&window.CMSX&&CMSX.forecastActualDetailHtml){const was=bx.querySelector('details');const open=was&&was.open;bx.innerHTML=CMSX.forecastActualDetailHtml();const nd=bx.querySelector('details');if(nd&&open)nd.open=true;}}catch(e){console.warn('實際明細顯示失敗',e);}
  let ly=0;SF_LOCATIONS.forEach(k=>ly+=Number(db.salesForecastV5.lastYear[k])||0);
  const lyt=document.getElementById('sf-lastyear-total');if(lyt)lyt.textContent=ly?ly.toLocaleString():'';
 }
