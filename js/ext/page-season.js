@@ -1009,6 +1009,34 @@
     return '<details style="margin:10px 0"><summary style="cursor:pointer;font-weight:700;padding:6px 0">「實際」是怎麼算出來的：先判別日期、再判別品號（看明細）</summary>' + html + '</details>';
   };
 
+  // 去年業績（業績預估頁「去年業績」那一列）：過去訂單紀錄裡，去年同檔期（進行中檔期的去年同種類檔期，範圍同儀表板）的訂單，
+  // 依「接單部門」（對照設定，大公國併入通路）歸到業績預估的 7 個部門，每筆＝數量 × 售價 × 該部門的折扣成數（和預估業績總額同一個算法），逐部門加總
+  // → { found, amounts: { 部門: 金額 }, qty: { 部門: 數量 }, label, ordersN, unmatchedN, unmatchedQty }
+  X.lastYearByDept = function () {
+    SW_CACHE = null;
+    var act = X.activeSeason(), depts = ['dongqiao', 'a11', 'jingzhan', 'web', 'channel', 'pr', 'ceo'];
+    var res = { found: false, amounts: {}, qty: {}, label: '', ordersN: 0, unmatchedN: 0, unmatchedQty: 0, reason: '' };
+    depts.forEach(function (k) { res.amounts[k] = 0; res.qty[k] = 0; });
+    if (!act || (act.kind !== 'newyear' && act.kind !== 'midautumn')) { res.reason = '目前沒有進行中的過年或中秋檔期，算不出去年同檔期。'; return res; }
+    var y = seasonYearOf(act);
+    if (!y) { res.reason = '進行中的檔期還沒有填節日日期，算不出去年同檔期。'; return res; }
+    var ly = String(Number(y) - 1), ctx = salesCtx(), list = classifyOrders(X.orders(), ctx).list;
+    var w = seasonWindow(act.kind, ly), ls = findSeason(act.kind, ly);
+    res.label = (ls ? ls.name : ly + KIND[act.kind]) + (w ? '（' + new Date(w[0]).toISOString().slice(0, 10) + '～' + new Date(w[1]).toISOString().slice(0, 10) + '）' : '（依檔期月份規則）');
+    list.forEach(function (o) {
+      if (o.dk === 'none' || !inPeriod(o, act.kind, ly)) return;
+      res.ordersN++;
+      var d = o.dk === 'grandduchy' ? 'channel' : o.dk;
+      if (depts.indexOf(d) < 0 || !o.p) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 接單部門對不到、或品號對不到品項
+      var price = X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(o.p) : X.productPrice(o.p)), f = typeof sfDiscountFactor === 'function' ? sfDiscountFactor(o.p, d) : 1;
+      res.amounts[d] += o.q * price * f; res.qty[d] += o.q;
+    });
+    depts.forEach(function (k) { res.amounts[k] = Math.round(res.amounts[k]); });
+    res.found = res.ordersN > 0;
+    if (!res.found) res.reason = '過去訂單紀錄裡找不到去年同檔期（' + res.label + '）的訂單。';
+    return res;
+  };
+
   // 單條檢視的進貨管理：每個單條比較「業績預估換算的進貨量（預估盒數 × 進貨比例 × 配方條數）」、採購叫貨記的已叫貨條數、這個檔期已販售的條數
   // 有叫貨紀錄就拿已叫貨條數當基準，沒有就用進貨量；已販售 ≥ 基準＝要追量進貨
   function purchasePlanSingles(list, selC, ctx, sgroup) {
