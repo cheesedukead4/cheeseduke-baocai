@@ -344,3 +344,5 @@ body.admin-mode #page-orderHistory.active-order-history{display:block!important}
 /* 業績預估：四個日期均使用原生日曆選擇，避免文字手動輸入 */
 .forecast-product-table td.sf-date input[type="date"]{box-sizing:border-box;width:100%;min-width:0;max-width:100%;font-size:14.5px;padding:3px 1px;cursor:pointer;color-scheme:light}
 .forecast-product-table td.sf-date{padding:2px 3px}
+
+.forecast-product-table td input.sf-locked{cursor:pointer;background:repeating-linear-gradient(135deg,#fff2cc,#fff2cc 6px,#f3e3a8 6px,#f3e3a8 12px)}
