@@ -2,52 +2,53 @@
  * 採購叫貨（xPurchase，規劃與庫存）
  * ---------------------------------------------------------------
  * 叫貨一律以「條」計算：禮盒依「禮盒資料」的單條內容物換算成條（1 盒 CO-43＝5 條鳳費），單條單賣直接算條。
+ * 流程：檔期一開始就「整批一次叫完」，之後只有加量、異動——所以這頁不再逐筆叫貨、不再算「建議再叫」，改成：
+ *   ① 「整批叫貨」：一鍵把每個有預估的品項，依目標叫貨量建立成這個檔期的叫貨量（起始量）。
+ *   ② 每個品項的「修改叫貨量」：直接改成新的叫貨量（加量或減量），可以寫異動原因，系統自動記錄修改前後。
+ *   ③ 「叫貨量異動歷程」：只增不改，時間、品項、修改前、修改後、差異、原因、修改人，都看得到。
+ * 數字：
  *   預估量       ＝ 業績預估頁（禮盒、單條）所有部門、所有日期的預估量
  *   100%／70%    ＝ 預估量 × 100%／預估量 × 70%（70% 是「計算規則」的費雪進貨比例，每個品項各自無條件進位）都列出來可以對照
- *   目標叫貨     ＝ 依規則：費雪 70%、蛋捲 100%（預估多少就下單多少），名稱有「蛋捲」的禮盒、單條用蛋捲比例；禮盒先算目標盒數再 × 每盒條數
- *   建議再叫     ＝ 目標 － 已叫貨（這個檔期叫貨紀錄的已叫貨＋已到貨），最少 0；可選「先扣掉現貨」（入口網站總表現貨，禮盒現貨的盒數 × 每盒條數）
+ *   目標叫貨     ＝ 依規則：費雪 70%、蛋捲 100%（預估多少就下單多少），名稱有「蛋捲」的禮盒、單條用蛋捲比例；禮盒先算目標盒數再 × 每盒條數；可選「先扣掉現貨」
+ *   叫貨量       ＝ 這個檔期這個品項目前實際叫的條數（整批叫貨＋之後的加量／減量）；與目標的差異另外列出
  * 禮盒那一列另外列出「轉換單條」：目標條數拆成各單條的條數。
  * 資料（都會同步給所有人）：
- *   db.purchaseOrders 叫貨紀錄：{ id, seasonId（叫貨當時進行中的檔期）, date, eta（預計到貨日）, productId（禮盒或單條 id；舊紀錄叫 singleId＝單條）,
- *     qty, unit（'條'＝新紀錄一律以條計；沒有 unit 的舊禮盒紀錄是盒、舊單條紀錄是條）, supplierId, supplier（廠商名稱）, week（對應的預估區間起，選填；日期篩選時用）, status, receivedDate, note, by, at }
- *     status：'ordered' 已叫貨（算在途）｜'received' 已到貨（不算在途；實際庫存仍以總表現貨為準）
- *   預估區間：業績預估頁每個品項每一週有「起～迄」（例如 1/4～1/11）；採購叫貨顯示這個區間，「到貨日期」＝區間起往前推一週的星期三（1/4～1/11 → 12/30），叫貨時預計到貨日預設帶最早的那個。
- *   日期篩選：表格上方可以只看某幾週的預估區間（可複選）：預估、100%、70%、目標叫貨只算選到的週；已叫貨、在途、建議再叫只算「對應週別」是這幾週的叫貨紀錄（叫貨時可以選對應哪一週）。
+ *   db.purchaseOrders 叫貨量：{ id, seasonId（叫貨當時進行中的檔期）, date, eta（預計到貨日）, productId（禮盒或單條 id；舊紀錄叫 singleId＝單條）,
+ *     qty（目前叫貨量）, unit（'條'＝一律以條計；沒有 unit 的舊禮盒紀錄是盒、舊單條紀錄是條，修改叫貨量時會一併換成條）, supplierId, supplier（廠商名稱）,
+ *     batch（true＝整批叫貨建立的）, initQty（整批叫貨的起始量）, status, receivedDate, note, by, at }
+ *     每個品項在一個檔期通常只有一筆；以前逐筆叫貨留下的多筆舊紀錄，叫貨量＝加總，修改時從整批那筆（或最新一筆）增減。
+ *   db.orderChanges 叫貨量異動歷程（只增不改）：{ id, seasonId, productId, at, by, kind（'create' 整批叫貨／首次設定｜'add' 加量｜'cut' 減量）, fromQty, toQty, reason }
+ *   預估區間：業績預估頁每個品項每一週有「起～迄」（例如 1/4～1/11）；「到貨日期」＝區間起往前推一週的星期三（1/4～1/11 → 12/30）。
+ *   日期篩選：表格上方可以只看某幾週的預估區間（可複選）：預估、100%、70%、目標叫貨只算選到的週；叫貨量是整個檔期的，不分週。
  *   db.suppliers 廠商資料表：{ id, name, contact, phone, leadDays（預設交期，天）, productIds（供應哪些禮盒、單條；舊資料叫 singleIds）, note, active, by, at }
- * 只讀「業績預估」「禮盒資料」「總表現貨」，只寫 purchaseOrders、suppliers。
+ * 只讀「業績預估」「禮盒資料」「總表現貨」，只寫 purchaseOrders、orderChanges、suppliers。
  */
 (function (X) {
   'use strict';
   if (!X) return;
   var esc = X.esc;
   var UI_KEY = 'cms_purchase_ui';
-  var st = { deduct: false, weeks: [] }; // weeks：日期篩選選到的預估區間（區間起日期；空＝全部）
-  var weekListNow = []; // 目前畫面上可選的預估區間，叫貨視窗的「對應週別」用
+  var st = { deduct: false, weeks: [], logPid: '' }; // weeks：日期篩選選到的預估區間（區間起日期；空＝全部）；logPid：異動歷程只看哪個品項
   try { st.deduct = !!JSON.parse(localStorage.getItem(UI_KEY) || '{}').deduct; } catch (e) {}
-  function saveUi() { try { localStorage.setItem(UI_KEY, JSON.stringify(st)); } catch (e) {} }
+  function saveUi() { try { localStorage.setItem(UI_KEY, JSON.stringify({ deduct: st.deduct })); } catch (e) {} }
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
   function label(p) { return (p && p.code ? p.code + ' ' : '') + (p ? p.name : '（已刪除）'); }
   function suppliers() { return X.get('suppliers').filter(Boolean); }
   function supplierById(id) { return suppliers().find(function (s) { return s.id === id; }) || null; }
-  function supplierName(o) { var s = o.supplierId ? supplierById(o.supplierId) : null; return s ? s.name : (o.supplier || ''); }
   function recProduct(o) { return String(o.productId || o.singleId || ''); }
-  function addDays(date, n) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
-    if (!m) return '';
-    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
-    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
-  }
+  function pad2(n) { return String(n).padStart(2, '0'); }
   // 預估區間的到貨日期：區間起那一週的星期一往前推一週，再取星期三（區間 1/4～1/11 → 12/30）
   function arrivalOf(start) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(start || ''));
     if (!m) return '';
     var t = Date.UTC(+m[1], +m[2] - 1, +m[3]), dow = (new Date(t).getUTCDay() + 6) % 7; // 0＝星期一
     var d = new Date(t - dow * 86400000 - 7 * 86400000 + 2 * 86400000);
-    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
   }
   function md(date) { var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(date || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
+  function tm(ms) { var d = new Date(Number(ms)); return isNaN(d.getTime()) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
   var SPEC = { box5: '5入費雪', box8: '8入費雪', egg10: '蛋捲10入', other: '其他禮盒', single: '單條（單賣）' };
   var SPEC_ORDER = ['box5', 'box8', 'egg10', 'other', 'single'];
   function feePct() { return Math.round(X.giftRatio({ name: '' }) * 100); }
@@ -78,26 +79,34 @@
     };
   }
   function perBoxOf(cv, p) { var ps = p ? cv.parts(p) : null; return ps ? ps.reduce(function (t, pt) { return t + pt.qty; }, 0) : 0; }
+  // 一筆叫貨量換成「條」：新紀錄（unit＝條）直接是條；舊的禮盒紀錄是盒，× 每盒條數；單條都是條
+  function unitsOf(o, p, cv) {
+    var q = X.num(o.qty);
+    if (!p || isSingle(p) || o.unit === '條') return q;
+    var per = perBoxOf(cv, p);
+    return per > 0 ? q * per : q;
+  }
+  function seasonId() { var a = X.activeSeason(); return a ? a.id : ''; }
+  function seasonRecs(pid) { // 這個檔期、這個品項、數量大於 0 的叫貨量紀錄
+    var actId = seasonId();
+    return X.get('purchaseOrders').filter(function (o) { return o && recProduct(o) === String(pid) && (!o.seasonId || o.seasonId === actId) && X.num(o.qty) > 0; });
+  }
+  function changesOf(pid) { // 這個檔期的異動歷程（可只看某個品項），新的在前
+    var actId = seasonId();
+    return X.get('orderChanges').filter(function (e) { return e && (!e.seasonId || e.seasonId === actId) && (!pid || String(e.productId) === String(pid)); })
+      .sort(function (a, b) { return X.num(b.at) - X.num(a.at); });
+  }
 
   // ---------- 計算 ----------
-  function compute() {
-    var fb = typeof X.forecastBoxes === 'function' ? X.forecastBoxes() : { byId: {}, dates: {}, any: false, name: '' };
-    var act = X.activeSeason(), actId = act ? act.id : '', cv = convOf(), byId = cv.byId;
-    var orders = X.get('purchaseOrders').filter(Boolean), orderedU = {}, transitU = {};
-    // 叫貨紀錄換成「條」：新紀錄（unit＝條）直接是條；舊的禮盒紀錄是盒，× 每盒條數；單條都是條
-    var toUnits = function (o, p) {
-      var q = X.num(o.qty);
-      if (!p || isSingle(p) || o.unit === '條') return q;
-      var per = perBoxOf(cv, p);
-      return per > 0 ? q * per : q;
-    };
-    var weekU = Object.create(null); // 品項|週別 → { o：已叫貨, t：在途 }（條）
+  // opts.all＝不套用日期篩選（整批叫貨用整個檔期的目標）
+  function compute(opts) {
+    var fb = typeof X.forecastBoxes === 'function' ? X.forecastBoxes() : { byId: {}, dates: {}, ranges: {}, any: false, name: '' };
+    var cv = convOf(), byId = cv.byId, actId = seasonId();
+    var orders = X.get('purchaseOrders').filter(Boolean), orderedU = {};
     orders.forEach(function (o) {
-      var pid = recProduct(o), p = byId[pid], q = toUnits(o, p);
+      var pid = recProduct(o), p = byId[pid], q = unitsOf(o, p, cv);
       if (!(q > 0)) return;
-      { var wk = pid + '|' + (o.week || ''), ww = weekU[wk] || (weekU[wk] = { o: 0, t: 0 }); if (!o.seasonId || o.seasonId === actId) ww.o += q; if (o.status !== 'received') ww.t += q; }
-      if (!o.seasonId || o.seasonId === actId) orderedU[pid] = (orderedU[pid] || 0) + q; // 這個檔期叫的（已叫貨＋已到貨）
-      if (o.status !== 'received') transitU[pid] = (transitU[pid] || 0) + q; // 還沒到的
+      if (!o.seasonId || o.seasonId === actId) orderedU[pid] = (orderedU[pid] || 0) + q; // 這個檔期叫的
     });
     var sup = suppliers();
     var supplierOf = function (pid) {
@@ -117,30 +126,28 @@
       var stockRaw = window.CMSStock ? (single ? CMSStock.stockByCode(p.code) : CMSStock.giftStock(pid)) : null;
       var stockU = stockRaw == null ? null : stockRaw * unitPer;
       var target = tBoxes * unitPer, aim = (st.deduct && stockU != null) ? Math.max(0, target - Math.max(0, stockU)) : target;
-      var ord = orderedU[pid] || 0;
       rows.push({
         p: p, id: pid, single: single, egg: X.isEggGift(p), spec: single ? 'single' : (X.giftGroupKey(p) || 'other'), est: est, per: unitPer, noComp: noComp,
         u100: est * unitPer, u70: feeBoxes * unitPer, ratio: ratio, targetBoxes: tBoxes, target: target, stock: stockU, aim: aim,
-        ordered: ord, transit: transitU[pid] || 0, remaining: Math.max(0, aim - ord), supplier: supplierOf(pid), extra: !(est > 0), dates: fb.dates[pid] || [],
-        ranges: fb.ranges[pid] || [], conv: single || noComp ? [] : ps.map(function (pt) { return { p: pt.single, n: (st.deduct && stockU != null ? aim / unitPer : tBoxes) * pt.qty }; })
+        ordered: orderedU[pid] || 0, supplier: supplierOf(pid), extra: !(est > 0), dates: fb.dates[pid] || [],
+        ranges: (fb.ranges && fb.ranges[pid]) || [], conv: single || noComp ? [] : ps.map(function (pt) { return { p: pt.single, n: (st.deduct && stockU != null ? aim / unitPer : tBoxes) * pt.qty }; })
       });
     });
     var rank = function (r) { return r.single ? 1 : 0; };
-    rows.sort(function (a, b) { return (rank(a) - rank(b)) || (b.remaining - a.remaining) || (b.est - a.est) || String(a.p.code || '').localeCompare(String(b.p.code || ''), 'zh-TW', { numeric: true }); });
+    rows.sort(function (a, b) { return (rank(a) - rank(b)) || (b.est - a.est) || String(a.p.code || '').localeCompare(String(b.p.code || ''), 'zh-TW', { numeric: true }); });
     // 日期篩選：只看選到的預估區間（週）
     var weeksAll = Object.create(null);
     rows.forEach(function (r) { (r.ranges || []).forEach(function (g) { weeksAll[g.start] = g; }); });
     var weekList = Object.keys(weeksAll).sort().map(function (k) { return weeksAll[k]; });
-    var sel = st.weeks.filter(function (w) { return weeksAll[w]; });
+    var sel = (opts && opts.all) ? [] : st.weeks.filter(function (w) { return weeksAll[w]; });
     if (sel.length) {
       rows = rows.filter(function (r) {
         var rg = (r.ranges || []).filter(function (g) { return sel.indexOf(g.start) >= 0; });
-        var estSel = rg.reduce(function (t, g) { return t + g.est; }, 0), o = 0, t = 0;
-        sel.forEach(function (w) { var x = weekU[r.id + '|' + w]; if (x) { o += x.o; t += x.t; } });
-        if (!(estSel > 0) && !(o > 0)) return false;
-        var feeB = estSel > 0 ? Math.ceil(estSel * (feePct() / 100) - 1e-9) : 0, tB = estSel > 0 ? X.buyBoxes(r.p, estSel) : 0, ps = cv.parts(r.p);
+        var estSel = rg.reduce(function (t, g) { return t + g.est; }, 0);
+        if (!(estSel > 0)) return false;
+        var feeB = Math.ceil(estSel * (feePct() / 100) - 1e-9), tB = X.buyBoxes(r.p, estSel), ps = cv.parts(r.p);
         r.est = estSel; r.u100 = estSel * r.per; r.u70 = feeB * r.per; r.targetBoxes = tB; r.target = tB * r.per; r.aim = r.target;
-        r.ordered = o; r.transit = t; r.remaining = Math.max(0, r.aim - o); r.ranges = rg; r.dates = rg.map(function (g) { return g.start; }); r.extra = !(estSel > 0);
+        r.ranges = rg; r.dates = rg.map(function (g) { return g.start; }); r.extra = false;
         r.conv = r.single || r.noComp || !ps ? [] : ps.map(function (pt) { return { p: pt.single, n: tB * pt.qty }; });
         return true;
       });
@@ -149,8 +156,8 @@
     // 統計：依規格（5 入、8 入、蛋捲 10 入、其他禮盒、單條），都以條計
     var stats = {};
     rows.forEach(function (r) {
-      var g = stats[r.spec] || (stats[r.spec] = { key: r.spec, est: 0, u100: 0, u70: 0, target: 0, ordered: 0, transit: 0, remaining: 0, n: 0 });
-      g.est += r.est; g.u100 += r.u100; g.u70 += r.u70; g.target += r.target; g.ordered += r.ordered; g.transit += r.transit; g.remaining += r.remaining; g.n++;
+      var g = stats[r.spec] || (stats[r.spec] = { key: r.spec, est: 0, u100: 0, u70: 0, target: 0, ordered: 0, n: 0 });
+      g.est += r.est; g.u100 += r.u100; g.u70 += r.u70; g.target += r.target; g.ordered += r.ordered; g.n++;
     });
     return { fb: fb, gifts: gifts, singles: singles, rows: rows, orders: orders, cv: cv, weekList: weekList, sel: sel,
       stats: SPEC_ORDER.filter(function (k) { return stats[k]; }).map(function (k) { return stats[k]; }),
@@ -164,12 +171,6 @@
   function stockText(v) { return v == null ? '—' : X.fmt(v); }
   function rowBtn(act, id, text, cls) { return '<button type="button" class="btn ' + (cls || 'gray') + '" data-act="' + act + '" data-id="' + esc(id) + '" style="min-height:32px;padding:3px 10px;white-space:nowrap">' + text + '</button>'; }
   function pctText(r) { return Math.round(r.ratio * 100) + '%'; }
-  function etaHtml(o) {
-    if (o.status === 'received') return o.receivedDate ? '<span class="small">實到 ' + esc(md(o.receivedDate)) + '</span>' : '';
-    if (!o.eta) return '<span class="small">未填</span>';
-    var late = X.daysBetween(o.eta, X.today());
-    return esc(o.eta) + (late > 0 ? ' ' + X.ui.tag('逾期 ' + late + ' 天', 'bad') : (late === 0 ? ' ' + X.ui.tag('今天到', 'warn') : ''));
-  }
   function datesText(r) {
     return r.ranges && r.ranges.length
       ? r.ranges.map(function (g) { return esc(md(g.start) + (g.end ? '～' + md(g.end) : '')); }).join('<br>')
@@ -179,18 +180,27 @@
     return r.ranges && r.ranges.length ? r.ranges.map(function (g) { return esc(md(arrivalOf(g.start))) + ' <span class="small">（三）</span>'; }).join('<br>') : '<span class="small">—</span>';
   }
   function unitOf(r) { return r.noComp ? '盒' : '條'; }
+  function signed(n) { return (n > 0 ? '+' : (n < 0 ? '−' : '')) + X.fmt(Math.abs(n)); }
+  // 叫貨量與目標的差異
+  function diffHtml(r, filtered) {
+    if (!(r.ordered > 0)) return r.aim > 0 ? X.ui.tag('還沒叫', 'bad') : '—';
+    if (filtered) return '<span class="small">整個檔期</span>';
+    var d = r.ordered - r.aim;
+    return d === 0 ? X.ui.tag('和目標一致', 'ok') : '<b style="color:var(--' + (d < 0 ? 'bad' : 'warn') + ')">' + signed(d) + '</b>';
+  }
+  var KIND_TEXT = { create: ['整批叫貨', 'info'], add: ['加量', 'warn'], cut: ['減量', 'bad'] };
+  function kindTag(k) { var t = KIND_TEXT[k] || [k || '', 'muted']; return X.ui.tag(t[0], t[1]); }
 
   function render(el) {
-    var c = compute(), fee = feePct(), egg = eggPct();
-    var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。表裡<b>100% 與 ' + fee + '% 都列出來</b>可以對照，實際的<b>目標叫貨依規則：費雪 ' + fee + '%、蛋捲 ' + egg + '%（預估多少就叫多少）</b>（比例在「計算規則」可改）。叫貨後在下方記錄（含預計到貨日），已叫的會自動扣掉。這頁只算數字，不會送出任何訂單給廠商。</p>';
+    var c = compute(), fee = feePct(), egg = eggPct(), filtered = c.sel.length > 0;
+    var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。檔期一開始會<b>整批一次叫完</b>：按「整批叫貨」就把每個品項的<b>目標叫貨</b>（費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改）建立成叫貨量；之後有加量或異動，在品項右邊按「修改叫貨量」，改了什麼、為什麼改，都會記在下面的「叫貨量異動歷程」。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
     html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px"><span class="small" style="min-width:60px;font-weight:700">現貨</span>' +
       chip('deduct', '0', '不扣', !st.deduct) + chip('deduct', '1', '先扣掉總表現貨', st.deduct) + '</div>';
-    weekListNow = c.weekList;
     if (c.weekList.length) {
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px"><span class="small" style="min-width:60px;font-weight:700">日期篩選</span>' +
-        chip('week', 'all', '全部', !c.sel.length) +
+        chip('week', 'all', '全部', !filtered) +
         c.weekList.map(function (g) { return chip('week', g.start, md(g.start) + '～' + md(g.end) + '（到貨 ' + md(arrivalOf(g.start)) + '）', c.sel.indexOf(g.start) >= 0); }).join('') + '</div>';
-      if (c.sel.length) html += X.ui.banner('info', '目前只看 <b>' + c.sel.map(function (w) { var g = c.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、') + '</b> 這幾週：預估、100%、70%、目標叫貨只算這幾週；<b>已叫貨、在途、建議再叫只算「對應週別」是這幾週的叫貨紀錄</b>（叫貨時可以選對應哪一週，在這裡按「叫貨」會自動帶入）。按「全部」回到整個檔期。');
+      if (filtered) html += X.ui.banner('info', '目前只看 <b>' + c.sel.map(function (w) { var g = c.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、') + '</b> 這幾週：預估、100%、70%、目標叫貨只算這幾週；<b>叫貨量是整個檔期的，不分週</b>，所以這裡不顯示和目標的差異。按「全部」回到整個檔期。');
     }
 
     if (!c.fb.any) {
@@ -200,17 +210,20 @@
 
     var sum = function (list, k) { return list.reduce(function (t, r) { return t + r[k]; }, 0); };
     var feeG = c.gifts.filter(function (r) { return !r.egg; }), eggG = c.gifts.filter(function (r) { return r.egg; });
-    var pend = c.orders.filter(function (o) { return o.status !== 'received'; });
-    var late = pend.filter(function (o) { return o.eta && X.daysBetween(o.eta, X.today()) > 0; }).length;
-    var etas = pend.map(function (o) { return o.eta; }).filter(Boolean).sort();
-    var tIn = 0;
-    pend.forEach(function (o) { var p = c.cv.byId[recProduct(o)]; var q = X.num(o.qty); if (p && !isSingle(p) && o.unit !== '條') { var per = perBoxOf(c.cv, p); if (per > 0) q *= per; } tIn += q; });
+    var all = compute({ all: true }), todo = all.rows.filter(function (r) { return r.aim > 0 && !(r.ordered > 0); });
+    var logsAll = changesOf(''), adjN = logsAll.filter(function (e) { return e.kind !== 'create'; }).length, lastLog = logsAll[0];
+    var kp = function (name, list) {
+      var o = sum(list, 'ordered'), a = sum(list, 'aim');
+      return { label: name + '：叫貨量', value: X.fmt(o) + ' 條', tone: o === 0 && a > 0 ? 'bad' : (o < a ? 'warn' : 'ok'), sub: '目標 ' + X.fmt(a) + (o > 0 && !filtered ? '、差異 ' + (o - a === 0 ? '0' : signed(o - a)) : '') + '；100% ' + X.fmt(sum(list, 'u100')) + '、' + fee + '% ' + X.fmt(sum(list, 'u70')) };
+    };
     html += X.ui.kpis([
-      { label: '費雪禮盒：建議再叫', value: X.fmt(sum(feeG, 'remaining')) + ' 條', tone: sum(feeG, 'remaining') ? 'bad' : 'ok', sub: '100% ' + X.fmt(sum(feeG, 'u100')) + '、' + fee + '% ' + X.fmt(sum(feeG, 'u70')) + ' 條；目標 ' + X.fmt(sum(feeG, 'target')) + '，已叫 ' + X.fmt(sum(feeG, 'ordered')) },
-      { label: '蛋捲禮盒：建議再叫', value: X.fmt(sum(eggG, 'remaining')) + ' 條', tone: sum(eggG, 'remaining') ? 'bad' : 'ok', sub: '100% ' + X.fmt(sum(eggG, 'u100')) + '、' + fee + '% ' + X.fmt(sum(eggG, 'u70')) + ' 條；目標 ' + X.fmt(sum(eggG, 'target')) + '，已叫 ' + X.fmt(sum(eggG, 'ordered')) },
-      { label: '單條（單賣）：建議再叫', value: X.fmt(sum(c.singles, 'remaining')) + ' 條', tone: sum(c.singles, 'remaining') ? 'bad' : 'ok', sub: '100% ' + X.fmt(sum(c.singles, 'u100')) + '、' + fee + '% ' + X.fmt(sum(c.singles, 'u70')) + ' 條；目標 ' + X.fmt(sum(c.singles, 'target')) },
-      { label: '在途（已叫貨未到）', value: X.fmt(tIn) + ' 條', tone: late ? 'bad' : (pend.length ? 'warn' : 'muted'), sub: late ? late + ' 筆已逾預計到貨日' : (etas.length ? '最近預計 ' + md(etas[0]) + ' 到' : '到貨後到下方標「已到貨」') }
+      kp('費雪禮盒', feeG), kp('蛋捲禮盒', eggG), kp('單條（單賣）', c.singles),
+      { label: '叫貨量異動', value: adjN + ' 次', tone: adjN ? 'warn' : 'muted', sub: lastLog ? '最近 ' + tm(lastLog.at) + ' ' + (lastLog.by || '') : '整批叫貨後的加量、減量會記在下面' }
     ]);
+    if (todo.length) {
+      html += X.ui.banner('warn', '還有 <b>' + todo.length + '</b> 個品項沒有叫貨量（目標合計 <b>' + X.fmt(sum(todo, 'aim')) + '</b> 條）。檔期開始時按「整批叫貨」一次建立。') +
+        '<div style="margin:8px 0"><button type="button" class="btn primary" data-act="batch" style="min-height:36px">整批叫貨（' + todo.length + ' 項）</button></div>';
+    }
 
     if (c.noComp.length) {
       html += X.ui.banner('warn', '這些禮盒還沒有設單條內容物，沒辦法換算成條（先按 1 盒算，單位顯示「盒」）：' + c.noComp.map(function (r) { return esc(label(r.p)); }).join('、') + '。請到「禮盒資料」設定單條內容物。');
@@ -219,22 +232,19 @@
     // 統計：每個品項一列（依規格排序，不列規格小計），都以條計；單條全部列出來
     var statRows = [];
     c.stats.forEach(function (g) {
-      c.rows.filter(function (r) { return r.spec === g.key && (r.single || r.est > 0 || r.ordered > 0 || r.remaining > 0); }).forEach(function (r) { // 單條全部列出來（沒填預估的也列，數字是 0）；禮盒只列有預估或已叫貨的
-        statRows.push({ head: false, r: r, u100: r.u100, u70: r.u70, target: r.target, ordered: r.ordered, transit: r.transit, remaining: r.remaining });
-      });
+      c.rows.filter(function (r) { return r.spec === g.key && (r.single || r.est > 0 || r.ordered > 0); }).forEach(function (r) { statRows.push(r); });
     });
     var scols = [
-      { label: '品項', render: function (x) { return esc(label(x.r.p)) + ' <span class="small">' + (x.r.single ? '單條' : (x.r.egg ? '蛋捲' : '費雪')) + '</span>'; } },
-      { label: '100%（條）', num: true, render: function (x) { return X.fmt(x.u100); } },
-      { label: fee + '%（條）', num: true, render: function (x) { return X.fmt(x.u70); } },
-      { label: '目標叫貨（條）', num: true, render: function (x) { return '<b>' + X.fmt(x.target) + '</b>'; } },
-      { label: '已叫貨（條）', num: true, render: function (x) { return X.fmt(x.ordered); } },
-      { label: '在途（條）', num: true, render: function (x) { return x.transit ? X.fmt(x.transit) : '—'; } },
-      { label: '建議再叫（條）', num: true, render: function (x) { return x.remaining ? '<b style="color:var(--bad)">' + X.fmt(x.remaining) + '</b>' : '—'; } }
+      { label: '品項', render: function (r) { return esc(label(r.p)) + ' <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>'; } },
+      { label: '100%（條）', num: true, render: function (r) { return X.fmt(r.u100); } },
+      { label: fee + '%（條）', num: true, render: function (r) { return X.fmt(r.u70); } },
+      { label: '目標叫貨（條）', num: true, render: function (r) { return X.fmt(r.target); } },
+      { label: '叫貨量（條）', num: true, render: function (r) { return r.ordered ? '<b>' + X.fmt(r.ordered) + '</b>' : '—'; } },
+      { label: '和目標的差異', num: true, render: function (r) { return diffHtml(r, filtered); } }
     ];
     html += X.ui.card('叫貨條數統計（各品項，都以條計）', X.ui.table(scols, statRows, { empty: '還沒有預估量。' }) +
-      '<p class="small" style="margin:10px 0 0"><b>全部合計：100% ' + X.fmt(sum(c.rows, 'u100')) + ' 條、' + fee + '% ' + X.fmt(sum(c.rows, 'u70')) + ' 條、目標叫貨 ' + X.fmt(sum(c.rows, 'target')) + ' 條</b>，已叫 ' + X.fmt(sum(c.rows, 'ordered')) + ' 條，建議再叫 ' + X.fmt(sum(c.rows, 'remaining')) + ' 條。目標叫貨＝費雪 ' + fee + '%、蛋捲 ' + egg + '%（每個品項各自無條件進位後再換算成條）。</p>',
-      '<button type="button" class="btn gray" data-act="copy" style="min-height:34px">複製叫貨清單</button>');
+      '<p class="small" style="margin:10px 0 0"><b>全部合計：100% ' + X.fmt(sum(c.rows, 'u100')) + ' 條、' + fee + '% ' + X.fmt(sum(c.rows, 'u70')) + ' 條、目標叫貨 ' + X.fmt(sum(c.rows, 'target')) + ' 條、叫貨量 ' + X.fmt(sum(c.rows, 'ordered')) + ' 條</b>。目標叫貨＝費雪 ' + fee + '%、蛋捲 ' + egg + '%（每個品項各自無條件進位後再換算成條）。</p>',
+      '<button type="button" class="btn gray" data-act="copy" style="min-height:34px">複製叫貨單</button>');
 
     var convText = function (r) {
       if (r.single) return '<span class="small">—</span>';
@@ -254,36 +264,38 @@
       { label: '目標叫貨（條）', num: true, render: function (r) { return r.est > 0 ? '<b>' + X.fmt(r.target) + '</b>' + (r.noComp ? ' <span class="small">盒</span>' : '') : '—'; } },
       { label: '轉換單條（目標拆成各單條）', render: convText },
       { label: '現貨（條）', num: true, render: function (r) { return stockText(r.stock); } },
-      { label: '已叫貨（條）', num: true, render: function (r) { return r.ordered ? X.fmt(r.ordered) : '—'; } },
-      { label: '在途（條）', num: true, render: function (r) { return r.transit ? X.fmt(r.transit) : '—'; } },
-      { label: '建議再叫（條）', num: true, render: function (r) { return r.remaining ? '<b style="color:var(--bad)">' + X.fmt(r.remaining) + '</b>' : (r.aim > 0 ? X.ui.tag('已叫足', 'ok') : '—'); } },
-      { label: '', render: function (r) { return '<button type="button" class="btn ' + (r.remaining ? 'primary' : 'gray') + '" data-act="order" data-id="' + esc(r.id) + '" data-qty="' + r.remaining + '" style="min-height:34px;padding:4px 12px;white-space:nowrap">叫貨</button>'; } }
+      { label: '叫貨量（條）', num: true, render: function (r) { return r.ordered ? '<b>' + X.fmt(r.ordered) + '</b>' + (r.noComp ? ' <span class="small">盒</span>' : '') : '—'; } },
+      { label: '和目標的差異', num: true, render: function (r) { return diffHtml(r, filtered); } },
+      { label: '', render: function (r) { return rowBtn('adj', r.id, r.ordered > 0 ? '修改叫貨量' : '設定叫貨量', r.ordered > 0 ? 'gray' : 'primary'); } }
     ];
     html += X.ui.card('禮盒與單條（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
-      '<p class="small" style="margin:10px 0 0">「預估區間」是「業績預估」頁這個品項有填預估的每一週區間（起～迄）；「到貨日期」＝區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。已叫貨＝這個檔期叫貨紀錄的已叫貨＋已到貨（新紀錄以條計，舊的禮盒紀錄以盒 × 每盒條數換算）；建議再叫＝目標 － 已叫貨（最少 0）' + (st.deduct ? '；目前已先扣掉總表現貨（禮盒現貨的盒數 × 每盒條數）' : '') + '。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。按「叫貨」會帶入建議的條數、廠商與預計到貨日。</p>');
+      '<p class="small" style="margin:10px 0 0">「預估區間」是「業績預估」頁這個品項有填預估的每一週區間（起～迄）；「到貨日期」＝區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + (st.deduct ? '；目前目標已先扣掉總表現貨（禮盒現貨的盒數 × 每盒條數）' : '') + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。</p>',
+      todo.length ? '<button type="button" class="btn primary" data-act="batch" style="min-height:34px">整批叫貨</button>' : '');
 
-    // 叫貨紀錄
-    var byId = c.cv.byId;
-    var recs = c.orders.slice().sort(function (a, b) { return (a.status === 'received') - (b.status === 'received') || (a.status === 'received' ? String(b.date || '').localeCompare(String(a.date || '')) : String(a.eta || '9999').localeCompare(String(b.eta || '9999'))) || (X.num(b.at) - X.num(a.at)); });
-    var recUnit = function (o) { var p = byId[recProduct(o)]; return p && !isSingle(p) && o.unit !== '條' ? '盒' : '條'; };
-    var rcols = [
-      { label: '叫貨日期', render: function (o) { return esc(o.date || ''); } },
-      { label: '預計到貨', render: etaHtml },
-      { label: '品項', render: function (o) { var p = byId[recProduct(o)]; return esc(label(p)) + ' <span class="small">' + (p && isSingle(p) ? '單條' : '禮盒') + '</span>'; } },
-      { label: '數量', num: true, render: function (o) { return X.fmt(o.qty) + ' ' + recUnit(o); } },
-      { label: '對應週別', render: function (o) { return o.week ? esc(md(o.week) + '週') : '<span class="small">整個檔期</span>'; } },
-      { label: '廠商', render: function (o) { return esc(supplierName(o)); } },
-      { label: '狀態', render: function (o) { return o.status === 'received' ? X.ui.tag('已到貨', 'ok') : X.ui.tag('在途', 'warn'); } },
-      { label: '備註', render: function (o) { return '<span class="small">' + esc(o.note || '') + (o.by ? '　' + esc(o.by) : '') + '</span>'; } },
-      { label: '', render: function (o) {
-        return '<div class="x-row-actions">' + (o.status === 'received' ? '' : rowBtn('recv', o.id, '標已到貨')) + rowBtn('edit', o.id, '編輯') + rowBtn('del', o.id, '刪除', 'red') + '</div>';
-      } }
+    // 叫貨量異動歷程
+    var names = {}, logPids = [];
+    logsAll.forEach(function (e) { var k = String(e.productId); if (!names[k]) { names[k] = true; logPids.push(k); } });
+    if (st.logPid && !names[st.logPid]) st.logPid = '';
+    var logs = st.logPid ? logsAll.filter(function (e) { return String(e.productId) === st.logPid; }) : logsAll;
+    var addQ = 0, cutQ = 0;
+    logs.forEach(function (e) { if (e.kind === 'create') return; var d = X.num(e.toQty) - X.num(e.fromQty); if (d > 0) addQ += d; else cutQ += -d; });
+    var lcols = [
+      { label: '時間', render: function (e) { return esc(tm(e.at)); } },
+      { label: '品項', render: function (e) { return esc(label(c.cv.byId[String(e.productId)])); } },
+      { label: '類型', render: function (e) { return kindTag(e.kind); } },
+      { label: '修改前（條）', num: true, render: function (e) { return X.fmt(e.fromQty); } },
+      { label: '修改後（條）', num: true, render: function (e) { return '<b>' + X.fmt(e.toQty) + '</b>'; } },
+      { label: '差異', num: true, render: function (e) { var d = X.num(e.toQty) - X.num(e.fromQty); return '<b style="color:var(--' + (d < 0 ? 'bad' : 'warn') + ')">' + signed(d) + '</b>'; } },
+      { label: '原因／備註', render: function (e) { return '<span class="small">' + esc(e.reason || '') + '</span>'; } },
+      { label: '修改人', render: function (e) { return esc(e.by || ''); } }
     ];
-    html += X.ui.card('叫貨紀錄', X.ui.table(rcols, recs, { empty: '還沒有叫貨紀錄。按上方表格的「叫貨」，或這裡的「新增叫貨」。' }) +
-      '<p class="small" style="margin:10px 0 0">新紀錄的數量一律是<b>條</b>（禮盒也是整盒換算後的條數）；舊的禮盒紀錄是盒。在途排在最前面，依預計到貨日由近到遠；超過預計到貨日還沒標「已到貨」的會標紅「逾期」。叫貨條數會從上面的建議再叫裡扣掉，標「已到貨」只是記錄；實際庫存仍以入口網站總表同步的現貨為準，到貨後記得同步現貨。</p>',
-      '<button type="button" class="btn primary" data-act="new" style="min-height:34px">新增叫貨</button>');
+    var logSel = '<label class="small" style="display:inline-flex;gap:6px;align-items:center">只看 <select id="xpLogItem" style="min-height:32px"><option value="">全部品項</option>' +
+      logPids.map(function (k) { return '<option value="' + esc(k) + '"' + (k === st.logPid ? ' selected' : '') + '>' + esc(label(c.cv.byId[k])) + '</option>'; }).join('') + '</select></label>';
+    html += X.ui.card('叫貨量異動歷程（整批叫貨之後的加量、減量）', X.ui.table(lcols, logs.slice(0, 100), { empty: '還沒有異動紀錄。整批叫貨、或按品項右邊的「修改叫貨量」後，每次修改都會記在這裡。' }) +
+      '<p class="small" style="margin:10px 0 0">' + (logs.length ? '共 ' + logs.length + ' 筆' + (logs.length > 100 ? '（只列最新 100 筆）' : '') + '；加量合計 <b>' + X.fmt(addQ) + '</b> 條、減量合計 <b>' + X.fmt(cutQ) + '</b> 條（不含整批叫貨的起始量）。' : '') + '歷程只增不改，修改人與時間用當下登入的帳號。</p>', logPids.length ? logSel : '');
 
     // 廠商資料表
+    var byId = c.cv.byId;
     var sup = suppliers().slice().sort(function (a, b) { return (a.active === false) - (b.active === false) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-TW'); });
     var vcols = [
       { label: '廠商', render: function (s) { return '<b>' + esc(s.name) + '</b>' + (s.active === false ? ' ' + X.ui.tag('停用', 'muted') : ''); } },
@@ -295,72 +307,112 @@
       { label: '', render: function (s) { return '<div class="x-row-actions">' + rowBtn('sedit', s.id, '編輯') + rowBtn('sdel', s.id, '刪除', 'red') + '</div>'; } }
     ];
     html += X.ui.card('廠商資料表', X.ui.table(vcols, sup, { empty: '還沒有廠商資料。按「新增廠商」建立。' }) +
-      '<p class="small" style="margin:10px 0 0">「預設交期」是這個廠商平常叫貨到到貨要幾天，叫貨時選了廠商會自動算出預計到貨日（可以自己改）。「供應品項」勾了之後，上面建議叫貨的表會顯示這個品項的廠商，叫貨時自動帶入，「複製叫貨清單」也會依廠商分開。停用的廠商不會出現在叫貨的選單，舊紀錄還是看得到名稱。</p>',
+      '<p class="small" style="margin:10px 0 0">「供應品項」勾了之後，上面表格會顯示這個品項的廠商，整批叫貨時自動帶入，「複製叫貨單」也會依廠商分開。停用的廠商不會再被帶入，舊紀錄還是看得到名稱。</p>',
       '<button type="button" class="btn primary" data-act="snew" style="min-height:34px">新增廠商</button>');
 
     el.innerHTML = html;
-    el.onchange = null;
     el.oninput = null;
+    el.onchange = function (e) {
+      if (e.target && e.target.id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
+    };
     el.onclick = function (e) { onClick(e, el, c); };
   }
 
-  // ---------- 叫貨紀錄 ----------
-  function sortedProducts() {
-    return X.products().filter(Boolean).slice().sort(function (a, b) { return (isSingle(a) - isSingle(b)) || String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+  // ---------- 叫貨量：整批叫貨與修改 ----------
+  // 把這個品項的叫貨量改成 newQty（條），回傳寫進歷程的那筆；有舊的多筆紀錄時，增加加在整批那筆（沒有就加在最新一筆），減少先從整批那筆扣、再扣最新的
+  function applyQty(pid, newQty, reason) {
+    var actId = seasonId(), cv = convOf(), p = cv.byId[String(pid)], list = X.ensure('purchaseOrders');
+    var recs = list.filter(function (o) { return o && recProduct(o) === String(pid) && (!o.seasonId || o.seasonId === actId) && X.num(o.qty) > 0; });
+    recs.forEach(function (o) { o.qty = unitsOf(o, p, cv); o.unit = '條'; }); // 舊的盒紀錄先換成條，才能相加相減
+    var cur = recs.reduce(function (t, o) { return t + X.num(o.qty); }, 0), delta = newQty - cur;
+    if (delta === 0) return null;
+    var main = recs.find(function (o) { return o.batch; }) || recs.slice().sort(function (a, b) { return X.num(b.at) - X.num(a.at); })[0];
+    var now = Date.now(), by = X.userName();
+    if (delta > 0) {
+      if (!main) {
+        var s = supplierOfId(pid);
+        main = { id: X.uid('po'), seasonId: actId, date: X.today(), eta: '', productId: String(pid), qty: 0, unit: '條', supplierId: s ? s.id : '', supplier: s ? s.name : '', status: 'ordered', batch: true, initQty: newQty, note: '' };
+        list.push(main);
+      }
+      main.qty = X.num(main.qty) + delta;
+    } else {
+      var need = -delta;
+      recs.slice().sort(function (a, b) { return a === main ? -1 : (b === main ? 1 : X.num(b.at) - X.num(a.at)); }).forEach(function (o) {
+        if (need <= 0) return;
+        var take = Math.min(X.num(o.qty), need);
+        o.qty = X.num(o.qty) - take; need -= take;
+        if (o.qty <= 0) { var i = list.indexOf(o); if (i >= 0) list.splice(i, 1); }
+      });
+    }
+    if (main) { main.by = by; main.at = now; }
+    var entry = { id: X.uid('oc'), seasonId: actId, productId: String(pid), at: now, by: by, kind: cur === 0 ? 'create' : (delta > 0 ? 'add' : 'cut'), fromQty: cur, toQty: newQty, reason: String(reason || '') };
+    X.ensure('orderChanges').push(entry);
+    return entry;
   }
-  function productOptions(currentId) {
-    // 本期上架的禮盒、單條；編輯舊紀錄時它原本的品項也要在選單裡
-    var list = sortedProducts().filter(function (p) { return p.isListedCurrent === true || String(p.id) === String(currentId); });
-    return [{ value: '', label: '（選擇品項）' }].concat(list.map(function (p) { return { value: p.id, label: (isSingle(p) ? '單條｜' : '禮盒｜') + label(p) }; }));
+  function supplierOfId(pid) {
+    return suppliers().find(function (s) { return s.active !== false && ((s.productIds || []).indexOf(String(pid)) >= 0 || (s.singleIds || []).indexOf(String(pid)) >= 0); }) || null;
   }
-  function supplierOptions(currentId) {
-    var list = suppliers().filter(function (s) { return s.active !== false || s.id === currentId; });
-    return [{ value: '', label: '（不指定）' }].concat(list.map(function (s) { return { value: s.id, label: s.name + (s.active === false ? '（停用）' : '') }; }));
-  }
-  function orderDialog(rec, preset) {
-    var isNew = !rec;
-    var sid = rec ? (rec.supplierId || '') : (preset && preset.supplierId || '');
-    var date = rec ? rec.date : X.today();
-    var lead = function (id) { var s = id ? supplierById(id) : null; return s && s.leadDays > 0 ? s.leadDays : 0; };
-    var pid = rec ? recProduct(rec) : (preset && preset.productId || '');
-    var legacyBox = rec && !rec.unit && X.productById(pid) && !isSingle(X.productById(pid)); // 舊的禮盒紀錄是盒
-    var presetEta = !rec && preset && preset.eta ? preset.eta : ''; // 預估區間往前推一週的星期三，不再被廠商交期覆蓋
-    var v = rec || { date: date, eta: presetEta || (lead(sid) ? addDays(date, lead(sid)) : ''), qty: preset && preset.qty || '', supplier: '', status: 'ordered', note: '' };
-    var mask = X.ui.dialog(isNew ? '新增叫貨' : '編輯叫貨', [
-      { name: 'date', label: '叫貨日期', type: 'date', value: v.date, required: true },
-      { name: 'productId', label: '品項', type: 'select', options: productOptions(pid), value: pid, required: true },
-      { name: 'qty', label: legacyBox ? '數量（這筆舊紀錄是盒）' : '數量（條）', type: 'number', value: v.qty, min: 0, step: 'any', required: true },
-      { name: 'week', label: '對應的預估區間（日期篩選時，已叫貨會算在這一週）', type: 'select', options: [{ value: '', label: '（整個檔期，不指定週別）' }].concat(weekListNow.map(function (g) { return { value: g.start, label: md(g.start) + '～' + md(g.end) + '（到貨 ' + md(arrivalOf(g.start)) + '）' }; })), value: rec ? (rec.week || '') : (preset && preset.week || '') },
-      { name: 'supplierId', label: '廠商', type: 'select', options: supplierOptions(sid), value: sid },
-      { name: 'eta', label: '預計到貨日', type: 'date', value: v.eta || '' },
-      { name: 'status', label: '狀態', type: 'select', options: [{ value: 'ordered', label: '已叫貨（在途）' }, { value: 'received', label: '已到貨' }], value: v.status },
-      { name: 'note', label: '備註', type: 'textarea', value: v.note || '', full: true }
+
+  function adjustDialog(r) {
+    var cur = r.ordered, pid = r.id, un = unitOf(r), recs = seasonRecs(pid), bat = recs.find(function (o) { return o.batch; });
+    var past = changesOf(pid).slice(0, 5);
+    var mask = X.ui.dialog((cur > 0 ? '修改叫貨量：' : '設定叫貨量：') + label(r.p), [
+      { name: 'qty', label: '新的叫貨量（' + un + '）', type: 'number', value: cur > 0 ? cur : (r.aim > 0 ? r.aim : ''), min: 0, step: 'any', required: true },
+      { name: 'reason', label: '異動原因（建議寫，例如：客人加訂、預估調整）', type: 'textarea', value: '', full: true }
     ], function (f) {
-      if (!f.productId) { X.toast('請選品項'); return false; }
-      if (!(f.qty > 0)) { X.toast('數量要大於 0'); return false; }
-      if (f.eta && f.eta < f.date) { X.toast('預計到貨日不能早於叫貨日期'); return false; }
-      var list = X.ensure('purchaseOrders'), o = rec ? list.find(function (x) { return x && x.id === rec.id; }) : null;
-      if (rec && !o) { X.toast('找不到這筆紀錄，可能已被刪除'); return false; }
-      var received = f.status === 'received', s = f.supplierId ? supplierById(f.supplierId) : null;
-      if (!o) { o = { id: X.uid('po'), seasonId: (X.activeSeason() || {}).id || '', unit: '條' }; list.push(o); } // 新紀錄一律以條計；seasonId：叫貨當時進行中的檔期
-      o.date = f.date; o.eta = f.eta; o.productId = f.productId; delete o.singleId; o.qty = f.qty; o.supplierId = f.supplierId; o.supplier = s ? s.name : ''; o.week = f.week || ''; o.status = f.status; o.note = f.note;
-      o.receivedDate = received ? (o.receivedDate || X.today()) : '';
-      o.by = X.userName(); o.at = Date.now();
+      var nq = f.qty;
+      if (nq == null || !(nq >= 0)) { X.toast('請填新的叫貨量（不能是負數）'); return false; }
+      if (nq === cur) { X.toast('叫貨量沒有變'); return false; }
+      if (nq === 0 && !confirm('確定把「' + label(r.p) + '」的叫貨量改成 0 嗎？')) return false;
+      var e = applyQty(pid, nq, f.reason);
+      if (!e) { X.toast('叫貨量沒有變'); return false; }
       X.save();
-      X.toast(isNew ? '已記錄叫貨' : '已更新叫貨紀錄');
-    });
-    // 選廠商或改叫貨日期時，預計到貨日自動＝叫貨日期＋廠商預設交期（只在還沒手動改過時換）
-    var auto = presetEta ? null : (v.eta || '');
-    mask.addEventListener('change', function (e) {
-      var k = e.target.dataset && e.target.dataset.field;
-      if (k !== 'supplierId' && k !== 'date') return;
-      var etaEl = mask.querySelector('[data-field=eta]'), d = mask.querySelector('[data-field=date]').value, n = lead(mask.querySelector('[data-field=supplierId]').value);
-      if (!d || !n) return;
-      if (auto !== null && (etaEl.value === '' || etaEl.value === auto)) { auto = addDays(d, n); etaEl.value = auto; }
-    });
+      X.toast(e.kind === 'create' ? '已設定叫貨量' : (e.kind === 'add' ? '已加量 ' + X.fmt(nq - cur) : '已減量 ' + X.fmt(cur - nq)));
+    }, '儲存修改');
+    var info = '<div class="x-banner x-info" style="margin:0 0 10px">目前叫貨量 <b>' + (cur > 0 ? X.fmt(cur) + ' ' + un : '還沒叫') + '</b>　目標叫貨 <b>' + X.fmt(r.aim) + ' ' + un + '</b>' + (bat && bat.initQty > 0 ? '　整批叫貨的起始量 <b>' + X.fmt(bat.initQty) + '</b>' : '') +
+      '<div id="xpPreview" class="small" style="margin-top:4px"></div></div>' +
+      (past.length ? '<div class="small" style="margin:0 0 8px"><b>這個品項最近的異動</b><br>' + past.map(function (e) { var d = X.num(e.toQty) - X.num(e.fromQty); return esc(tm(e.at)) + '　' + esc(KIND_TEXT[e.kind] ? KIND_TEXT[e.kind][0] : '') + '　' + X.fmt(e.fromQty) + ' → ' + X.fmt(e.toQty) + '（' + signed(d) + '）' + (e.reason ? '　' + esc(e.reason) : '') + '　' + esc(e.by || ''); }).join('<br>') + '</div>' : '');
+    mask.querySelector('.x-form').insertAdjacentHTML('beforebegin', info);
+    var upd = function () {
+      var v = mask.querySelector('[data-field=qty]').value, box = mask.querySelector('#xpPreview');
+      if (v === '' || isNaN(Number(v))) { box.textContent = ''; return; }
+      var d = Number(v) - cur;
+      box.innerHTML = d === 0 ? '和目前一樣，沒有變動' : '這次修改：<b>' + (d > 0 ? '加量 +' : '減量 −') + X.fmt(Math.abs(d)) + ' ' + un + '</b>（' + X.fmt(cur) + ' → ' + X.fmt(Number(v)) + '）；和目標差 ' + signed(Number(v) - r.aim);
+    };
+    mask.addEventListener('input', upd); upd();
+  }
+
+  function batchDialog() {
+    var all = compute({ all: true }), todo = all.rows.filter(function (r) { return r.aim > 0 && !(r.ordered > 0); });
+    if (!todo.length) { X.toast('每個有預估的品項都已經有叫貨量了'); return; }
+    var total = todo.reduce(function (t, r) { return t + r.aim; }, 0);
+    var mask = X.ui.dialog('整批叫貨', [
+      { name: 'date', label: '叫貨日期', type: 'date', value: X.today(), required: true },
+      { name: 'note', label: '備註（選填）', type: 'textarea', value: '', full: true }
+    ], function (f) {
+      var actId = seasonId(), list = X.ensure('purchaseOrders'), logs = X.ensure('orderChanges'), now = Date.now(), by = X.userName(), n = 0;
+      todo.forEach(function (r) {
+        if (seasonRecs(r.id).length) return; // 這段時間別人已經叫了就不重複
+        var s = r.supplier, first = r.ranges && r.ranges.length ? r.ranges[0].start : '';
+        list.push({ id: X.uid('po'), seasonId: actId, date: f.date, eta: first ? arrivalOf(first) : '', productId: String(r.id), qty: r.aim, unit: '條', supplierId: s ? s.id : '', supplier: s ? s.name : '', status: 'ordered', batch: true, initQty: r.aim, note: f.note || '', by: by, at: now });
+        logs.push({ id: X.uid('oc'), seasonId: actId, productId: String(r.id), at: now, by: by, kind: 'create', fromQty: 0, toQty: r.aim, reason: f.note || '整批叫貨' });
+        n++;
+      });
+      X.save(); X.toast('已建立整批叫貨：' + n + ' 個品項');
+    }, '建立整批叫貨');
+    var tcols = [
+      { label: '品項', render: function (r) { return esc(label(r.p)); } },
+      { label: '叫貨量（條）', num: true, render: function (r) { return '<b>' + X.fmt(r.aim) + '</b>' + (r.noComp ? ' <span class="small">盒</span>' : ''); } },
+      { label: '廠商', render: function (r) { return r.supplier ? esc(r.supplier.name) : '<span class="small">未指定</span>'; } }
+    ];
+    mask.querySelector('.x-form').insertAdjacentHTML('beforebegin', '<div class="x-banner x-info" style="margin:0 0 10px">會把下面 <b>' + todo.length + '</b> 個品項，依目標叫貨量（費雪 ' + feePct() + '%、蛋捲 ' + eggPct() + '%' + (st.deduct ? '，已先扣掉總表現貨' : '') + '）建立成叫貨量，合計 <b>' + X.fmt(total) + '</b> 條。已經有叫貨量的品項不會動。建立後可以逐項「修改叫貨量」。</div>' +
+      '<div style="max-height:240px;overflow:auto;margin:0 0 10px">' + X.ui.table(tcols, todo, {}) + '</div>');
   }
 
   // ---------- 廠商資料 ----------
+  function sortedProducts() {
+    return X.products().filter(Boolean).slice().sort(function (a, b) { return (isSingle(a) - isSingle(b)) || String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+  }
   function supplierDialog(rec) {
     var isNew = !rec, mine = ((rec && (rec.productIds || rec.singleIds)) || []).map(String);
     var prods = sortedProducts().filter(function (p) { return p.isListedCurrent === true || mine.indexOf(String(p.id)) >= 0; });
@@ -371,7 +423,7 @@
       { name: 'leadDays', label: '預設交期（天）', type: 'number', value: rec && rec.leadDays > 0 ? rec.leadDays : '', min: 0, step: 1, placeholder: '叫貨到到貨幾天，選填' }
     ].concat(prods.map(function (p) { return { name: 'prod_' + p.id, label: '供應：' + (isSingle(p) ? '單條 ' : '禮盒 ') + label(p), type: 'checkbox', value: mine.indexOf(String(p.id)) >= 0 }; }))
       .concat([{ name: 'note', label: '備註', type: 'textarea', value: rec ? rec.note : '', full: true },
-        { name: 'active', label: '啟用中（取消勾選＝停用，叫貨選單不再出現）', type: 'checkbox', value: rec ? rec.active !== false : true, full: true }]);
+        { name: 'active', label: '啟用中（取消勾選＝停用，不再被帶入叫貨）', type: 'checkbox', value: rec ? rec.active !== false : true, full: true }]);
     X.ui.dialog(isNew ? '新增廠商' : '編輯廠商', fields, function (f) {
       var name = String(f.name || '').trim();
       if (!name) { X.toast('請填廠商名稱'); return false; }
@@ -393,16 +445,17 @@
     });
   }
 
+  // 複製叫貨單：依廠商分開，列出每個品項目前的叫貨量
   function copyList(c) {
     var groups = {}, order = [];
-    c.rows.filter(function (r) { return r.remaining > 0; }).forEach(function (r) {
+    c.rows.filter(function (r) { return r.ordered > 0; }).forEach(function (r) {
       var g = r.supplier ? r.supplier.name : '未指定廠商';
       if (!groups[g]) { groups[g] = []; order.push(g); }
-      groups[g].push(label(r.p) + '　' + X.fmt(r.remaining) + ' ' + unitOf(r) + (!r.single && !r.noComp && r.per > 0 ? '（約 ' + X.fmt(r.remaining / r.per, 1) + ' 盒）' : ''));
+      groups[g].push(label(r.p) + '　' + X.fmt(r.ordered) + ' ' + unitOf(r) + (!r.single && !r.noComp && r.per > 0 ? '（約 ' + X.fmt(r.ordered / r.per, 1) + ' 盒）' : ''));
     });
-    if (!order.length) { X.toast('目前沒有建議叫貨的品項'); return; }
-    var text = '【叫貨清單 ' + X.today() + '】\n' + order.map(function (g) { return '■ ' + g + '\n' + groups[g].join('\n'); }).join('\n\n');
-    var ok = function () { X.toast('已複製叫貨清單'); };
+    if (!order.length) { X.toast('目前還沒有叫貨量，先按「整批叫貨」'); return; }
+    var text = '【叫貨單 ' + X.today() + '】\n' + order.map(function (g) { return '■ ' + g + '\n' + groups[g].join('\n'); }).join('\n\n');
+    var ok = function () { X.toast('已複製叫貨單'); };
     try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(ok, function () { window.prompt('複製下面的文字', text); }); return; } } catch (e) {}
     window.prompt('複製下面的文字', text);
   }
@@ -420,24 +473,9 @@
       else { var wi = st.weeks.indexOf(wv); if (wi >= 0) st.weeks.splice(wi, 1); else st.weeks.push(wv); }
       render(el);
     }
-    else if (a === 'order') {
-      var row = c.rows.find(function (r) { return String(r.id) === id; });
-      orderDialog(null, { week: c.sel.length === 1 ? c.sel[0] : '', productId: id, qty: X.num(b.dataset.qty) || '', supplierId: row && row.supplier ? row.supplier.id : '', eta: row && row.ranges && row.ranges.length ? arrivalOf(row.ranges[0].start) : '' });
-    }
-    else if (a === 'new') orderDialog(null, null);
+    else if (a === 'batch') batchDialog();
+    else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
     else if (a === 'copy') copyList(c);
-    else if (a === 'edit') { var o = X.get('purchaseOrders').find(function (x) { return x && x.id === id; }); if (o) orderDialog(o); }
-    else if (a === 'recv') {
-      var r = X.ensure('purchaseOrders').find(function (x) { return x && x.id === id; });
-      if (!r) return;
-      r.status = 'received'; r.receivedDate = X.today(); r.by = X.userName(); r.at = Date.now();
-      X.save(); X.toast('已標為到貨');
-    } else if (a === 'del') {
-      var list = X.ensure('purchaseOrders'), i = list.findIndex(function (x) { return x && x.id === id; });
-      if (i < 0) return;
-      if (!confirm('確定刪除這筆叫貨紀錄嗎？')) return;
-      list.splice(i, 1); X.save(); X.toast('已刪除');
-    }
     else if (a === 'snew') supplierDialog(null);
     else if (a === 'sedit') { var s = supplierById(id); if (s) supplierDialog(s); }
     else if (a === 'sdel') {
@@ -451,7 +489,7 @@
 
   X.registerPage({
     id: 'xPurchase', group: 'plan', order: 20, stage: 'ready',
-    title: '採購叫貨', sub: '叫貨以條計算，100% 與 70% 都列出來，目標：費雪 70%、蛋捲 100%',
+    title: '採購叫貨', sub: '檔期開始整批叫貨，之後加量、異動都留歷程；目標：費雪 70%、蛋捲 100%',
     icon: '<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/>',
     render: render,
     _fn: { compute: compute }

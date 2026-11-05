@@ -124,6 +124,13 @@
         status: "'ordered' 已叫貨（在途）｜'received' 已到貨", receivedDate: '到貨日期', note: '備註', by: '記錄者', at: '記錄時間（毫秒）'
       }
     },
+    orderChanges: {
+      label: '叫貨量異動歷程', type: 'array',
+      fields: {
+        id: '唯一代號', seasonId: '檔期 id', productId: '品項 id（禮盒或單條）', at: '修改時間（毫秒）', by: '修改人',
+        kind: "'create' 整批叫貨／首次設定｜'add' 加量｜'cut' 減量", fromQty: '修改前叫貨量（條）', toQty: '修改後叫貨量（條）', reason: '異動原因／備註'
+      }
+    },
     suppliers: {
       label: '廠商資料表', type: 'array',
       fields: {
