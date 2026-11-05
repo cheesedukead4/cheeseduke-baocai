@@ -293,6 +293,14 @@
     return ctx;
   }
 
+  // 訂單上記的實際金額（欄位 amount；也認「金額」「小計」「subtotal」「total」）：有數字就回傳數字，沒有（空白、不是數字）回 null
+  function actualAmount(r) {
+    var v = r.amount != null && r.amount !== '' ? r.amount : (r['金額'] != null && r['金額'] !== '' ? r['金額'] : (r.subtotal != null && r.subtotal !== '' ? r.subtotal : r.total));
+    if (v == null || v === '') return null;
+    var n = Number(String(v).replace(/[,，\s]/g, ''));
+    return isFinite(n) ? n : null;
+  }
+
   // 每筆訂單整理成：{ kind, sy（檔期年份）, y（日期年份）, date, p, code, name, q, price, dk（部門）, raw（未對照時的原始文字）, no }
   // 品號設為「不計算」的略過（只計筆數）
   function classifyOrders(rows, ctx) {
@@ -326,7 +334,7 @@
       var raw = '';
       if (!deptOk[dk]) { dk = 'unmatched'; raw = ch || od || '（空白）'; }
       list.push({
-        kind: kind, sy: sy, y: y, date: date.slice(0, 10), p: p, q: X.num(r.qty), price: price, dk: dk, raw: raw,
+        kind: kind, sy: sy, y: y, date: date.slice(0, 10), p: p, q: X.num(r.qty), price: price, amt: actualAmount(r), dk: dk, raw: raw,
         code: p ? (p.code || '') : String(r.productCode || '').trim(), name: p ? (p.name || '') : String(r.name || '').trim(),
         no: String(r.orderNo || r.sourceOrderNo || '').trim() || ('#' + i)
       });
@@ -1010,12 +1018,14 @@
   };
 
   // 去年業績（業績預估頁「去年業績」那一列）：過去訂單紀錄裡，去年同檔期（進行中檔期的去年同種類檔期，範圍同儀表板）的訂單，
-  // 依「接單部門」（對照設定，大公國併入通路）歸到業績預估的 7 個部門，每筆＝數量 × 售價 × 該部門的折扣成數（和預估業績總額同一個算法），逐部門加總
-  // → { found, amounts: { 部門: 金額 }, qty: { 部門: 數量 }, label, ordersN, unmatchedN, unmatchedQty }
+  // 依「接單部門」（對照設定，大公國併入通路）歸到業績預估的 7 個部門，逐部門加總：
+  //   金額＝訂單上記的實際金額（amount）；這筆訂單沒有金額時，才退回「數量 × 目前售價 × 該部門折扣成數」（要有對得到品號的品項）
+  //   有實際金額的訂單，品號對不到品項也照算（金額不需要品項）
+  // → { found, amounts: { 部門: 金額 }, qty: { 部門: 數量 }, label, ordersN, actualN（用實際金額的筆數）, estN（退回用售價估的筆數）, unmatchedN, unmatchedQty }
   X.lastYearByDept = function () {
     SW_CACHE = null;
     var act = X.activeSeason(), depts = ['dongqiao', 'a11', 'jingzhan', 'web', 'channel', 'pr', 'ceo'];
-    var res = { found: false, amounts: {}, qty: {}, label: '', ordersN: 0, unmatchedN: 0, unmatchedQty: 0, reason: '' };
+    var res = { found: false, amounts: {}, qty: {}, label: '', ordersN: 0, actualN: 0, estN: 0, unmatchedN: 0, unmatchedQty: 0, reason: '' };
     depts.forEach(function (k) { res.amounts[k] = 0; res.qty[k] = 0; });
     if (!act || (act.kind !== 'newyear' && act.kind !== 'midautumn')) { res.reason = '目前沒有進行中的過年或中秋檔期，算不出去年同檔期。'; return res; }
     var y = seasonYearOf(act);
@@ -1027,7 +1037,10 @@
       if (o.dk === 'none' || !inPeriod(o, act.kind, ly)) return;
       res.ordersN++;
       var d = o.dk === 'grandduchy' ? 'channel' : o.dk;
-      if (depts.indexOf(d) < 0 || !o.p) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 接單部門對不到、或品號對不到品項
+      if (depts.indexOf(d) < 0) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 接單部門對不到
+      if (o.amt != null) { res.amounts[d] += o.amt; res.qty[d] += o.q; res.actualN++; return; } // 訂單上有實際金額
+      if (!o.p) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 沒有金額、品號又對不到品項，沒辦法估
+      res.estN++;
       var price = X.num(typeof sfUnitPrice === 'function' ? sfUnitPrice(o.p) : X.productPrice(o.p)), f = typeof sfDiscountFactor === 'function' ? sfDiscountFactor(o.p, d) : 1;
       res.amounts[d] += o.q * price * f; res.qty[d] += o.q;
     });
