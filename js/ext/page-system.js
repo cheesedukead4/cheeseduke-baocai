@@ -520,6 +520,7 @@
   var DOT = '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:10px;height:10px"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>';
   var OK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
   var alertTimer = null;
+  var SHOW_HOME_ALERTS = false; // 首頁的開檔檢查提醒列先隱藏（改成 true 就會回來；「開檔檢查」頁本身還在）
 
   function alertBarHtml(list) {
     var issues = sortChecks(list).filter(function (c) { return c.level === 'bad' || c.level === 'warn'; });
@@ -536,6 +537,7 @@
     alertTimer = null;
     try {
       if (!X.db()) return;
+      if (!SHOW_HOME_ALERTS) { var oldBar = document.getElementById(ALERT_ID); if (oldBar) oldBar.remove(); return; }
       var dash = document.getElementById('dashboard');
       if (!dash || !dash.classList.contains('active')) return; // 看不到首頁時不算；回到首頁時原系統會重畫首頁
       var bar = document.getElementById(ALERT_ID);

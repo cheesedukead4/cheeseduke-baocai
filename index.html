@@ -226,7 +226,7 @@
 <label><span>包材編號</span><input id="mCode"></label><label><span>包材名稱</span><input id="mName"></label>
 <label><span>分類</span><select id="mCategory"><option value="單條">單條</option><option value="禮盒">禮盒</option><option value="盒子">盒子</option></select></label><label><span>單位</span><input id="mUnit" placeholder="個／盒／張"></label><label><span>安全庫存</span><input id="mSafety" type="number" min="0" value="0"></label>
 </div><div class="toolbar" style="margin-top:12px"><button class="btn primary" onclick="saveMaterial()">新增包材</button><button class="btn gray" onclick="clearMaterialForm()">清除</button></div>
-<div class="tablewrap"><table><thead><tr><th>編號</th><th>包材名稱</th><th>分類</th><th>單位</th><th class="num">安全庫存</th><th>操作</th></tr></thead><tbody id="matBody"></tbody></table></div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0"><span class="small">狀態</span><select id="matStatusFilter" onchange="renderMatList()"><option value="live">上架與下架（不含已封存）</option><option value="active">只看上架</option><option value="off">只看下架</option><option value="archived">已封存</option><option value="all">全部</option></select><span class="small">下架＝停用，不出現在配方、快速輸入、盤點的選單；封存＝關閉，需要先確認沒有被現有或未來檔期的配方使用。</span></div><div class="tablewrap"><table><thead><tr><th>編號</th><th>包材名稱</th><th>分類</th><th>單位</th><th class="num">安全庫存</th><th>狀態</th><th>操作</th></tr></thead><tbody id="matBody"></tbody></table></div>
 </div>
 </section>
 

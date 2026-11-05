@@ -217,6 +217,8 @@
   function components() { return (getDb() && getDb().components) || []; }
   function orders() { var d = getDb(); return (d && Array.isArray(d.orderHistory)) ? d.orderHistory : []; }
   function productById(id) { return products().find(function (p) { return String(p.id) === String(id); }); }
+  // 包材狀態：沒有 status＝上架（active）；下架（off）、已封存（archived）的不出現在選單與日常操作清單
+  function materialActive(m) { return !!m && (!m.status || m.status === 'active'); }
   function materialById(id) { return materials().find(function (m) { return String(m.id) === String(id); }); }
   function productLabel(p) { if (typeof p !== 'object') p = productById(p); return p ? ((p.code ? p.code + ' ' : '') + p.name) : '（已刪除）'; }
   function materialLabel(m) { if (typeof m !== 'object') m = materialById(m); return m ? ((m.code ? m.code + ' ' : '') + m.name) : '（已刪除）'; }
@@ -421,7 +423,7 @@
     uid: uid, esc: esc, num: num, fmt: fmt, today: today, fmtTime: fmtTime, daysBetween: daysBetween,
     userName: userName, isAdmin: isAdmin, toast: toast, deptLabel: deptLabel,
     products: products, gifts: gifts, singles: singles, materials: materials, recipes: recipes, components: components, orders: orders,
-    productById: productById, materialById: materialById, productLabel: productLabel, materialLabel: materialLabel, productPrice: productPrice,
+    productById: productById, materialById: materialById, materialActive: materialActive, productLabel: productLabel, materialLabel: materialLabel, productPrice: productPrice,
     materialStock: materialStock, orderSeasonKind: orderSeasonKind, activeSeason: activeSeason,
     ui: ui, registerPage: registerPage, pageInfo: pageInfo, goPage: goPage, renderActive: renderActive, pages: pages
   };

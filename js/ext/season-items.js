@@ -256,7 +256,8 @@
     var pid = shown.length ? String(shown[0].id) : '';
     var active = isActive(season);
     function matOptions(sel) {
-      return '<option value="">（選擇包材）</option>' + mats.map(function (m) { return '<option value="' + esc(m.id) + '"' + (String(m.id) === String(sel) ? ' selected' : '') + '>' + esc((m.code ? m.code + ' ' : '') + (m.name || '')) + '</option>'; }).join('');
+      // 下架、已封存的包材不列在選單裡（原本就選了它的那一列還是會顯示）
+      return '<option value="">（選擇包材）</option>' + mats.filter(function (m) { return X.materialActive(m) || String(m.id) === String(sel); }).map(function (m) { return '<option value="' + esc(m.id) + '"' + (String(m.id) === String(sel) ? ' selected' : '') + '>' + esc((m.code ? m.code + ' ' : '') + (m.name || '')) + '</option>'; }).join('');
     }
     function body() {
       var cnt = {}; rows.forEach(function (r) { cnt[String(r.productId)] = (cnt[String(r.productId)] || 0) + 1; });

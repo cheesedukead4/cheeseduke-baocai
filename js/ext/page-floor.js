@@ -397,7 +397,7 @@
     var d = X.db(), h = d && d.homeOrder;
     return h && typeof h === 'object' && Array.isArray(h[kind]) ? h[kind] : null;
   }
-  function orderedMaterials() { return orderMaterials(X.materials(), homeOrderOf('material')); }
+  function orderedMaterials() { return orderMaterials(X.materials().filter(X.materialActive), homeOrderOf('material')); } // 下架、已封存的包材不在日常操作清單
   function nameOfMaterial(id) { var m = X.materialById(id); return m ? (m.name || X.materialLabel(m)) : '（已刪除）'; }
   function nameOfProduct(id) { var p = X.productById(id); return p ? (p.name || X.productLabel(p)) : '（已刪除）'; }
 
@@ -744,7 +744,7 @@
           '<button type="button" class="btn red" data-act="st-del" data-id="' + esc(r.s.id) + '" style="min-height:38px;padding:6px 14px">刪除</button></div>';
       } }
     ];
-    var canNew = X.materials().length > 0;
+    var canNew = X.materials().filter(X.materialActive).length > 0;
     return X.ui.card('盤點紀錄', X.ui.table(cols, rows, { empty: '還沒有盤點紀錄，按「開始新的盤點」建立。' }) +
       '<p class="small" style="margin:8px 0 0">差異項目數＝實盤合計和帳面合計不一樣的包材數。盤點紀錄都可以刪除；已確認的盤點刪除前會再確認一次。</p>',
       '<button type="button" class="btn primary" data-act="st-new" style="min-height:42px"' + (canNew ? '' : ' disabled title="請先建立包材資料"') + '>開始新的盤點</button>');
@@ -832,7 +832,7 @@
   }
 
   function newStocktake() {
-    if (!X.materials().length) return;
+    if (!X.materials().filter(X.materialActive).length) return;
     var drafts = list('stocktakes').filter(function (s) { return s.status !== 'confirmed'; });
     if (drafts.length && !confirm('目前已經有 ' + drafts.length + ' 份盤點中的草稿（' + drafts.map(function (s) { return s.date || '未填日期'; }).join('、') + '）。\n還要再開一份新的嗎？')) return;
     X.ui.dialog('開始新的盤點', [
@@ -842,7 +842,7 @@
       if (!isDate(v.date)) { alert('請選擇盤點日期。'); return false; }
       var rec = {
         id: X.uid('stk'), date: v.date, status: 'draft', by: X.userName(), confirmedBy: '', confirmedAt: null,
-        note: String(v.note || '').slice(0, 100), items: buildStocktakeItems(X.materials(), X.materialStock)
+        note: String(v.note || '').slice(0, 100), items: buildStocktakeItems(X.materials().filter(X.materialActive), X.materialStock)
       };
       stv.openId = rec.id; stv.filter = 'all'; stv.q = '';
       if (pushRecord('stocktakes', rec)) X.toast('已建立盤點，帳面數取自目前庫存');

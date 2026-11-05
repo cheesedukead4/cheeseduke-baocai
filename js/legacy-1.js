@@ -45,7 +45,7 @@ function editFieldHTML(key,label,type,value){
  }else if(type==='selectSingle'){
    control=`<select data-key="${key}">${db.products.filter(x=>x.category==='單條').map(x=>`<option value="${x.id}" ${x.id===value?'selected':''}>${x.name}</option>`).join('')}</select>`;
  }else if(type==='selectMaterial'){
-   control=`<select data-key="${key}">${db.materials.map(x=>`<option value="${x.id}" ${x.id===value?'selected':''}>${x.name}</option>`).join('')}</select>`;
+   control=`<select data-key="${key}">${db.materials.filter(x=>matActive(x)||x.id===value).map(x=>`<option value="${x.id}" ${x.id===value?'selected':''}>${x.name}</option>`).join('')}</select>`;
  }else if(type==='selectStockType'){
    control=`<select data-key="${key}"><option value="in" ${value==='in'?'selected':''}>進貨</option><option value="out" ${value==='out'?'selected':''}>領用／出庫</option><option value="adjust" ${value==='adjust'?'selected':''}>盤點調整</option></select>`;
  }else control=`<input data-key="${key}" type="${type}" ${type==='number'?'step="0.01"':''} value="${String(value??'').replace(/"/g,'&quot;')}">`;
@@ -187,6 +187,58 @@ function load(){
 function persist(){localStorage.setItem(KEY,JSON.stringify(db));render()}
 function del(arr,i){if(confirm('確定刪除這筆資料嗎？')){db[arr]=db[arr].filter(x=>x.id!==i);if(arr==='materials')db.recipes=db.recipes.filter(x=>x.materialId!==i);if(arr==='products'){db.recipes=db.recipes.filter(x=>x.productId!==i);db.campaigns=db.campaigns.filter(x=>x.productId!==i);db.components=(db.components||[]).filter(x=>x.productId!==i&&x.componentProductId!==i)}persist()}}
 
+// ---- 包材上架／下架／封存 ----
+// 沒有 status＝上架。下架（off）：停用，不出現在配方等選單、快速輸入、盤點；封存（archived）：關閉，也不列在首頁，只在包材資料的「已封存」看得到。
+// 封存前要檢查：還被現有（進行中）或未來（規劃中）檔期的禮盒配方用到就不能封存，要先從那些配方移除或換成別的包材。
+function matActive(m){return !!m&&(!m.status||m.status==='active');}
+function materialUsage(mid){
+ const out=[],ids=String(mid),prods=db.products||[],pname=id=>(prods.find(p=>String(p.id)===String(id))||{}).name||'（已刪除的禮盒）';
+ (db.seasons||[]).filter(s=>s&&(s.status==='active'||s.status==='planning')).forEach(s=>{
+   let rows,set=null;
+   if(s.status==='active'){rows=db.recipes||[];set=new Set(prods.filter(p=>p.isListedCurrent===true).map(p=>String(p.id)));}
+   else{rows=(db.seasonRecipes&&db.seasonRecipes[s.id])||[];set=Array.isArray(s.items)&&s.items.length?new Set(s.items.map(String)):null;}
+   rows.forEach(r=>{if(r&&String(r.materialId)===ids&&(!set||set.has(String(r.productId))))out.push({season:s.name||'（未命名檔期）',status:s.status,product:pname(r.productId)});});
+ });
+ return out;
+}
+function usageText(use){
+ const by={};use.forEach(u=>{(by[u.season]=by[u.season]||{status:u.status,list:[]}).list.push(u.product);});
+ return Object.keys(by).map(k=>'・'+k+'（'+(by[k].status==='active'?'進行中':'規劃中')+'）：'+Array.from(new Set(by[k].list)).slice(0,6).join('、')+(by[k].list.length>6?' 等':'')).join('\n');
+}
+function toggleMaterialStatus(id,input){
+ const m=db.materials.find(x=>x.id===id);if(!m)return;
+ const turnOff=!input.checked;
+ if(turnOff){
+   const use=materialUsage(id);
+   if(use.length&&!confirm('「'+m.name+'」還在這些現有或未來檔期的禮盒配方使用：\n'+usageText(use)+'\n\n下架後，這些配方照常計算，但新增配方、快速輸入、盤點的選單不會再出現這個包材。確定要下架嗎？')){input.checked=true;return;}
+ }
+ m.status=turnOff?'off':'active';
+ persist();
+}
+function archiveMaterial(id){
+ const m=db.materials.find(x=>x.id===id);if(!m)return;
+ const use=materialUsage(id);
+ if(use.length){alert('「'+m.name+'」還在這些現有或未來檔期的禮盒配方使用，不能封存：\n'+usageText(use)+'\n\n請先從這些檔期的配方移除，或換成別的包材，再回來封存。');return;}
+ if(!confirm('要把「'+m.name+'」封存（關閉）嗎？\n封存後不會再出現在選單、快速輸入、盤點與首頁的日常操作清單，資料與庫存紀錄都保留，之後可以在「已封存」找到並還原。'))return;
+ m.status='archived';m.archivedAt=Date.now();
+ persist();
+}
+function restoreMaterial(id){
+ const m=db.materials.find(x=>x.id===id);if(!m)return;
+ m.status='active';delete m.archivedAt;
+ persist();
+}
+function renderMatList(){
+ const body=document.getElementById('matBody');if(!body)return;
+ const f=(document.getElementById('matStatusFilter')||{}).value||'live';
+ const st=x=>x.status||'active';
+ const list=db.materials.filter(x=>f==='all'?true:f==='live'?st(x)!=='archived':f==='active'?st(x)==='active':f==='off'?st(x)==='off':st(x)==='archived');
+ body.innerHTML=list.length?list.map(x=>{
+   const s=st(x),arch=s==='archived';
+   const cell=arch?'<span class="pill">已封存</span> <button onclick="restoreMaterial(\''+x.id+'\')">還原</button>':'<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(s==='active'?'checked':'')+' onchange="toggleMaterialStatus(\''+x.id+'\',this)"><span>'+(s==='active'?'上架':'下架')+'</span></label>';
+   return `<tr${arch?' style="opacity:.65"':''}><td>${x.code||''}</td><td>${x.name}</td><td>${x.category||'單條'}</td><td>${x.unit||''}</td><td class=num>${x.safety}</td><td>${cell}</td><td><button onclick="editMat('${x.id}')">編輯</button> ${arch?'':`<button onclick="archiveMaterial('${x.id}')">封存</button> `}<button onclick="del('materials','${x.id}')">刪除</button></td></tr>`;
+ }).join(''):'<tr><td colspan=7 class=empty>'+(db.materials.length?'這個狀態沒有包材':'尚無包材資料')+'</td></tr>';
+}
 function saveMaterial(){let code=mCode.value.trim(),name=mName.value.trim();if(!name)return alert('請輸入包材名稱');if(editMaterial){let x=db.materials.find(x=>x.id===editMaterial);Object.assign(x,{code,name,category:mCategory.value,unit:mUnit.value.trim(),safety:n(mSafety.value)})}else db.materials.push({id:id(),code,name,category:mCategory.value,unit:mUnit.value.trim(),safety:n(mSafety.value)});clearMaterialForm();persist()}
 function clearMaterialForm(){editMaterial=null;mCode.value=mName.value=mUnit.value='';mCategory.value='單條';mSafety.value=0}
 function editMat(i){
@@ -263,8 +315,8 @@ let editGiftWithFormula=null;
 function updateGiftFormulaItem(row,selected){
  const t=document.getElementById('gfType'+row), el=document.getElementById('gfItem'+row);
  if(!t||!el)return;
- const data=t.value==='material'?db.materials:db.products.filter(x=>x.category==='單條');
  const keep=selected!==undefined?selected:el.value;
+ const data=t.value==='material'?db.materials.filter(x=>matActive(x)||String(x.id)===String(keep)):db.products.filter(x=>x.category==='單條');
  el.innerHTML='<option value="">請選擇</option>'+data.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
  if(keep&&[...el.options].some(o=>o.value===keep))el.value=keep;
 }
@@ -427,10 +479,10 @@ function updateUnifiedItemOptions(row, selectedValue){
  const typeEl=document.getElementById('ufType'+row);
  const itemEl=document.getElementById('ufItem'+row);
  if(!typeEl||!itemEl)return;
- const data=typeEl.value==='material'
-   ? db.materials
-   : db.products.filter(x=>x.category==='單條');
  const keep=selectedValue!==undefined ? selectedValue : itemEl.value;
+ const data=typeEl.value==='material'
+   ? db.materials.filter(x=>matActive(x)||String(x.id)===String(keep))
+   : db.products.filter(x=>x.category==='單條');
  itemEl.innerHTML='<option value="">請選擇</option>'+
    data.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
  if(keep && [...itemEl.options].some(o=>o.value===keep)) itemEl.value=keep;
@@ -524,8 +576,8 @@ function saveCampaign(){if(!cName.value.trim()||!cProduct.value)return alert('�
 function updateStockItemOptions(selected){
  const type=document.getElementById('sItemType')?.value||'material';
  const el=document.getElementById('sMaterial');if(!el)return;
- const data=type==='single'?db.products.filter(x=>x.category==='單條'):db.materials;
  const keep=selected!==undefined?selected:el.value;
+ const data=type==='single'?db.products.filter(x=>x.category==='單條'):db.materials.filter(x=>matActive(x)||String(x.id)===String(keep));
  el.innerHTML='<option value="">請選擇</option>'+data.map(x=>`<option value="${x.id}">${x.code?x.code+'｜':''}${x.name}</option>`).join('');
  if(keep&&[...el.options].some(o=>o.value===keep))el.value=keep;
 }
@@ -968,7 +1020,7 @@ function renderDashboard(){
  if(!matBody||!singleHome||!giftHome)return;
 
  ensureHomeOrder();
- const materials=orderedHomeItems('material',Array.isArray(db.materials)?db.materials.slice():[]);
+ const materials=orderedHomeItems('material',Array.isArray(db.materials)?db.materials.filter(m=>m.status!=='archived'):[]); // 已封存的包材不列在首頁
  const products=Array.isArray(db.products)?db.products.slice():[];
  // 首頁只列「單條資料」勾了「本期上架」的單條（2026-10-16 起，和禮盒品項一樣）
  const singleAll=products.filter(p=>String(p.category||'').trim()==='單條');
@@ -1042,7 +1094,7 @@ function render(){
 
  if(!editGiftWithFormula)document.getElementById('giftCurrentListed').checked=false;
  if(!editGiftWithFormula&&!window.__giftDiscFormInit){window.__giftDiscFormInit=true;GIFT_DISCOUNTS.forEach(f=>{const el=document.getElementById(f[2]);if(el&&el.value==='')el.value=GIFT_DISCOUNT_DEFAULTS[f[0]];});}
- matBody.innerHTML=db.materials.length?db.materials.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td>${x.category||'單條'}</td><td>${x.unit||''}</td><td class=num>${x.safety}</td><td><button onclick="editMat('${x.id}')">編輯</button> <button onclick="del('materials','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=6 class=empty>尚無包材資料</td></tr>';
+  renderMatList();
  prodBody.innerHTML=db.products.length?db.products.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td>${x.category||''}</td><td>${db.recipes.filter(r=>r.productId===x.id).length} 項</td><td><button onclick="openGenericEdit('gift','${x.id}')">編輯</button> <button onclick="del('products','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=5 class=empty>尚無產品資料</td></tr>';
  if(window.rProduct)opts(rProduct,db.products,'name');let giftProducts=db.products
  .filter(x=>(x.category||'禮盒')!=='單條')
@@ -1052,7 +1104,7 @@ function render(){
  // 單條也有售價（業績儀表板算金額用）與本期上架，存法和禮盒一樣（updateGiftListPrice／updateGiftListPublished 依品項 id 存）
  singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=5 class=empty>尚無單條資料</td></tr>';
  initGiftFormulaRows();
- opts(cProduct,db.products.filter(x=>x.category!=='單條'),'name');if(window.rMaterial)opts(rMaterial,db.materials,'name');if(document.getElementById('sMaterial'))updateStockItemOptions();
+ opts(cProduct,db.products.filter(x=>x.category!=='單條'),'name');if(window.rMaterial)opts(rMaterial,db.materials.filter(matActive),'name');if(document.getElementById('sMaterial'))updateStockItemOptions();
 (document.getElementById('recipeBody')||{innerHTML:''}).innerHTML=db.recipes.length?db.recipes.map(x=>`<tr><td>${prodName(x.productId)}</td><td>${matName(x.materialId)}</td><td class=num>${x.qty}</td><td><button onclick="del('recipes','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=4 class=empty>尚無配方</td></tr>';
  
  
