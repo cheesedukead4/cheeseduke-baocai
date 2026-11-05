@@ -20,8 +20,9 @@
  *   db.orderChanges 叫貨量異動歷程（只增不改）：{ id, seasonId, productId, at, by, kind（'create' 整批叫貨／首次設定｜'add' 加量｜'cut' 減量）, fromQty, toQty, reason }
  *   預估區間：業績預估頁每個品項每一週有「起～迄」（例如 1/4～1/11）；「到貨日期」＝區間起往前推一週的星期三（1/4～1/11 → 12/30）。
  *   日期篩選：表格上方可以只看某幾週的預估區間（可複選）：預估、100%、70%、目標叫貨只算選到的週；叫貨量是整個檔期的，不分週。
+ *   db.forecastChanges 業績異動（業績預估頁鎖定日期之後改預估量的紀錄，只讀）：這頁下方「業績異動」表列出異動前後盒數、轉單條數量。
  *   db.suppliers 廠商資料表：{ id, name, contact, phone, leadDays（預設交期，天）, productIds（供應哪些禮盒、單條；舊資料叫 singleIds）, note, active, by, at }
- * 只讀「業績預估」「禮盒資料」「總表現貨」，只寫 purchaseOrders、orderChanges、suppliers。
+ * 只讀「業績預估」「業績異動」「禮盒資料」「總表現貨」，只寫 purchaseOrders、orderChanges、suppliers。
  */
 (function (X) {
   'use strict';
@@ -271,6 +272,34 @@
     html += X.ui.card('禮盒與單條（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
       '<p class="small" style="margin:10px 0 0">「預估區間」是「業績預估」頁這個品項有填預估的每一週區間（起～迄）；「到貨日期」＝區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + (st.deduct ? '；目前目標已先扣掉總表現貨（禮盒現貨的盒數 × 每盒條數）' : '') + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。</p>',
       todo.length ? '<button type="button" class="btn primary" data-act="batch" style="min-height:34px">整批叫貨</button>' : '');
+
+    // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
+    var prodByCode = {};
+    X.products().forEach(function (p) { var k = p ? norm(p.code) : ''; if (k && !prodByCode[k]) prodByCode[k] = p; });
+    var fcs = X.get('forecastChanges').filter(function (e) { return e && e.kind === 'change' && (!e.seasonId || e.seasonId === seasonId()); }).sort(function (a, b) { return X.num(b.at) - X.num(a.at); });
+    var fcProd = function (e) { return prodByCode[norm(e.code)] || null; };
+    var fcUnit = function (e) { var p = fcProd(e); return p && isSingle(p) ? '條' : '盒'; };
+    var fcols = [
+      { label: '時間', render: function (e) { return esc(tm(e.at)); } },
+      { label: '品項', render: function (e) { var p = fcProd(e); return esc(p ? label(p) : ((e.code ? e.code + ' ' : '') + (e.name || ''))); } },
+      { label: '預估區間', render: function (e) { return esc('第 ' + e.week + ' 週 ' + (e.range || '')); } },
+      { label: '部門', render: function (e) { return esc(typeof SF_LABELS !== 'undefined' && SF_LABELS[e.loc] ? SF_LABELS[e.loc] : (e.loc || '')); } },
+      { label: '異動前（盒數）', num: true, render: function (e) { return X.fmt(e.fromQty) + ' <span class="small">' + fcUnit(e) + '</span>'; } },
+      { label: '異動後（盒數）', num: true, render: function (e) { return '<b>' + X.fmt(e.toQty) + '</b> <span class="small">' + fcUnit(e) + '</span>'; } },
+      { label: '差異', num: true, render: function (e) { var d = X.num(e.toQty) - X.num(e.fromQty); return '<b style="color:var(--' + (d < 0 ? 'bad' : 'warn') + ')">' + signed(d) + '</b> <span class="small">' + fcUnit(e) + '</span>'; } },
+      { label: '轉單條數量（異動前 → 異動後，差異）', render: function (e) {
+        var p = fcProd(e);
+        if (!p) return '<span class="small">找不到這個品項</span>';
+        if (isSingle(p)) return '<span class="small">單條本身，數量就是左邊的條數</span>';
+        var ps = c.cv.parts(p);
+        if (!ps) return X.ui.tag('沒設單條內容物', 'warn');
+        return ps.map(function (pt) { var a = X.num(e.fromQty) * pt.qty, b = X.num(e.toQty) * pt.qty; return esc(pt.single.name) + ' ' + X.fmt(a, 1) + ' → <b>' + X.fmt(b, 1) + '</b> 條（<b>' + signed(b - a) + '</b>）'; }).join('<br>');
+      } },
+      { label: '原因', render: function (e) { return '<span class="small">' + esc(e.reason || '') + '</span>'; } },
+      { label: '修改人', render: function (e) { return esc(e.by || ''); } }
+    ];
+    html += X.ui.card('業績異動（預估量改了多少，轉成要叫的單條數）', X.ui.table(fcols, fcs.slice(0, 100), { empty: '還沒有業績異動。業績預估頁到了鎖定日期之後，每次修改預估量都會列在這裡。' }) +
+      '<p class="small" style="margin:10px 0 0">資料來自「業績預估」頁的業績異動（鎖定日期之後改預估量）。<b>盒數</b>是禮盒的預估盒數（單條單賣的品項是條）；<b>轉單條數量</b>＝盒數 × 每盒單條數（100%，沒乘進貨比例）。實際要叫多少看上面表格的「目標叫貨」（費雪 ' + fee + '%、蛋捲 ' + egg + '%），已經叫的貨用「修改叫貨量」跟著調整。轉單條用的是目前「禮盒資料」的單條內容物。' + (fcs.length > 100 ? '只列最新 100 筆。' : '') + '</p>');
 
     // 叫貨量異動歷程
     var names = {}, logPids = [];
