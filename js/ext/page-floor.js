@@ -3,7 +3,8 @@
  *  - 快速輸入分成兩個步驟（daily，需管理員，可分別開放給人員）→ movements：
  *      xQuickFold 快速輸入①折盒（物管）：折盒、折盒NG
  *      xQuickStock 快速輸入②進貨與使用（倉管）：進貨、使用、使用NG
- *    只能登記「今天」；今天的紀錄可以修改數量／備註或撤銷，超過當天就鎖定（只能查看）。紀錄區可以選日期查詢。
+ *    只能登記「今天」；今天的紀錄大家都可以修改數量／備註或撤銷，超過當天就鎖定（只能查看）。紀錄區可以選日期查詢。
+ *    每次修改、撤銷都會寫進 db.movementLog（只增不改的修改歷程：時間、修改人、修改前後），紀錄區下方「修改歷程」可以追查。
  *  - xStocktake  盤點（daily，beta）：stocktakes
  *  - 裝盒回報（xPacking）2026-10-15 取消：頁面不再註冊（選單看不到），以前的 packRecords 紀錄保留但不再扣庫存；
  *    下面「頁面三」的程式先保留，之後要恢復只要把最下面的 registerPage 加回去，並在 js/stock-calc.js 把裝盒用量算回庫存。
@@ -320,23 +321,34 @@
   }
 
   // ---------- 撤銷（保留紀錄，voided=true，不重畫整頁；呼叫端自己更新紀錄區） ----------
-  function applyVoid(recs, msg) {
+  // 修改歷程（只增不改，db.movementLog）：action＝'edit' 修改｜'void' 撤銷；修改人與時間用當下的登入者
+  function logEntry(action, rec, from, to) {
+    return { id: X.uid('ml'), at: Date.now(), by: X.userName(), action: action, movementId: rec.id, batchId: rec.batchId || '', date: rec.date, materialId: rec.materialId, type: rec.type,
+      fromQty: from ? from.qty : rec.qty, toQty: to ? to.qty : rec.qty, fromNote: from ? String(from.note || '') : String(rec.note || ''), toNote: to ? String(to.note || '') : String(rec.note || '') };
+  }
+  function dropLogs(logs) {
+    var lg = X.ensure('movementLog');
+    logs.forEach(function (e) { var i = lg.indexOf(e); if (i >= 0) lg.splice(i, 1); });
+  }
+  function applyVoid(recs, msg, key) {
     if (!recs.length) return false;
     if (!confirm(msg + '\n紀錄會保留並加上刪除線，但不再計算。')) return false;
+    var logs = [];
+    if (key === 'movements') { var lg = X.ensure('movementLog'); recs.forEach(function (r) { var e = logEntry('void', r); lg.push(e); logs.push(e); }); }
     recs.forEach(function (r) { r.voided = true; });
-    if (!X.save({ silent: true })) { recs.forEach(function (r) { r.voided = false; }); return false; }
+    if (!X.save({ silent: true })) { recs.forEach(function (r) { r.voided = false; }); dropLogs(logs); return false; }
     X.toast('已撤銷 ' + recs.length + ' 筆');
     return true;
   }
   function voidBatch(key, batchId, what) {
     var recs = X.ensure(key).filter(function (r) { return isObj(r) && r.batchId && sameId(r.batchId, batchId) && r.voided !== true; });
     if (key === 'movements' && recs.some(function (r) { return r.date !== X.today(); })) { X.toast('已超過當日，這批紀錄已鎖定，不能撤銷'); return false; }
-    return applyVoid(recs, recs.length > 1 ? '要撤銷這一批 ' + recs.length + ' 筆' + what + '嗎？' : '要撤銷這筆' + what + '嗎？');
+    return applyVoid(recs, recs.length > 1 ? '要撤銷這一批 ' + recs.length + ' 筆' + what + '嗎？' : '要撤銷這筆' + what + '嗎？', key);
   }
   function voidOne(key, id, what) {
     var rec = X.ensure(key).find(function (r) { return isObj(r) && sameId(r.id, id); });
     if (key === 'movements' && rec && rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能撤銷'); return false; }
-    return applyVoid(rec && rec.voided !== true ? [rec] : [], '要撤銷這筆' + what + '嗎？');
+    return applyVoid(rec && rec.voided !== true ? [rec] : [], '要撤銷這筆' + what + '嗎？', key);
   }
 
   // ---------- 依批次顯示的紀錄 ----------
@@ -535,8 +547,32 @@
       '<input type="date" data-qe="view" aria-label="查詢日期" value="' + esc(d) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' + btn('view-next', '後一天') +
       (isToday ? X.ui.tag('今天（可修改）', 'info') : btn('view-today', '回到今天') + X.ui.tag('已鎖定', 'muted')) + '</div>';
     box.innerHTML = X.ui.card('這一天的紀錄（' + cfg.short + '）', body, ctrl) +
+      logCard(d) +
       X.ui.card('這一天各包材小計（' + cfg.short + '）', X.ui.table(cols, rowsMine, { empty: '這一天還沒有登記' }) +
         '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；使用、使用NG 扣已折盒；折盒NG 扣未折盒）。</p>', slashDate(d) + (isToday ? ' 今天' : ' 已鎖定'));
+  }
+
+  // 修改歷程（追查用）：這一天的紀錄被修改、撤銷的每一次，只增不改，鎖定的日子也查得到
+  function logCard(d) {
+    var rows = list('movementLog').filter(function (e) { return e.date === d && TYPE_KEYS.indexOf(e.type) >= 0; }).sort(function (a, b) { return num(b.at) - num(a.at); });
+    var when = function (ms) { var t = new Date(Number(ms)); return isNaN(t.getTime()) ? '' : (t.getMonth() + 1) + '/' + t.getDate() + ' ' + hhmm(ms); };
+    var change = function (e) {
+      if (e.action === 'void') return '撤銷這筆（原數量 ' + fmt(e.fromQty, 2) + '）';
+      var out = [];
+      if (num(e.fromQty) !== num(e.toQty)) out.push('數量 ' + fmt(e.fromQty, 2) + ' → <b>' + esc(fmt(e.toQty, 2)) + '</b>');
+      if (String(e.fromNote || '') !== String(e.toNote || '')) out.push('備註「' + esc(e.fromNote || '') + '」→「' + esc(e.toNote || '') + '」');
+      return out.join('；') || '（沒有變動）';
+    };
+    var cols = [
+      { label: '修改時間', render: function (e) { return esc(when(e.at)); } },
+      { label: '修改人', render: function (e) { return esc(e.by || '—'); } },
+      { label: '動作', render: function (e) { return X.ui.tag(e.action === 'void' ? '撤銷' : '修改', e.action === 'void' ? 'bad' : 'warn'); } },
+      { label: '包材', render: function (e) { return wrapText(X.materialLabel(e.materialId)); } },
+      { label: '項目', render: function (e) { return esc(typeLabel(e.type)); } },
+      { label: '修改前 → 修改後', render: function (e) { return '<span style="white-space:normal">' + (e.action === 'void' ? esc(change(e)) : change(e)) + '</span>'; } }
+    ];
+    return X.ui.card('修改歷程（追查用，' + rows.length + ' 筆）', X.ui.table(cols, rows, { empty: '這一天沒有人修改或撤銷過紀錄' }) +
+      '<p class="small" style="margin:8px 0 0">每次修改、撤銷都會留下時間、修改人和修改前後的內容，不能刪除或更改；超過當天鎖定後，歷程仍然查得到。</p>', slashDate(d));
   }
 
   // 修改今天的一筆紀錄（數量、備註）；超過當天就鎖定，不能改
@@ -552,9 +588,13 @@
       if (p.empty || p.bad || !(p.qty > 0)) { X.toast('數量要是 1 以上的整數；要取消這筆請用「撤銷」'); return false; }
       if (rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能修改'); return false; }
       var old = { qty: rec.qty, note: rec.note, editedAt: rec.editedAt, editedBy: rec.editedBy };
-      rec.qty = p.qty; rec.note = String(f.note || '').trim().slice(0, 100); rec.editedAt = Date.now(); rec.editedBy = X.userName();
-      if (!X.save({ silent: true })) { rec.qty = old.qty; rec.note = old.note; rec.editedAt = old.editedAt; rec.editedBy = old.editedBy; return false; }
-      X.toast('已修改');
+      var newNote = String(f.note || '').trim().slice(0, 100);
+      if (p.qty === old.qty && newNote === String(old.note || '')) { X.toast('內容沒有改變'); return; }
+      var entry = logEntry('edit', rec, { qty: old.qty, note: old.note }, { qty: p.qty, note: newNote });
+      X.ensure('movementLog').push(entry);
+      rec.qty = p.qty; rec.note = newNote; rec.editedAt = Date.now(); rec.editedBy = X.userName();
+      if (!X.save({ silent: true })) { rec.qty = old.qty; rec.note = old.note; rec.editedAt = old.editedAt; rec.editedBy = old.editedBy; dropLogs([entry]); return false; }
+      X.toast('已修改，修改歷程已記錄');
       refreshQuickEntry(el);
     }, '儲存修改');
   }

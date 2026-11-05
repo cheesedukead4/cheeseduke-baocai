@@ -61,6 +61,13 @@
         batchId: '同一次送出的批次代號（同一批共用）', editedAt: '最後修改時間（毫秒；當天可修改數量與備註，超過當天鎖定）', editedBy: '修改的人'
       }
     },
+    movementLog: {
+      label: '快速輸入修改歷程', type: 'array',
+      fields: {
+        id: '唯一代號', at: '修改時間（毫秒）', by: '修改人', action: "'edit' 修改｜'void' 撤銷", movementId: '被修改的快速輸入紀錄（movements）id', batchId: '該紀錄的批次代號',
+        date: '該紀錄的日期 YYYY-MM-DD', materialId: '包材 id', type: '異動類型（in／fold／use／foldNg／useNg）', fromQty: '修改前數量', toQty: '修改後數量', fromNote: '修改前備註', toNote: '修改後備註'
+      }
+    },
     stocktakes: {
       label: '盤點紀錄', type: 'array',
       fields: {
