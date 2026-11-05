@@ -58,7 +58,7 @@
       fields: {
         id: '唯一代號', at: '輸入時間（毫秒）', by: '輸入者', date: '作業日期 YYYY-MM-DD', materialId: '包材 id',
         type: "'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG", qty: '數量（正數）', note: '備註', voided: '是否已撤銷 true/false',
-        batchId: '同一次送出的批次代號（同一批共用）'
+        batchId: '同一次送出的批次代號（同一批共用）', editedAt: '最後修改時間（毫秒；當天可修改數量與備註，超過當天鎖定）', editedBy: '修改的人'
       }
     },
     stocktakes: {

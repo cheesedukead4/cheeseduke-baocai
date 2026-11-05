@@ -643,10 +643,10 @@
   };
   function permFor(pageId, role) {
     if (role === 'manager') return 'full';
-    if (role === 'clerk') return pageId === 'xQuickEntry' ? 'full' : (pageId === 'dashboard' ? 'fold' : 'none');
+    if (role === 'clerk') return (pageId === 'xQuickFold' || pageId === 'xQuickStock') ? 'full' : (pageId === 'dashboard' ? 'fold' : 'none');
     // 會計：只能看；有客戶資料的頁面隱藏客戶；只用來輸入或會帶出完整資料的頁面不開放
     if (pageId === 'orderHistory' || pageId === 'xOrderImport') return 'readNoCustomer';
-    if (pageId === 'backup' || pageId === 'importcenter' || pageId === 'xQuickEntry') return 'none';
+    if (pageId === 'backup' || pageId === 'importcenter' || pageId === 'xQuickFold' || pageId === 'xQuickStock') return 'none';
     return 'read';
   }
   var LEGACY_PAGES = [

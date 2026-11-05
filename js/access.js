@@ -28,7 +28,10 @@
     if (authOn()) {
       if (CMSAuth.isAdmin() || page === 'dashboard') return true;
       if (ADMIN_ONLY.indexOf(page) >= 0) return false;
-      return CMSAuth.pages().indexOf(String(page)) >= 0;
+      var pg = CMSAuth.pages();
+      // 「快速輸入」已經分成①折盒、②進貨與使用：以前被開放「快速輸入」（xQuickEntry）的人，兩個新頁面都先保留
+      if ((page === 'xQuickFold' || page === 'xQuickStock') && pg.indexOf('xQuickEntry') >= 0) return true;
+      return pg.indexOf(String(page)) >= 0;
     }
     return adminMode() || page === 'dashboard';
   }

@@ -355,3 +355,13 @@ th{font-size:16.5px!important}
   [data-home-panel="salesForecast"]{overflow:visible!important}
   .forecast-summary-wrap{position:sticky;top:calc(var(--topbar-h) + env(safe-area-inset-top, 0px));z-index:7;overflow:visible!important;background:var(--surface,#fff);box-shadow:0 6px 12px -8px rgba(16,24,40,.35)}
 }
+
+/* 快速輸入分成兩個步驟：①折盒（2 格）、②進貨與使用（3 格） */
+@media (min-width:901px){
+  .x-qe-n2 .x-qe-headrow,.x-qe-n2 .x-qe-row{grid-template-columns:clamp(210px,28%,380px) repeat(2,minmax(0,1fr))!important}
+  .x-qe-n3 .x-qe-headrow,.x-qe-n3 .x-qe-row{grid-template-columns:clamp(210px,26%,360px) repeat(3,minmax(0,1fr))!important}
+}
+@media (max-width:900px){
+  .x-qe-n2 .x-qe-row{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .x-qe-n3 .x-qe-row{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}

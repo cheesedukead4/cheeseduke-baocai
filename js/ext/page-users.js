@@ -9,7 +9,7 @@
   if (!X || !A) return;
 
   var esc = X.esc;
-  var QUICK_PAGES = ['xQuickEntry', 'xStocktake']; // 「現場人員」組合
+  var QUICK_PAGES = ['xQuickFold', 'xQuickStock', 'xStocktake']; // 「現場人員」組合
   var cache = null;   // { users: [...], admins: [...] }
   var loading = false;
 

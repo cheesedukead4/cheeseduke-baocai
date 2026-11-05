@@ -1,6 +1,9 @@
 /*
  * 現場作業
- *  - xQuickEntry 快速輸入（daily，需管理員）：所有包材列在同一頁，進貨、折盒、使用、折盒NG、使用NG 一次填完送出 → movements
+ *  - 快速輸入分成兩個步驟（daily，需管理員，可分別開放給人員）→ movements：
+ *      xQuickFold 快速輸入①折盒（物管）：折盒、折盒NG
+ *      xQuickStock 快速輸入②進貨與使用（倉管）：進貨、使用、使用NG
+ *    只能登記「今天」；今天的紀錄可以修改數量／備註或撤銷，超過當天就鎖定（只能查看）。紀錄區可以選日期查詢。
  *  - xStocktake  盤點（daily，beta）：stocktakes
  *  - 裝盒回報（xPacking）2026-10-15 取消：頁面不再註冊（選單看不到），以前的 packRecords 紀錄保留但不再扣庫存；
  *    下面「頁面三」的程式先保留，之後要恢復只要把最下面的 registerPage 加回去，並在 js/stock-calc.js 把裝盒用量算回庫存。
@@ -327,10 +330,12 @@
   }
   function voidBatch(key, batchId, what) {
     var recs = X.ensure(key).filter(function (r) { return isObj(r) && r.batchId && sameId(r.batchId, batchId) && r.voided !== true; });
+    if (key === 'movements' && recs.some(function (r) { return r.date !== X.today(); })) { X.toast('已超過當日，這批紀錄已鎖定，不能撤銷'); return false; }
     return applyVoid(recs, recs.length > 1 ? '要撤銷這一批 ' + recs.length + ' 筆' + what + '嗎？' : '要撤銷這筆' + what + '嗎？');
   }
   function voidOne(key, id, what) {
     var rec = X.ensure(key).find(function (r) { return isObj(r) && sameId(r.id, id); });
+    if (key === 'movements' && rec && rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能撤銷'); return false; }
     return applyVoid(rec && rec.voided !== true ? [rec] : [], '要撤銷這筆' + what + '嗎？');
   }
 
@@ -343,9 +348,11 @@
     var sum = items.slice(0, 8).join('、') + (items.length > 8 ? ' 等 ' + items.length + ' ' + o.unit : '');
     var note = String(g.records[0].note || '');
     var many = g.records.length > 1;
+    var editBtn = function (id) { return o.edit ? '<button type="button" class="btn gray" data-act="edit-one" data-id="' + esc(id) + '">修改</button> ' : ''; };
     var btn = allVoid ? X.ui.tag('已撤銷', 'muted')
-      : g.batchId ? '<button type="button" class="btn gray" data-act="void-batch" data-batch="' + esc(g.batchId) + '">' + (many ? '撤銷這一批' : '撤銷') + '</button>'
-        : '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(g.records[0].id) + '">撤銷</button>';
+      : o.locked ? X.ui.tag('已鎖定', 'muted')
+      : g.batchId ? (many ? '' : editBtn(g.records[0].id)) + '<button type="button" class="btn gray" data-act="void-batch" data-batch="' + esc(g.batchId) + '">' + (many ? '撤銷這一批' : '撤銷') + '</button>'
+        : editBtn(g.records[0].id) + '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(g.records[0].id) + '">撤銷</button>';
     var html = '<div class="' + P + '-batch' + (allVoid ? ' ' + P + '-batch-void' : '') + '">' +
       '<div class="' + P + '-batch-head"><div class="' + P + '-batch-info">' +
       '<div class="' + P + '-batch-meta"><b>' + esc(hhmm(g.at) || '—') + '</b><span>' + esc(g.by || '—') + '</span><span>' + esc(o.count(shown)) + '</span>' +
@@ -359,7 +366,7 @@
           var v = r.voided === true;
           return '<li class="' + P + '-rec' + (v ? ' ' + P + '-rec-void' : '') + '"><span class="' + P + '-rec-text">' + o.line(r) +
             (r.note && String(r.note) !== note ? '<span class="' + P + '-rec-note">' + esc(r.note) + '</span>' : '') + '</span>' +
-            (v ? X.ui.tag('已撤銷', 'muted') : '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(r.id) + '">撤銷</button>') + '</li>';
+            (v ? X.ui.tag('已撤銷', 'muted') : (o.locked ? '' : editBtn(r.id) + '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(r.id) + '">撤銷</button>')) + '</li>';
         }).join('') + '</ul></details>';
     }
     return html + '</div>';
@@ -385,8 +392,10 @@
   // =====================================================================
   // 頁面一：快速輸入（xQuickEntry）
   // =====================================================================
+  function makeQuick(cfg) {
+    var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { date: '', note: '', vals: Object.create(null) };
+  var qe = { view: '', note: '', vals: Object.create(null) };
 
   function qeTypeText(t) { return typeLabel(t); }
   var QE_BATCH = {
@@ -395,7 +404,7 @@
     item: function (r) { return nameOfMaterial(r.materialId) + ' ' + qeTypeText(r.type) + ' ' + fmt(r.qty, 2); },
     line: function (r) {
       return esc(X.materialLabel(r.materialId)) + ' ' + X.ui.tag(qeTypeText(r.type), r.voided === true ? 'muted' : (TYPES[r.type] ? TYPES[r.type].tone : 'muted')) +
-        ' <b>' + esc(fmt(r.qty, 2)) + '</b>';
+        ' <b>' + esc(fmt(r.qty, 2)) + '</b>' + (r.editedAt ? ' <span class="small">（已修改）</span>' : '');
     }
   };
 
@@ -421,16 +430,16 @@
     // 包材清單沒變：只更新紀錄區與「已登記」小字，輸入中的格子完全不動
     if (mats.length && el._xqeSig === sig && q$(el, '[data-box="qe-grid"]')) { bindQuickEntry(el); refreshQuickEntry(el); return; }
     el._xqeSig = sig;
-    var d = effDate(qe.date);
-    var html = intro('所有包材都列在下面，每種包材有「進貨、折盒、使用、折盒NG、使用NG」五格。有做的才填數量，沒做的留白，全部填完按最下面的「全部送出」一次登記。送出後會馬上算進首頁的包材庫存（「使用」扣已折盒）。');
+    var d = X.today();
+    var html = intro(cfg.intro);
     if (!mats.length) {
       html += X.ui.card('填寫數量', X.ui.empty('還沒有包材資料，請先到「包材資料」建立包材。'));
     } else {
-      html += '<div class="panel x-card x-qe-panel">' +
-        '<div class="x-card-head"><h2>填寫數量</h2></div>' +
+      html += '<div class="panel x-card x-qe-panel x-qe-n' + TYPE_KEYS.length + '">' +
+        '<div class="x-card-head"><h2>' + esc(cfg.title) + '</h2></div>' +
         '<div class="x-qe-top">' +
-        '<div class="x-field"><span>日期<span class="x-qe-datetag" data-box="qe-datetag"></span></span>' +
-        '<input type="date" data-qe="date" aria-label="日期" value="' + esc(d) + '"></div>' +
+        '<div class="x-field"><span>登記日期（只能登記今天）</span>' +
+        '<input type="text" readonly data-qe="today" aria-label="登記日期" value="' + esc(slashDate(d)) + '（今天）" style="background:var(--surface-2)"></div>' +
         '<div class="x-field"><span>備註（選填，會套用到這次送出的每一筆）</span>' +
         '<input type="text" data-qe="note" maxlength="100" placeholder="例：早班、A 倉" aria-label="備註" value="' + esc(qe.note) + '"></div>' +
         '</div>' +
@@ -457,7 +466,10 @@
       var act = a.dataset.act;
       if (act === 'qe-submit') submitQuick(el);
       else if (act === 'qe-clear') clearQuick(el, true);
-      else if (act === 'qe-today') { var di = q$(el, '[data-qe="date"]'); if (di) di.value = X.today(); setQeDate(el, X.today()); }
+      else if (act === 'view-today') setQeView(el, X.today());
+      else if (act === 'view-prev') setQeView(el, shiftDate(effDate(qe.view), -1));
+      else if (act === 'view-next') setQeView(el, shiftDate(effDate(qe.view), 1));
+      else if (act === 'edit-one') editQuick(el, a.dataset.id);
       else if (act === 'void-batch') { voidBatch('movements', a.dataset.batch, '登記'); refreshQuickEntry(el); }
       else if (act === 'void-one') { voidOne('movements', a.dataset.id, '登記'); refreshQuickEntry(el); }
     };
@@ -470,55 +482,81 @@
     el.onchange = function (e) {
       var t = e.target;
       if (!t || !t.dataset) return;
-      if (t.dataset.qe === 'date') setQeDate(el, t.value);
+      if (t.dataset.qe === 'view') setQeView(el, t.value);
       else if (t.dataset.mv) { keepQeCell(t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
     };
   }
 
-  // 換日期：只有日期真的變了才更新；打到一半或不合理的日期先不動（送出時會再檢查）
-  function setQeDate(el, v) {
+  // 換「查詢」的日期（紀錄區）：只有日期真的變了才更新；打到一半或不合理的日期先不動。登記永遠是今天
+  function setQeView(el, v) {
     if (!dateOk(v)) return;
     var next = keepDate(v);
-    if (next === qe.date) return;
-    qe.date = next;
+    if (next === qe.view) return;
+    qe.view = next;
     refreshQuickEntry(el);
   }
 
   // 依目前日期更新：日期提示、各列「已登記」小字、紀錄區、已填格數（輸入框本身不重畫）
   function refreshQuickEntry(el) {
-    var d = effDate(qe.date), isToday = d === X.today();
-    var di = q$(el, '[data-qe="date"]');
-    if (di && di.value !== d && document.activeElement !== di) di.value = d;
-    var tag = q$(el, '[data-box="qe-datetag"]');
-    if (tag) tag.innerHTML = dateTagHtml(d, 'qe-today');
+    var d = X.today(), vd = effDate(qe.view);
+    var td = q$(el, '[data-qe="today"]');
+    if (td) td.value = slashDate(d) + '（今天）';
     var all = list('movements');
     var sums = summarizeMovements(all, d, orderedMaterials()), byMid = Object.create(null);
     sums.forEach(function (s) { byMid[String(s.materialId)] = s; });
     q$$(el, '[data-box="qe-done"]').forEach(function (box) {
       var row = box.closest('[data-mid]'), s = row ? byMid[String(row.dataset.mid)] : null;
-      box.textContent = s ? (isToday ? '今天' : '這一天') + '已登記：' +
+      box.textContent = s ? '今天已登記：' +
         TYPE_KEYS.filter(function (k) { return s[k] > 0; }).map(function (k) { return TYPES[k].label + ' ' + fmt(s[k], 2); }).join('、') : '';
     });
-    renderQeRecords(el, all, d, sums);
+    renderQeRecords(el, all, vd, summarizeMovements(all, vd, orderedMaterials()));
     updateQeCount(el);
   }
 
   function renderQeRecords(el, all, d, sums) {
     var box = q$(el, '[data-box="qe-records"]');
     if (!box) return;
-    var open = openKeys(box), isToday = d === X.today(), stamp = dayStamp(d);
-    var batches = groupBatches(dayRecords(all, d));
-    var body = batches.length
-      ? '<div class="x-qe-batches">' + batches.map(function (g) { return batchHtml('x-qe', g, open, QE_BATCH); }).join('') + '</div>' +
-        '<p class="small" style="margin:10px 0 0">同一次送出的算一批。「撤銷這一批」會撤銷整批；按「看每一筆」可以單筆撤銷。撤銷的紀錄會保留並加上刪除線，不再計算。</p>'
-      : X.ui.empty(isToday ? '今天還沒有登記' : '這一天沒有登記');
+    var open = openKeys(box), isToday = d === X.today(), locked = !isToday;
+    var mine = function (r) { return TYPE_KEYS.indexOf(r.type) >= 0; };
+    var batches = groupBatches(dayRecords(all, d).filter(mine));
+    var o = { unit: QE_BATCH.unit, count: QE_BATCH.count, item: QE_BATCH.item, line: QE_BATCH.line, locked: locked, edit: true };
+    var body = (locked ? X.ui.banner('info', slashDate(d) + ' 已經過去了，這一天的紀錄已<b>鎖定</b>，只能查看，不能修改或撤銷。') : '') +
+      (batches.length
+        ? '<div class="x-qe-batches">' + batches.map(function (g) { return batchHtml('x-qe', g, open, o); }).join('') + '</div>' +
+          '<p class="small" style="margin:10px 0 0">同一次送出的算一批。' + (locked ? '' : '今天的紀錄可以按「修改」改數量或備註，也可以「撤銷」（撤銷的紀錄會保留並加上刪除線，不再計算）；') + '<b>超過當天就會鎖定，不能再修改。</b></p>'
+        : X.ui.empty(isToday ? '今天還沒有登記' : '這一天沒有登記'));
     var cols = [{ label: '包材', render: function (r) { return wrapText(X.materialLabel(r.materialId)); } }].concat(TYPE_KEYS.map(function (k) {
       return { label: TYPES[k].label, num: true, render: function (r) { return r[k] ? esc(fmt(r[k], 2)) : muted('—'); } };
     }));
-    box.innerHTML = X.ui.card('這一天的紀錄', body, stamp) +
-      X.ui.card('這一天各包材小計', X.ui.table(cols, sums, { empty: '這一天還沒有登記' }) +
-        '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；使用、使用NG 扣已折盒；折盒NG 扣未折盒）。</p>', stamp);
+    var rowsMine = sums.filter(function (r) { return TYPE_KEYS.some(function (k) { return r[k] > 0; }); });
+    var btn = function (act, text) { return '<button type="button" class="btn gray" data-act="' + act + '" style="min-height:34px;padding:4px 10px">' + text + '</button>'; };
+    var ctrl = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end">' + btn('view-prev', '前一天') +
+      '<input type="date" data-qe="view" aria-label="查詢日期" value="' + esc(d) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' + btn('view-next', '後一天') +
+      (isToday ? X.ui.tag('今天（可修改）', 'info') : btn('view-today', '回到今天') + X.ui.tag('已鎖定', 'muted')) + '</div>';
+    box.innerHTML = X.ui.card('這一天的紀錄（' + cfg.short + '）', body, ctrl) +
+      X.ui.card('這一天各包材小計（' + cfg.short + '）', X.ui.table(cols, rowsMine, { empty: '這一天還沒有登記' }) +
+        '<p class="small" style="margin:8px 0 0">已撤銷的不算。這些數量都已經算進首頁的包材庫存（進貨加未折盒；折盒從未折盒移到已折盒；使用、使用NG 扣已折盒；折盒NG 扣未折盒）。</p>', slashDate(d) + (isToday ? ' 今天' : ' 已鎖定'));
+  }
+
+  // 修改今天的一筆紀錄（數量、備註）；超過當天就鎖定，不能改
+  function editQuick(el, id) {
+    var rec = X.ensure('movements').find(function (r) { return isObj(r) && sameId(r.id, id); });
+    if (!rec || rec.voided === true) return;
+    if (rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能修改'); refreshQuickEntry(el); return; }
+    X.ui.dialog('修改：' + nameOfMaterial(rec.materialId) + ' ' + typeLabel(rec.type), [
+      { name: 'qty', label: '數量（' + typeLabel(rec.type) + '）', type: 'number', value: rec.qty, min: 1, step: 1, required: true },
+      { name: 'note', label: '備註', type: 'text', value: rec.note || '' }
+    ], function (f) {
+      var p = parseQty(f.qty == null ? '' : String(f.qty));
+      if (p.empty || p.bad || !(p.qty > 0)) { X.toast('數量要是 1 以上的整數；要取消這筆請用「撤銷」'); return false; }
+      if (rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能修改'); return false; }
+      var old = { qty: rec.qty, note: rec.note, editedAt: rec.editedAt, editedBy: rec.editedBy };
+      rec.qty = p.qty; rec.note = String(f.note || '').trim().slice(0, 100); rec.editedAt = Date.now(); rec.editedBy = X.userName();
+      if (!X.save({ silent: true })) { rec.qty = old.qty; rec.note = old.note; rec.editedAt = old.editedAt; rec.editedBy = old.editedBy; return false; }
+      X.toast('已修改');
+      refreshQuickEntry(el);
+    }, '儲存修改');
   }
 
   // 輸入時只記下數值、切換格子的顏色，並更新「已填 N 格」
@@ -553,9 +591,7 @@
   }
 
   function submitQuick(el) {
-    var di = q$(el, '[data-qe="date"]');
-    var date = di ? String(di.value || '') : effDate(qe.date);
-    if (!dateOk(date)) { alert('請選擇正確的日期。'); focusEl(di); return; }
+    var date = X.today(); // 只能登記今天（超過當天就鎖定，不能補登或修改）
     var items = [], bad = [], rounded = 0, big = false;
     var warnQty = window.CMSRules ? CMSRules.get('quickEntryWarnQty') : 100000; // 多打 0 的提醒門檻：見「計算規則」
     q$$(el, 'input[data-mv]').forEach(function (inp) {
@@ -592,13 +628,23 @@
     });
     if (!pushRecords('movements', recs)) return;
     // 送出成功：清空輸入，紀錄區切到這次的日期
-    qe.date = keepDate(date);
+    qe.view = '';
     qe.note = '';
     if (noteEl) noteEl.value = '';
     clearQuick(el, false);
     refreshQuickEntry(el);
     X.toast('已登記 ' + recs.length + ' 筆' + (date !== X.today() ? '（' + shortDate(date) + '）' : ''));
   }
+    return renderQuickEntry;
+  }
+  var renderQuickFold = makeQuick({
+    types: ['fold', 'foldNg'], short: '折盒', title: '步驟一：折盒（物管）',
+    intro: '步驟一（物管使用）：登記今天折盒（未折盒折好）和折盒NG（折壞）。每種包材有「折盒、折盒NG」兩格，有做的才填數量，沒做的留白，填完按最下面的「全部送出」。進貨、使用、使用NG 在「快速輸入②進貨與使用（倉管）」。只能登記今天；今天的紀錄可以修改，超過當天就鎖定。'
+  });
+  var renderQuickStock = makeQuick({
+    types: ['in', 'use', 'useNg'], short: '進貨與使用', title: '步驟二：進貨與使用（倉管）',
+    intro: '步驟二（倉管使用）：登記今天的進貨（廠商送來的未折盒）、使用（裝盒用掉已折盒）和使用NG（裝壞）。每種包材有「進貨、使用、使用NG」三格，有做的才填數量，沒做的留白，填完按最下面的「全部送出」。折盒、折盒NG 在「快速輸入①折盒（物管）」。只能登記今天；今天的紀錄可以修改，超過當天就鎖定。'
+  });
 
   // =====================================================================
   // 頁面二：盤點（xStocktake）
@@ -1143,10 +1189,16 @@
   // 註冊頁面
   // =====================================================================
   X.registerPage({
-    id: 'xQuickEntry', group: 'daily', order: 10, stage: 'ready', admin: true,
-    title: '快速輸入', sub: '所有包材一頁填完，一次送出',
+    id: 'xQuickFold', group: 'daily', order: 10, stage: 'ready', admin: true,
+    title: '快速輸入①折盒', sub: '物管：折盒、折盒NG，只能登記今天，當天可修改',
     icon: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7.5v7M8.5 11h7"/><path d="M10.5 18h3"/>',
-    render: function (el) { renderQuickEntry(el); }
+    render: function (el) { renderQuickFold(el); }
+  });
+  X.registerPage({
+    id: 'xQuickStock', group: 'daily', order: 11, stage: 'ready', admin: true,
+    title: '快速輸入②進貨與使用', sub: '倉管：進貨、使用、使用NG，只能登記今天，當天可修改',
+    icon: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M9 8h6M9 11.5h6M9 15h4"/>',
+    render: function (el) { renderQuickStock(el); }
   });
   X.registerPage({
     id: 'xStocktake', group: 'daily', order: 20, stage: 'beta',
