@@ -782,6 +782,23 @@ function applyDefaultGiftDiscountsOnce(){
  db.giftDiscountSeed=version;
  try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('初始折扣儲存失敗',e);}
 }
+// 過去訂單紀錄：「接單部門」空白的訂單，把「部門」的名字填進接單部門，再把「部門」改成「現銷」（2026/11/05 使用者指定）。
+// 改之前的值留在這筆訂單的 deptFixBefore；接單部門已經有字的、部門也是空白（沒有名字可填）的都不動；改過的不會再被改（接單部門已經有字了）
+function fixBlankOrderDepartments(manual){
+ const rows=Array.isArray(db.orderHistory)?db.orderHistory:[];
+ const blank=o=>o&&!String(o.orderDepartment||'').trim();
+ const todo=rows.filter(o=>blank(o)&&String(o.department||'').trim()&&String(o.department).trim()!=='現銷');
+ const noName=rows.filter(o=>blank(o)&&!String(o.department||'').trim()).length;
+ if(!todo.length){if(manual)alert('沒有需要整理的訂單：接單部門空白、而且有部門名字的訂單 0 筆。'+(noName?'\n（另有 '+noName+' 筆接單部門和部門都是空白，沒有名字可以填。）':''));return 0;}
+ const by={};todo.forEach(o=>{const k=String(o.department).trim();by[k]=(by[k]||0)+1;});
+ const list=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([k,n])=>k+' '+n+' 筆').join('、');
+ if(manual&&!confirm('過去訂單紀錄有 '+todo.length+' 筆「接單部門」是空白的。\n\n要把「部門」的名字填進「接單部門」（'+list+'），再把這些訂單的「部門」改成「現銷」嗎？\n\n改之前的值會留在每筆訂單裡（deptFixBefore），建議先到「備份／還原」備份一次。'))return 0;
+ todo.forEach(o=>{o.deptFixBefore={orderDepartment:o.orderDepartment||'',department:o.department};o.orderDepartment=String(o.department).trim();o.department='現銷';});
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){todo.forEach(o=>{if(o.deptFixBefore){o.orderDepartment=o.deptFixBefore.orderDepartment;o.department=o.deptFixBefore.department;delete o.deptFixBefore;}});alert('儲存失敗：'+e.message);return 0;}
+ if(typeof renderOrderHistory==='function'){try{renderOrderHistory();}catch(e){}}
+ if(window.cmsToast)window.cmsToast('已整理過去訂單：'+todo.length+' 筆接單部門填入部門名字、部門改成「現銷」');
+ return todo.length;
+}
 function applyRequestedListedProductsOnce(){
  const version='20261008-22-listed-codes-v1';
  if(db.listedSelectionVersion===version)return;

@@ -452,7 +452,7 @@
       <select id="histFilterChannel" onchange="renderOrderHistory()"><option value="">全部通路</option></select>
       <select id="histFilterDepartment" onchange="renderOrderHistory()"><option value="">全部接單部門</option></select>
       <select id="histFilterOrgDepartment" onchange="renderOrderHistory()"><option value="">全部部門</option></select>
-      <button type="button" class="btn gray" onclick="clearOrderHistoryFilters()">清除篩選</button>
+      <button type="button" class="btn gray" onclick="clearOrderHistoryFilters()">清除篩選</button><button type="button" class="btn primary" onclick="fixBlankOrderDepartments(true)" title="接單部門空白的訂單：把部門的名字填進接單部門，部門改成現銷">整理接單部門（空白→填部門名、部門改現銷）</button>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-bottom:4px">

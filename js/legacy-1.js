@@ -1038,6 +1038,7 @@ function render(){
  restoreMissingPackagingRecipesOnce();
  if(typeof applyDefaultGiftDiscountsOnce==='function')applyDefaultGiftDiscountsOnce();
  if(typeof migrateSingleForecastOnce==='function')migrateSingleForecastOnce();
+ if(typeof fixBlankOrderDepartments==='function')fixBlankOrderDepartments(false);
 
  if(!editGiftWithFormula)document.getElementById('giftCurrentListed').checked=false;
  if(!editGiftWithFormula&&!window.__giftDiscFormInit){window.__giftDiscFormInit=true;GIFT_DISCOUNTS.forEach(f=>{const el=document.getElementById(f[2]);if(el&&el.value==='')el.value=GIFT_DISCOUNT_DEFAULTS[f[0]];});}
