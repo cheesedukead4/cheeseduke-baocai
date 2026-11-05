@@ -907,22 +907,27 @@
 
   // 給「採購叫貨」用：進行中檔期的業績預估，每個品項（禮盒、單條）的預估量（所有部門、所有日期加總）
   X.forecastBoxes = function () {
-    var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), dates: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
+    var fo = X.db() && X.db().salesForecastV5, ctx = salesCtx(), out = { byId: Object.create(null), dates: Object.create(null), ranges: Object.create(null), name: (fo && fo.campaignName) || '', any: false };
     if (!fo || !fo.rows) return out;
     Object.keys(fo.rows).forEach(function (code) {
       var r = fo.rows[code];
       if (!r || !r.lines) return;
       var p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
       if (!p) return;
-      var sum = 0, ds = [];
+      var sum = 0, ds = [], rgs = [];
       Object.keys(r.lines).forEach(function (n) {
         var line = r.lines[n] || {}, ls = 0;
         Object.keys(line).forEach(function (k) { ls += X.num((line[k] || {}).est); });
         sum += ls;
         var d = r.dates && r.dates[n];
-        if (ls > 0 && d && ds.indexOf(d) < 0) ds.push(d); // 這個品項有填預估的日期（業績預估頁的日期欄＝預估單日期）
+        if (ls > 0 && d && ds.indexOf(d) < 0) {
+          ds.push(d); // 這個品項有填預估的日期（業績預估頁每一週的區間起）
+          var e = (r.ends && r.ends[n]) || '', t = dateMs(d);
+          if (!e && t != null) { var t2 = new Date(t + 7 * DAY); e = t2.getUTCFullYear() + '-' + String(t2.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t2.getUTCDate()).padStart(2, '0'); }
+          rgs.push({ start: d, end: e, est: ls });
+        }
       });
-      if (sum > 0) { var id = String(p.id); out.byId[id] = (out.byId[id] || 0) + sum; out.dates[id] = (out.dates[id] || []).concat(ds).sort(); out.any = true; }
+      if (sum > 0) { var id = String(p.id); out.byId[id] = (out.byId[id] || 0) + sum; out.dates[id] = (out.dates[id] || []).concat(ds).sort(); out.ranges[id] = (out.ranges[id] || []).concat(rgs).sort(function (a, b) { return a.start < b.start ? -1 : (a.start > b.start ? 1 : 0); }); out.any = true; }
     });
     return out;
   };

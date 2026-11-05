@@ -11,6 +11,7 @@
  *   db.purchaseOrders 叫貨紀錄：{ id, seasonId（叫貨當時進行中的檔期）, date, eta（預計到貨日）, productId（禮盒或單條 id；舊紀錄叫 singleId＝單條）,
  *     qty, unit（'條'＝新紀錄一律以條計；沒有 unit 的舊禮盒紀錄是盒、舊單條紀錄是條）, supplierId, supplier（廠商名稱）, status, receivedDate, note, by, at }
  *     status：'ordered' 已叫貨（算在途）｜'received' 已到貨（不算在途；實際庫存仍以總表現貨為準）
+ *   預估區間：業績預估頁每個品項每一週有「起～迄」（例如 1/4～1/11）；採購叫貨顯示這個區間，「到貨日期」＝區間起往前推一週的星期三（1/4～1/11 → 12/30），叫貨時預計到貨日預設帶最早的那個。
  *   db.suppliers 廠商資料表：{ id, name, contact, phone, leadDays（預設交期，天）, productIds（供應哪些禮盒、單條；舊資料叫 singleIds）, note, active, by, at }
  * 只讀「業績預估」「禮盒資料」「總表現貨」，只寫 purchaseOrders、suppliers。
  */
@@ -34,6 +35,14 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
     if (!m) return '';
     var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  }
+  // 預估區間的到貨日期：區間起那一週的星期一往前推一週，再取星期三（區間 1/4～1/11 → 12/30）
+  function arrivalOf(start) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(start || ''));
+    if (!m) return '';
+    var t = Date.UTC(+m[1], +m[2] - 1, +m[3]), dow = (new Date(t).getUTCDay() + 6) % 7; // 0＝星期一
+    var d = new Date(t - dow * 86400000 - 7 * 86400000 + 2 * 86400000);
     return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
   }
   function md(date) { var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(date || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
@@ -109,7 +118,7 @@
         p: p, id: pid, single: single, egg: X.isEggGift(p), spec: single ? 'single' : (X.giftGroupKey(p) || 'other'), est: est, per: unitPer, noComp: noComp,
         u100: est * unitPer, u70: feeBoxes * unitPer, ratio: ratio, targetBoxes: tBoxes, target: target, stock: stockU, aim: aim,
         ordered: ord, transit: transitU[pid] || 0, remaining: Math.max(0, aim - ord), supplier: supplierOf(pid), extra: !(est > 0), dates: fb.dates[pid] || [],
-        conv: single || noComp ? [] : ps.map(function (pt) { return { p: pt.single, n: (st.deduct && stockU != null ? aim / unitPer : tBoxes) * pt.qty }; })
+        ranges: fb.ranges[pid] || [], conv: single || noComp ? [] : ps.map(function (pt) { return { p: pt.single, n: (st.deduct && stockU != null ? aim / unitPer : tBoxes) * pt.qty }; })
       });
     });
     var rank = function (r) { return r.single ? 1 : 0; };
@@ -139,7 +148,14 @@
     var late = X.daysBetween(o.eta, X.today());
     return esc(o.eta) + (late > 0 ? ' ' + X.ui.tag('逾期 ' + late + ' 天', 'bad') : (late === 0 ? ' ' + X.ui.tag('今天到', 'warn') : ''));
   }
-  function datesText(r) { return r.dates && r.dates.length ? esc(r.dates.map(md).join('、')) : '<span class="small">未填日期</span>'; }
+  function datesText(r) {
+    return r.ranges && r.ranges.length
+      ? r.ranges.map(function (g) { return esc(md(g.start) + (g.end ? '～' + md(g.end) : '')); }).join('<br>')
+      : '<span class="small">未填日期</span>';
+  }
+  function arrivalText(r) {
+    return r.ranges && r.ranges.length ? r.ranges.map(function (g) { return esc(md(arrivalOf(g.start))) + ' <span class="small">（三）</span>'; }).join('<br>') : '<span class="small">—</span>';
+  }
   function unitOf(r) { return r.noComp ? '盒' : '條'; }
 
   function render(el) {
@@ -197,7 +213,8 @@
       return r.conv.length ? r.conv.map(function (x) { return esc(x.p.name) + ' <b>' + X.fmt(x.n, 1) + '</b> 條'; }).join('<br>') : '<span class="small">—</span>';
     };
     var cols = [
-      { label: '預估單日期', render: datesText },
+      { label: '預估區間', render: datesText },
+      { label: '到貨日期（區間前一週的星期三）', render: arrivalText },
       { label: '品項', render: function (r) { return '<b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>' + (r.extra ? ' ' + X.ui.tag('預估沒填', 'muted') : ''); } },
       { label: '廠商', render: function (r) { return r.supplier ? esc(r.supplier.name) : '<span class="small">未指定</span>'; } },
       { label: '業績預估', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.est) + (r.single ? ' 條' : ' 盒') : '—'; } },
@@ -214,7 +231,7 @@
       { label: '', render: function (r) { return '<button type="button" class="btn ' + (r.remaining ? 'primary' : 'gray') + '" data-act="order" data-id="' + esc(r.id) + '" data-qty="' + r.remaining + '" style="min-height:34px;padding:4px 12px;white-space:nowrap">叫貨</button>'; } }
     ];
     html += X.ui.card('禮盒與單條（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
-      '<p class="small" style="margin:10px 0 0">「預估單日期」是「業績預估」頁這個品項有填預估的日期。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。已叫貨＝這個檔期叫貨紀錄的已叫貨＋已到貨（新紀錄以條計，舊的禮盒紀錄以盒 × 每盒條數換算）；建議再叫＝目標 － 已叫貨（最少 0）' + (st.deduct ? '；目前已先扣掉總表現貨（禮盒現貨的盒數 × 每盒條數）' : '') + '。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。按「叫貨」會帶入建議的條數、廠商與預計到貨日。</p>');
+      '<p class="small" style="margin:10px 0 0">「預估區間」是「業績預估」頁這個品項有填預估的每一週區間（起～迄）；「到貨日期」＝區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。已叫貨＝這個檔期叫貨紀錄的已叫貨＋已到貨（新紀錄以條計，舊的禮盒紀錄以盒 × 每盒條數換算）；建議再叫＝目標 － 已叫貨（最少 0）' + (st.deduct ? '；目前已先扣掉總表現貨（禮盒現貨的盒數 × 每盒條數）' : '') + '。現貨來自「入口網站同步」帶入的總表（「—」表示總表沒有這個品號）。按「叫貨」會帶入建議的條數、廠商與預計到貨日。</p>');
 
     // 叫貨紀錄
     var byId = c.cv.byId;
@@ -277,7 +294,8 @@
     var lead = function (id) { var s = id ? supplierById(id) : null; return s && s.leadDays > 0 ? s.leadDays : 0; };
     var pid = rec ? recProduct(rec) : (preset && preset.productId || '');
     var legacyBox = rec && !rec.unit && X.productById(pid) && !isSingle(X.productById(pid)); // 舊的禮盒紀錄是盒
-    var v = rec || { date: date, eta: lead(sid) ? addDays(date, lead(sid)) : '', qty: preset && preset.qty || '', supplier: '', status: 'ordered', note: '' };
+    var presetEta = !rec && preset && preset.eta ? preset.eta : ''; // 預估區間往前推一週的星期三，不再被廠商交期覆蓋
+    var v = rec || { date: date, eta: presetEta || (lead(sid) ? addDays(date, lead(sid)) : ''), qty: preset && preset.qty || '', supplier: '', status: 'ordered', note: '' };
     var mask = X.ui.dialog(isNew ? '新增叫貨' : '編輯叫貨', [
       { name: 'date', label: '叫貨日期', type: 'date', value: v.date, required: true },
       { name: 'productId', label: '品項', type: 'select', options: productOptions(pid), value: pid, required: true },
@@ -301,13 +319,13 @@
       X.toast(isNew ? '已記錄叫貨' : '已更新叫貨紀錄');
     });
     // 選廠商或改叫貨日期時，預計到貨日自動＝叫貨日期＋廠商預設交期（只在還沒手動改過時換）
-    var auto = v.eta || '';
+    var auto = presetEta ? null : (v.eta || '');
     mask.addEventListener('change', function (e) {
       var k = e.target.dataset && e.target.dataset.field;
       if (k !== 'supplierId' && k !== 'date') return;
       var etaEl = mask.querySelector('[data-field=eta]'), d = mask.querySelector('[data-field=date]').value, n = lead(mask.querySelector('[data-field=supplierId]').value);
       if (!d || !n) return;
-      if (etaEl.value === '' || etaEl.value === auto) { auto = addDays(d, n); etaEl.value = auto; }
+      if (auto !== null && (etaEl.value === '' || etaEl.value === auto)) { auto = addDays(d, n); etaEl.value = auto; }
     });
   }
 
@@ -367,7 +385,7 @@
     if (a === 'deduct') { st.deduct = b.dataset.v === '1'; saveUi(); render(el); }
     else if (a === 'order') {
       var row = c.rows.find(function (r) { return String(r.id) === id; });
-      orderDialog(null, { productId: id, qty: X.num(b.dataset.qty) || '', supplierId: row && row.supplier ? row.supplier.id : '' });
+      orderDialog(null, { productId: id, qty: X.num(b.dataset.qty) || '', supplierId: row && row.supplier ? row.supplier.id : '', eta: row && row.ranges && row.ranges.length ? arrivalOf(row.ranges[0].start) : '' });
     }
     else if (a === 'new') orderDialog(null, null);
     else if (a === 'copy') copyList(c);

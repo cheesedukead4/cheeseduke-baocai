@@ -267,7 +267,7 @@
       return { level: 'ok', count: 0, countText: filled.length + ' 項', countSub: '有數字', desc: '已經輸入 ' + filled.length + ' 項初始庫存。' };
     },
 
-    // 業績預估：原本首頁的業績預估表（db.salesForecastV5，各品項 5 個日期（週）× 各部門的預估盒數）
+    // 業績預估：原本首頁的業績預估表（db.salesForecastV5，各品項 5 個日期區間（週）× 各部門的預估盒數）
     forecast: function (c) {
       var sf = c.salesForecast;
       var rows = (sf && sf.rows && typeof sf.rows === 'object') ? sf.rows : {};
