@@ -283,6 +283,7 @@
       { label: '時間', render: function (e) { return esc(tm(e.at)); } },
       { label: '品項', render: function (e) { var p = fcProd(e); return esc(p ? label(p) : ((e.code ? e.code + ' ' : '') + (e.name || ''))); } },
       { label: '預估區間', render: function (e) { return esc('第 ' + e.week + ' 週 ' + (e.range || '')); } },
+      { label: '到貨日期', render: function (e) { var fo = X.db() && X.db().salesForecastV5, r = fo && fo.rows && fo.rows[e.code], st = e.start || (r && r.dates && r.dates[X.num(e.week) - 1]), a = arrivalOf(st); return a ? esc(md(a)) + ' <span class="small">（三）</span>' : '<span class="small">—</span>'; } },
       { label: '部門', render: function (e) { return esc(typeof SF_LABELS !== 'undefined' && SF_LABELS[e.loc] ? SF_LABELS[e.loc] : (e.loc || '')); } },
       { label: '異動前（盒數）', num: true, render: function (e) { return X.fmt(e.fromQty) + ' <span class="small">' + fcUnit(e) + '</span>'; } },
       { label: '異動後（盒數）', num: true, render: function (e) { return '<b>' + X.fmt(e.toQty) + '</b> <span class="small">' + fcUnit(e) + '</span>'; } },
@@ -311,6 +312,7 @@
     var lcols = [
       { label: '時間', render: function (e) { return esc(tm(e.at)); } },
       { label: '品項', render: function (e) { return esc(label(c.cv.byId[String(e.productId)])); } },
+      { label: '到貨日期', render: function (e) { var r = all.rows.find(function (x) { return String(x.id) === String(e.productId); }); return r && r.ranges && r.ranges.length ? r.ranges.map(function (g) { return esc(md(arrivalOf(g.start))); }).join('<br>') : '<span class="small">—</span>'; } },
       { label: '類型', render: function (e) { return kindTag(e.kind); } },
       { label: '修改前（條）', num: true, render: function (e) { return X.fmt(e.fromQty); } },
       { label: '修改後（條）', num: true, render: function (e) { return '<b>' + X.fmt(e.toQty) + '</b>'; } },

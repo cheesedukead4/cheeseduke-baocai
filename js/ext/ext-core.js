@@ -128,7 +128,7 @@
       label: '業績異動歷程', type: 'array',
       fields: {
         id: '唯一代號', seasonId: '檔期 id', at: '修改時間（毫秒）', by: '修改人', kind: "'change' 業績異動｜'lock' 設定／取消鎖定日期",
-        code: '品號', name: '品名', week: '第幾週（1～5）', range: '當時的週區間文字', loc: '部門（dongqiao／a11／jingzhan／web／channel／pr／ceo）',
+        code: '品號', name: '品名', week: '第幾週（1～5）', start: '當時這一週的區間起 YYYY-MM-DD（到貨日期由它推算）', range: '當時的週區間文字', loc: '部門（dongqiao／a11／jingzhan／web／channel／pr／ceo）',
         fromQty: '修改前預估量', toQty: '修改後預估量', fromDate: '鎖定日期（修改前）', toDate: '鎖定日期（修改後）', reason: '異動原因'
       }
     },

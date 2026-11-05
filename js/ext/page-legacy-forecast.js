@@ -15,6 +15,17 @@
   function pad2(n) { return String(n).padStart(2, '0'); }
   function mdOf(v) { var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? Number(m[1]) + '/' + Number(m[2]) : ''; }
   function rangeText(r, n) { return r && r.dates && r.dates[n] ? mdOf(r.dates[n]) + (r.ends && r.ends[n] ? '～' + mdOf(r.ends[n]) : '') : '（未填日期）'; }
+  // 到貨日期：區間起那一週的星期一往前推一週，再取星期三（1/4～1/11 → 12/30）；和採購叫貨頁同一個算法
+  function arrivalOf(start) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(start || ''));
+    if (!m) return '';
+    var t = Date.UTC(+m[1], +m[2] - 1, +m[3]), dow = (new Date(t).getUTCDay() + 6) % 7, d = new Date(t - dow * 86400000 - 7 * 86400000 + 2 * 86400000);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function arrivalOfLog(e) { // 異動當時的區間起（新紀錄有存 start；舊紀錄用現在這個品項這一週的區間起）
+    var st = e.start; if (!st) { var r = fdb() && fdb().rows && fdb().rows[e.code]; st = r && r.dates && r.dates[X.num(e.week) - 1]; }
+    var a = arrivalOf(st); return a ? mdOf(a) + '（三）' : '—';
+  }
   function signed(n) { return (n > 0 ? '+' : (n < 0 ? '−' : '')) + X.fmt(Math.abs(n)); }
   function seasonKey() { var a = X.activeSeason(); return a ? a.id : ''; }
   function logs() { var sid = seasonKey(); return X.get('forecastChanges').filter(function (e) { return e && (!e.seasonId || e.seasonId === sid); }).sort(function (a, b) { return X.num(b.at) - X.num(a.at); }); }
@@ -71,7 +82,7 @@
       if (nq === before) { X.toast('預估量沒有變'); return false; }
       var p = prods.find(function (x) { return String(x.code || x.id || '') === f.code; });
       r.lines[n][f.loc].est = nq;
-      X.ensure('forecastChanges').push({ id: X.uid('fc'), seasonId: seasonKey(), at: Date.now(), by: X.userName(), kind: 'change', code: f.code, name: p ? p.name : '', week: n + 1, range: rangeText(r, n), loc: f.loc, fromQty: before, toQty: nq, reason: f.reason });
+      X.ensure('forecastChanges').push({ id: X.uid('fc'), seasonId: seasonKey(), at: Date.now(), by: X.userName(), kind: 'change', code: f.code, name: p ? p.name : '', week: n + 1, start: r.dates[n] || '', range: rangeText(r, n), loc: f.loc, fromQty: before, toQty: nq, reason: f.reason });
       if (typeof recalcSalesForecast === 'function') recalcSalesForecast();
       if (typeof scheduleSalesForecastSave === 'function') scheduleSalesForecastSave();
       X.save();
@@ -107,6 +118,7 @@
       { label: '時間', render: function (e) { return esc(X.fmtTime(e.at)); } },
       { label: '品項', render: function (e) { return e.kind === 'lock' ? '<span class="small">鎖定日期</span>' : esc((e.code ? e.code + ' ' : '') + (e.name || '')); } },
       { label: '週別', render: function (e) { return e.kind === 'lock' ? '—' : esc('第 ' + e.week + ' 週 ' + (e.range || '')); } },
+      { label: '到貨日期', render: function (e) { return e.kind === 'lock' ? '—' : esc(arrivalOfLog(e)); } },
       { label: '部門', render: function (e) { return e.kind === 'lock' ? '—' : esc(SF_LABELS[e.loc] || e.loc || ''); } },
       { label: '修改前', num: true, render: function (e) { return e.kind === 'lock' ? esc(e.fromDate || '（無）') : X.fmt(e.fromQty); } },
       { label: '修改後', num: true, render: function (e) { return e.kind === 'lock' ? esc(e.toDate || '（取消）') : '<b>' + X.fmt(e.toQty) + '</b>'; } },
