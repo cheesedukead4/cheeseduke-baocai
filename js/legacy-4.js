@@ -218,12 +218,18 @@ function renderOrderHistory(){
  if(fDept==='__BLANK_ORDER_DEPT__') rows=rows.filter(r=>!String(r.orderDepartment??'').trim());
  else if(fDept) rows=rows.filter(r=>String(r.orderDepartment||'').trim()===fDept);
  if(fOrgDept) rows=rows.filter(r=>String(r.department||'').trim()===fOrgDept);
+ // 日期區間（起～迄，含當天）
+ const fFrom=((document.getElementById('histFrom')||{}).value||'').trim(),fTo=((document.getElementById('histTo')||{}).value||'').trim();
+ if(fFrom) rows=rows.filter(r=>String(r.date||'').slice(0,10)>=fFrom);
+ if(fTo) rows=rows.filter(r=>String(r.date||'').slice(0,10)<=fTo);
 
 if(q){
    rows=rows.filter(r=>[
      r.date,r.orderNo,r.sourceOrderNo,r.productCode,r.name,r.customer,r.channel,r.orderDepartment,r.department
    ].some(v=>String(v||'').toLowerCase().includes(q)));
  }
+ // 統計：目前篩選條件下（含日期區間）的總數量、金額、依品項與接單部門的小計
+ try{renderOrderHistoryStats(rows,fFrom,fTo);}catch(e){console.warn('訂單統計失敗',e);}
  const maxRows=window.CMSRules?CMSRules.get('orderHistoryMaxRows'):200; // 最多顯示幾筆：見「計算規則」
  const count=document.getElementById('orderHistoryCount');
  if(count){
@@ -390,8 +396,25 @@ function refreshOrderFilterChannelOptions(){
  }
  fill('histFilterOrgDepartment',rows.map(r=>r.department),'全部部門');
 }
+function renderOrderHistoryStats(rows,fFrom,fTo){
+ const box=document.getElementById('orderHistoryStats');if(!box)return;
+ let qty=0,amt=0,noAmt=0,hasAmt=false;const byP={},byD={};
+ const fmt=n=>(Math.round(n*100)/100).toLocaleString('en-US');
+ rows.forEach(r=>{
+   const q=Number(r.qty)||0;qty+=q;
+   const a=r.amount==null||r.amount===''?null:Number(r.amount);
+   if(a!=null&&isFinite(a)){amt+=a;hasAmt=true;}else noAmt++;
+   const pk=String(r.productCode||'').trim()+'｜'+String(r.name||'').trim(),p=byP[pk]||(byP[pk]={q:0,a:0,n:0});p.q+=q;p.n++;if(a!=null&&isFinite(a))p.a+=a;
+   const dk=String(r.orderDepartment||'').trim()||'（空白）',d=byD[dk]||(byD[dk]={q:0,a:0,n:0});d.q+=q;d.n++;if(a!=null&&isFinite(a))d.a+=a;
+ });
+ const range=(fFrom||fTo)?((fFrom||'最早')+' ～ '+(fTo||'最新')):'全部日期';
+ const tbl=(title,map)=>{const keys=Object.keys(map).sort((x,y)=>map[y].q-map[x].q);return '<div style="flex:1;min-width:300px;max-height:320px;overflow:auto"><table class="sheet-table"><thead><tr><th>'+title+'</th><th>筆數</th><th>數量</th>'+(hasAmt?'<th>金額</th>':'')+'</tr></thead><tbody>'+keys.map(k=>'<tr><td>'+escHist(k)+'</td><td>'+map[k].n.toLocaleString()+'</td><td><b>'+fmt(map[k].q)+'</b></td>'+(hasAmt?'<td>'+fmt(map[k].a)+'</td>':'')+'</tr>').join('')+'</tbody></table></div>';};
+ box.innerHTML='<div style="margin:6px 0 10px;padding:10px 12px;background:#f3f6f1;border:1px solid #c9d6c0;border-radius:6px"><div style="font-weight:700;margin-bottom:6px">數量統計　<span class="small" style="font-weight:400">日期：'+escHist(range)+'（含其他篩選條件）</span></div>'+
+   '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px"><span>訂單明細 <b>'+rows.length.toLocaleString()+'</b> 筆</span><span>總數量 <b style="font-size:1.15em">'+fmt(qty)+'</b></span>'+(hasAmt?'<span>金額合計 <b>'+fmt(amt)+'</b>'+(noAmt?' <span class="small">（另有 '+noAmt.toLocaleString()+' 筆沒有金額）</span>':'')+'</span>':(rows.length?'<span class="small">（這些訂單沒有金額欄位）</span>':''))+'</div>'+
+   (rows.length?'<details><summary style="cursor:pointer">依品項、依接單部門看小計</summary><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">'+tbl('品號｜品名',byP)+tbl('接單部門',byD)+'</div></details>':'')+'</div>';
+}
 function clearOrderHistoryFilters(){
- ['histFilterDate','histFilterOrderNo','histFilterProduct','histFilterCustomer','orderHistorySearch'].forEach(id=>{
+ ['histFilterDate','histFilterOrderNo','histFilterProduct','histFilterCustomer','orderHistorySearch','histFrom','histTo'].forEach(id=>{
    const el=document.getElementById(id); if(el)el.value='';
  });
  const ch=document.getElementById('histFilterChannel'); if(ch)ch.value='';
