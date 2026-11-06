@@ -407,7 +407,7 @@
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', vals: Object.create(null) };
+  var qe = { view: '', note: '', from: '', to: '', vals: Object.create(null) };
 
   function qeTypeText(t) { return typeLabel(t); }
   var QE_BATCH = {
@@ -465,10 +465,57 @@
         '<button type="button" class="btn primary x-qe-submit" data-act="qe-submit">全部送出</button></div>' +
         '</div>';
     }
+    // 數量統計：查「哪一天到哪一天」的總數量（預設本月 1 日～今天）；輸入框只在整頁重畫時建立，之後只更新結果區
+    if (!dateOk(qe.from)) qe.from = d.slice(0, 8) + '01';
+    if (!dateOk(qe.to)) qe.to = d;
+    var rbtn = function (act, text) { return '<button type="button" class="btn gray" data-act="' + act + '" style="min-height:34px;padding:4px 10px">' + text + '</button>'; };
+    html += X.ui.card('數量統計（查哪一天到哪一天，' + cfg.short + '）',
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><b>日期區間</b>' +
+      '<input type="date" data-qe="from" aria-label="起" value="' + esc(qe.from) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
+      '<input type="date" data-qe="to" aria-label="迄" value="' + esc(qe.to) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
+      rbtn('rg-today', '今天') + rbtn('rg-7', '最近 7 天') + rbtn('rg-month', '本月') + '</div>' +
+      '<div data-box="qe-range-out"></div>');
     html += '<div data-box="qe-records"></div>';
     el.innerHTML = html;
     bindQuickEntry(el);
     refreshQuickEntry(el);
+  }
+
+  // 日期區間統計：不含已撤銷的紀錄；依類型的總數量、依包材的小計、每天的明細
+  function updateQeRange(el) {
+    var out = q$(el, '[data-box="qe-range-out"]');
+    if (!out) return;
+    var from = qe.from, to = qe.to;
+    if (!dateOk(from) || !dateOk(to)) { out.innerHTML = X.ui.banner('info', '請選好起、迄兩個日期。'); return; }
+    if (from > to) { out.innerHTML = X.ui.banner('warn', '「起」不能晚於「迄」。'); return; }
+    var tot = {}, byM = Object.create(null), byD = Object.create(null), n = 0;
+    TYPE_KEYS.forEach(function (k) { tot[k] = 0; });
+    list('movements').forEach(function (r) {
+      if (r.voided === true || TYPE_KEYS.indexOf(r.type) < 0) return;
+      var dt = String(r.date || '').slice(0, 10);
+      if (dt < from || dt > to) return;
+      var q = num(r.qty);
+      n++; tot[r.type] += q;
+      var m = byM[String(r.materialId)] || (byM[String(r.materialId)] = { id: r.materialId, t: {} }); m.t[r.type] = (m.t[r.type] || 0) + q;
+      var dd = byD[dt] || (byD[dt] = {}); dd[r.type] = (dd[r.type] || 0) + q;
+    });
+    var span = X.daysBetween(from, to) + 1;
+    var kp = X.ui.kpis(TYPE_KEYS.map(function (k) { return { label: TYPES[k].label + ' 總數量', value: fmt(tot[k], 2), tone: 'muted', sub: slashDate(from) + ' ～ ' + slashDate(to) }; }));
+    var order = {}; orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { order[String(m.id)] = i; });
+    var mrows = Object.keys(byM).map(function (k) { return byM[k]; }).sort(function (a, b) { return (order[String(a.id)] == null ? 9999 : order[String(a.id)]) - (order[String(b.id)] == null ? 9999 : order[String(b.id)]); });
+    var mcols = [{ label: '包材', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
+      return { label: TYPES[k].label, num: true, render: function (r) { return r.t[k] ? esc(fmt(r.t[k], 2)) : muted('—'); } };
+    }));
+    var dkeys = Object.keys(byD).sort().reverse();
+    var dcols = [{ label: '日期', render: function (k) { return esc(slashDate(k)); } }].concat(TYPE_KEYS.map(function (t) {
+      return { label: TYPES[t].label, num: true, render: function (k) { return byD[k][t] ? esc(fmt(byD[k][t], 2)) : muted('—'); } };
+    }));
+    var detailsOpen = out.querySelector('details') && out.querySelector('details').open;
+    out.innerHTML = kp +
+      '<p class="small" style="margin:6px 0 10px">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）。已撤銷的不算。</p>' +
+      (mrows.length ? X.ui.table(mcols, mrows, {}) +
+        '<details' + (detailsOpen ? ' open' : '') + ' style="margin:10px 0 0"><summary style="cursor:pointer;font-weight:700">每天的明細</summary>' + X.ui.table(dcols, dkeys, {}) + '</details>'
+        : X.ui.empty('這段期間沒有登記'));
   }
 
   function bindQuickEntry(el) {
@@ -478,6 +525,12 @@
       var act = a.dataset.act;
       if (act === 'qe-submit') submitQuick(el);
       else if (act === 'qe-clear') clearQuick(el, true);
+      else if (act === 'rg-today' || act === 'rg-7' || act === 'rg-month') {
+        var t0 = X.today();
+        qe.to = t0; qe.from = act === 'rg-today' ? t0 : (act === 'rg-7' ? shiftDate(t0, -6) : t0.slice(0, 8) + '01');
+        var fi = q$(el, '[data-qe="from"]'), ti = q$(el, '[data-qe="to"]'); if (fi) fi.value = qe.from; if (ti) ti.value = qe.to;
+        updateQeRange(el);
+      }
       else if (act === 'view-today') setQeView(el, X.today());
       else if (act === 'view-prev') setQeView(el, shiftDate(effDate(qe.view), -1));
       else if (act === 'view-next') setQeView(el, shiftDate(effDate(qe.view), 1));
@@ -495,6 +548,7 @@
       var t = e.target;
       if (!t || !t.dataset) return;
       if (t.dataset.qe === 'view') setQeView(el, t.value);
+      else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
       else if (t.dataset.mv) { keepQeCell(t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
     };
@@ -523,6 +577,7 @@
         TYPE_KEYS.filter(function (k) { return s[k] > 0; }).map(function (k) { return TYPES[k].label + ' ' + fmt(s[k], 2); }).join('、') : '';
     });
     renderQeRecords(el, all, vd, summarizeMovements(all, vd, orderedMaterials()));
+    updateQeRange(el);
     updateQeCount(el);
   }
 
