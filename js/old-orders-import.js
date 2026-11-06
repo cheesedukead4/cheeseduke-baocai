@@ -130,7 +130,7 @@
   // ---------- 用交易明細匯入檔「取代」過去訂單 ----------
   // 匯入檔（格式 cms-orders-v1，內容是 orders 陣列：id、date、orderNo、productCode、name、qty、amount、channel、orderDepartment、department…）
   // 選檔後先顯示筆數、日期範圍、金額合計，確認後：① 先下載一份現有過去訂單的備份 ② 刪除全部現有過去訂單 ③ 換成匯入檔的訂單。只有管理員能做。
-  var txPending = null;
+  var txPending = null, txFresh = [];
   function txMsg(t, ok) { var m = document.getElementById('txMsg'); if (!m) return; m.textContent = t; m.style.color = ok === false ? 'var(--bad)' : ok ? 'var(--ok)' : ''; }
   function txFmt(n) { return Number(n).toLocaleString('en-US'); }
   function mountReplacePanel() {
@@ -140,7 +140,7 @@
     panel.className = 'panel';
     panel.id = 'txReplacePanel';
     panel.innerHTML = '<h2>用交易明細匯入檔取代過去訂單</h2>' +
-      '<p class="small">把交易明細表整理成的匯入檔（.json，含金額）換進來：<b>先下載一份現有過去訂單的備份，再刪除全部現有過去訂單，最後匯入檔裡的訂單</b>，並同步給所有同事。選檔後會先顯示筆數、日期範圍和金額合計，確認才會動資料。只有管理員能用。</p>' +
+      '<p class="small">把交易明細表整理成的匯入檔（.json，含金額）放進來，有兩種方式：<b>取代全部</b>（先下載一份現有過去訂單的備份，再刪除全部現有，最後匯入檔裡的訂單）、<b>只補進去</b>（不刪除現有，只加入還沒有的訂單，重複的略過），並同步給所有同事。選檔後會先顯示筆數、日期範圍和金額合計，按了才會動資料。只有管理員能用。</p>' +
       '<div class="toolbar"><label class="btn primary">選擇匯入檔（.json）<input id="txFile" type="file" accept=".json,application/json" hidden></label></div>' +
       '<div id="txMsg" class="small" aria-live="polite"></div><div id="txPreview"></div>';
     page.appendChild(panel);
@@ -169,15 +169,26 @@
       });
       if (bad || dup) { txMsg('匯入檔有 ' + bad + ' 筆資料不完整、' + dup + ' 筆 id 重複，沒有動任何資料。請重新產生匯入檔。', false); return; }
       var cur = Array.isArray(db.orderHistory) ? db.orderHistory.length : 0;
+      // 「只補進去」：和現有訂單比對（日期、單號、品號、數量、金額、接單部門都一樣算已存在，同樣的明細有幾筆就抵幾筆），只加入不存在的
+      var keyOf = function (o) { return [o.date, o.orderNo, o.productCode, Number(o.qty), o.amount == null ? '' : Number(o.amount), o.orderDepartment || ''].join('|'); };
+      var left = Object.create(null);
+      (Array.isArray(db.orderHistory) ? db.orderHistory : []).forEach(function (r) { if (!r) return; var k = keyOf(r); left[k] = (left[k] || 0) + 1; });
+      var fresh = [], dupN = 0;
+      pkg.orders.forEach(function (o) { var k = keyOf(o); if (left[k] > 0) { left[k]--; dupN++; } else fresh.push(o); });
+      txFresh = fresh;
       txPending = pkg;
       txMsg('');
       document.getElementById('txPreview').innerHTML = '<div class="x-banner x-warn" style="margin:8px 0">' +
         '匯入檔：<b>' + txFmt(pkg.orders.length) + '</b> 筆訂單明細，日期 ' + lo + '～' + hi + '，金額合計 <b>' + txFmt(Math.round(amt)) + '</b>。<br>' +
         '各月筆數：' + Object.keys(byMonth).sort().map(function (m) { return m + '：' + txFmt(byMonth[m]); }).join('、') + '。<br>' +
-        '目前系統裡有 <b>' + txFmt(cur) + '</b> 筆過去訂單，<b>確認後會全部刪除</b>（刪除前會先下載備份），換成上面這 ' + txFmt(pkg.orders.length) + ' 筆。' +
-        '</div><div class="toolbar"><button type="button" class="btn red" id="txGo">確認：備份後刪除全部，改匯入這份</button> <button type="button" class="btn gray" id="txCancel">取消</button></div>';
+        '目前系統裡有 <b>' + txFmt(cur) + '</b> 筆過去訂單。<br>' +
+        '<b>選項一「取代全部」</b>：先下載備份，<b>全部刪除</b>，換成上面這 ' + txFmt(pkg.orders.length) + ' 筆。<br>' +
+        '<b>選項二「只補進去」</b>：<b>不刪除現有</b>，只加入系統裡還沒有的 <b>' + txFmt(fresh.length) + '</b> 筆（已經有的 ' + txFmt(dupN) + ' 筆略過）。' +
+        '</div><div class="toolbar">' + (fresh.length ? '<button type="button" class="btn primary" id="txAppend">只補進去（新增 ' + txFmt(fresh.length) + ' 筆，不刪除現有）</button> ' : '<span class="small">這份的訂單系統裡都已經有了，沒有需要補的。</span> ') +
+        '<button type="button" class="btn red" id="txGo">取代全部：備份後刪除現有，改匯入這份</button> <button type="button" class="btn gray" id="txCancel">取消</button></div>';
       document.getElementById('txCancel').onclick = function () { txPending = null; document.getElementById('txPreview').innerHTML = ''; txMsg('已取消，沒有動任何資料'); };
       document.getElementById('txGo').onclick = doTxReplace;
+      if (document.getElementById('txAppend')) document.getElementById('txAppend').onclick = doTxAppend;
     };
     reader.readAsText(f, 'utf-8');
   }
@@ -187,6 +198,25 @@
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  // 只補進去：不刪除任何現有訂單；新加入的訂單用新的 id（避免和現有的撞號）
+  function doTxAppend() {
+    var add = txFresh;
+    if (!add || !add.length) return;
+    if (!(typeof root.adminIsLoggedIn === 'function' && root.adminIsLoggedIn())) { txMsg('只有管理員能匯入過去訂單', false); return; }
+    var cur = Array.isArray(db.orderHistory) ? db.orderHistory : (db.orderHistory = []);
+    if (!confirm('要把 ' + txFmt(add.length) + ' 筆訂單補進過去訂單嗎？\n（不會刪除現有的 ' + txFmt(cur.length) + ' 筆，已經有的不會重複加入，並會同步給所有同事）')) return;
+    var used = Object.create(null); cur.forEach(function (r) { if (r && r.id != null) used[String(r.id)] = true; });
+    var stamp = Date.now().toString(36), n = 0, added = [];
+    add.forEach(function (o) { var id; do { n++; id = 'TXA' + stamp + '-' + n; } while (used[id]); used[id] = true; var c = Object.assign({}, o); c.id = id; added.push(c); });
+    added.forEach(function (c) { cur.push(c); });
+    try { persist(); } catch (e) { cur.splice(cur.length - added.length, added.length); txMsg('儲存失敗，已還原：' + e.message, false); return; }
+    try { if (typeof refreshOrderYearOptions === 'function') refreshOrderYearOptions(); } catch (e) {}
+    try { if (typeof refreshOrderFilterChannelOptions === 'function') refreshOrderFilterChannelOptions(); } catch (e) {}
+    txPending = null; txFresh = [];
+    document.getElementById('txPreview').innerHTML = '';
+    txMsg('完成：補進 ' + txFmt(added.length) + ' 筆，目前共有 ' + txFmt(cur.length) + ' 筆過去訂單。請等右上角變成「已同步」再關閉。', true);
+    if (root.cmsToast) root.cmsToast('已補進過去訂單：' + txFmt(added.length) + ' 筆');
   }
   function doTxReplace() {
     var pkg = txPending;
