@@ -469,7 +469,8 @@
     if (!dateOk(qe.from)) qe.from = d.slice(0, 8) + '01';
     if (!dateOk(qe.to)) qe.to = d;
     var rbtn = function (act, text) { return '<button type="button" class="btn gray" data-act="' + act + '" style="min-height:34px;padding:4px 10px">' + text + '</button>'; };
-    html += X.ui.card('數量統計（查哪一天到哪一天，' + cfg.short + '）',
+    html += X.ui.card('數量統計（' + cfg.short + '）',
+      '<div data-box="qe-range-top"></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><b>日期區間</b>' +
       '<input type="date" data-qe="from" aria-label="起" value="' + esc(qe.from) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
       '<input type="date" data-qe="to" aria-label="迄" value="' + esc(qe.to) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
@@ -481,41 +482,68 @@
     refreshQuickEntry(el);
   }
 
-  // 日期區間統計：不含已撤銷的紀錄；依類型的總數量、依包材的小計、每天的明細
+  // 數量統計：上面是固定的合計（不受日期影響：今年預估需要、累計登記量），下面選日期區間逐日看每天做了多少；都不含已撤銷的紀錄
   function updateQeRange(el) {
-    var out = q$(el, '[data-box="qe-range-out"]');
-    if (!out) return;
+    var top = q$(el, '[data-box="qe-range-top"]'), out = q$(el, '[data-box="qe-range-out"]');
+    if (!top || !out) return;
+    var order = {}; orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { order[String(m.id)] = i; });
+    var ord = function (a, b) { return (order[String(a.id)] == null ? 9999 : order[String(a.id)]) - (order[String(b.id)] == null ? 9999 : order[String(b.id)]); };
+    var recs = list('movements').filter(function (r) { return r.voided !== true && TYPE_KEYS.indexOf(r.type) >= 0; });
+    // ---- 上：固定合計（全部登記累計；折盒頁另加「今年預估需要」）----
+    var cum = {}, cumM = Object.create(null);
+    TYPE_KEYS.forEach(function (k) { cum[k] = 0; });
+    recs.forEach(function (r) {
+      var q = num(r.qty); cum[r.type] += q;
+      var m = cumM[String(r.materialId)] || (cumM[String(r.materialId)] = { id: r.materialId, t: {} }); m.t[r.type] = (m.t[r.type] || 0) + q;
+    });
+    var withNeed = TYPE_KEYS.indexOf('fold') >= 0 && !!window.CMSStock, needBy = Object.create(null), giftBoxes = 0;
+    if (withNeed) {
+      // 今年（目前檔期）預估所需要的盒子數量：業績預估每個禮盒所有日期、所有部門的預估盒數（和首頁「銷售預估」同一個數字）× 配方裡每個包材的用量
+      var isSingleP = function (p) { return String((p && p.category) || '').trim() === '單條'; };
+      X.products().forEach(function (p) { if (p && !isSingleP(p)) giftBoxes += num(CMSStock.giftForecast(p.id)); });
+      ((X.db() && X.db().recipes) || []).forEach(function (r) {
+        var p = r && X.productById(r.productId);
+        if (!p || isSingleP(p)) return;
+        var f = num(CMSStock.giftForecast(p.id));
+        if (f > 0) needBy[String(r.materialId)] = (needBy[String(r.materialId)] || 0) + f * num(r.qty);
+      });
+    }
+    var kpiItems = (withNeed ? [{ label: '今年預估禮盒總盒數', value: fmt(giftBoxes, 2), tone: 'info', sub: '業績預估所有品項、所有日期' }] : [])
+      .concat(TYPE_KEYS.map(function (k) { return { label: '累計' + TYPES[k].label, value: fmt(cum[k], 2), tone: 'muted', sub: '所有登記合計（不含撤銷）' }; }));
+    var ids = {}; Object.keys(cumM).forEach(function (k) { ids[k] = true; }); Object.keys(needBy).forEach(function (k) { ids[k] = true; });
+    var trows = Object.keys(ids).map(function (k) { return { id: k, need: needBy[k] || 0, t: cumM[k] ? cumM[k].t : {} }; }).sort(ord);
+    var tcols = [{ label: '包材', render: function (r) { return wrapText(X.materialLabel(r.id)); } }];
+    if (withNeed) tcols.push({ label: '今年預估需要', num: true, render: function (r) { return r.need ? '<b>' + esc(fmt(r.need, 2)) + '</b>' : muted('—'); } });
+    TYPE_KEYS.forEach(function (k) { tcols.push({ label: '累計' + TYPES[k].label, num: true, render: function (r) { return r.t[k] ? esc(fmt(r.t[k], 2)) : muted('—'); } }); });
+    if (withNeed) {
+      tcols.push({ label: '還差（預估需要 － 累計折盒）', num: true, render: function (r) { if (!r.need) return muted('—'); var left = r.need - (r.t.fold || 0); return left > 0 ? '<b style="color:var(--bad)">' + esc(fmt(left, 2)) + '</b>' : X.ui.tag('已折夠', 'ok'); } });
+      tcols.push({ label: '完成率', num: true, render: function (r) { return r.need ? esc(fmt((r.t.fold || 0) / r.need * 100, 1)) + '%' : muted('—'); } });
+    }
+    top.innerHTML = X.ui.kpis(kpiItems) + X.ui.table(tcols, trows, { empty: '還沒有登記，也沒有預估需要的包材。' }) +
+      '<p class="small" style="margin:6px 0 12px">這一區是固定的合計，不受下面的日期區間影響。' + (withNeed ? '今年預估需要＝業績預估裡每個禮盒所有日期、所有部門的預估盒數 × 配方裡這個包材的用量，全部禮盒加總（目前檔期，和首頁「銷售預估」同一個數字）；累計是所有登記合計。' : '累計是所有登記合計。') + '已撤銷的不算。</p>';
+    // ---- 下：日期區間，逐日看 ----
     var from = qe.from, to = qe.to;
     if (!dateOk(from) || !dateOk(to)) { out.innerHTML = X.ui.banner('info', '請選好起、迄兩個日期。'); return; }
     if (from > to) { out.innerHTML = X.ui.banner('warn', '「起」不能晚於「迄」。'); return; }
-    var tot = {}, byM = Object.create(null), byD = Object.create(null), n = 0;
+    var tot = {}, byD = Object.create(null), n = 0;
     TYPE_KEYS.forEach(function (k) { tot[k] = 0; });
-    list('movements').forEach(function (r) {
-      if (r.voided === true || TYPE_KEYS.indexOf(r.type) < 0) return;
+    recs.forEach(function (r) {
       var dt = String(r.date || '').slice(0, 10);
       if (dt < from || dt > to) return;
-      var q = num(r.qty);
-      n++; tot[r.type] += q;
-      var m = byM[String(r.materialId)] || (byM[String(r.materialId)] = { id: r.materialId, t: {} }); m.t[r.type] = (m.t[r.type] || 0) + q;
-      var dd = byD[dt] || (byD[dt] = {}); dd[r.type] = (dd[r.type] || 0) + q;
+      var q = num(r.qty); n++; tot[r.type] += q;
+      var dd = byD[dt] || (byD[dt] = { t: {}, m: Object.create(null) }); dd.t[r.type] = (dd.t[r.type] || 0) + q;
+      var mm = dd.m[String(r.materialId)] || (dd.m[String(r.materialId)] = { id: r.materialId, t: {} }); mm.t[r.type] = (mm.t[r.type] || 0) + q;
     });
-    var span = X.daysBetween(from, to) + 1;
-    var kp = X.ui.kpis(TYPE_KEYS.map(function (k) { return { label: TYPES[k].label + ' 總數量', value: fmt(tot[k], 2), tone: 'muted', sub: slashDate(from) + ' ～ ' + slashDate(to) }; }));
-    var order = {}; orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { order[String(m.id)] = i; });
-    var mrows = Object.keys(byM).map(function (k) { return byM[k]; }).sort(function (a, b) { return (order[String(a.id)] == null ? 9999 : order[String(a.id)]) - (order[String(b.id)] == null ? 9999 : order[String(b.id)]); });
-    var mcols = [{ label: '包材', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
-      return { label: TYPES[k].label, num: true, render: function (r) { return r.t[k] ? esc(fmt(r.t[k], 2)) : muted('—'); } };
-    }));
-    var dkeys = Object.keys(byD).sort().reverse();
-    var dcols = [{ label: '日期', render: function (k) { return esc(slashDate(k)); } }].concat(TYPE_KEYS.map(function (t) {
-      return { label: TYPES[t].label, num: true, render: function (k) { return byD[k][t] ? esc(fmt(byD[k][t], 2)) : muted('—'); } };
-    }));
-    var detailsOpen = out.querySelector('details') && out.querySelector('details').open;
-    out.innerHTML = kp +
-      '<p class="small" style="margin:6px 0 10px">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）。已撤銷的不算。</p>' +
-      (mrows.length ? X.ui.table(mcols, mrows, {}) +
-        '<details' + (detailsOpen ? ' open' : '') + ' style="margin:10px 0 0"><summary style="cursor:pointer;font-weight:700">每天的明細</summary>' + X.ui.table(dcols, dkeys, {}) + '</details>'
-        : X.ui.empty('這段期間沒有登記'));
+    var dkeys = Object.keys(byD).sort().reverse(), span = X.daysBetween(from, to) + 1;
+    var dcols = [{ label: '日期', render: function (k) { return esc(slashDate(k)); } }]
+      .concat(TYPE_KEYS.map(function (t) { return { label: TYPES[t].label, num: true, render: function (k) { return byD[k].t[t] ? esc(fmt(byD[k].t[t], 2)) : muted('—'); } }; }))
+      .concat([{ label: '各包材（這一天做了多少）', render: function (k) {
+        var ms = Object.keys(byD[k].m).map(function (x) { return byD[k].m[x]; }).sort(ord);
+        return '<span style="white-space:normal">' + ms.map(function (m) { return esc(nameOfMaterial(m.id)) + ' ' + TYPE_KEYS.filter(function (t) { return m.t[t]; }).map(function (t) { return esc(TYPES[t].label) + ' <b>' + esc(fmt(m.t[t], 2)) + '</b>'; }).join('、'); }).join('；') + '</span>';
+      } }]);
+    out.innerHTML = '<p style="margin:0 0 6px"><b>每一天做了多少</b>　<span class="small">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）</span></p>' +
+      '<p style="margin:0 0 8px">區間合計：' + TYPE_KEYS.map(function (k) { return esc(TYPES[k].label) + ' <b style="font-size:1.1em">' + esc(fmt(tot[k], 2)) + '</b>'; }).join('　') + '</p>' +
+      (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
   }
 
   function bindQuickEntry(el) {
