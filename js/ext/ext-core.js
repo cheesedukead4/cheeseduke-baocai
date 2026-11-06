@@ -57,7 +57,7 @@
       label: '包材快速異動', type: 'array',
       fields: {
         id: '唯一代號', at: '輸入時間（毫秒）', by: '輸入者', date: '作業日期 YYYY-MM-DD', materialId: '包材 id',
-        type: "'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG｜'inNg' 進貨NG（廠商送來就不良，從未折盒扣掉）", qty: '數量（正數）', note: '備註', voided: '是否已撤銷 true/false',
+        type: "'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG｜'inNg' 進貨NG（廠商送來就不良，從未折盒扣掉）", qty: '數量（正數）', note: '備註', dept: '折盒部門名稱（折盒頁登記時選的，選填）', voided: '是否已撤銷 true/false',
         batchId: '同一次送出的批次代號（同一批共用）', editedAt: '最後修改時間（毫秒；當天可修改數量與備註，超過當天鎖定）', editedBy: '修改的人'
       }
     },
@@ -131,6 +131,10 @@
         code: '品號', name: '品名', week: '第幾週（1～5）', start: '當時這一週的區間起 YYYY-MM-DD（到貨日期由它推算）', range: '當時的週區間文字', loc: '部門（dongqiao／a11／jingzhan／web／channel／pr／ceo）',
         fromQty: '修改前預估量', toQty: '修改後預估量', fromDate: '鎖定日期（修改前）', toDate: '鎖定日期（修改後）', reason: '異動原因'
       }
+    },
+    foldDepts: {
+      label: '折盒部門清單', type: 'array',
+      fields: { id: '唯一代號', name: '部門名稱（折盒頁的「折盒部門」選單；movements 的 dept 欄存部門名稱）' }
     },
     materialLinks: {
       label: '連動規則', type: 'array',
