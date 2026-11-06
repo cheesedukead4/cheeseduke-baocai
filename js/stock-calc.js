@@ -2,7 +2,7 @@
  * 庫存與禮盒數量的算法（2026-10-14 起）
  * ---------------------------------------------------------------
  * 包材庫存＝「初始庫存＋快速輸入」（首頁的每日折盒統計已取消；2026-10-15 起「裝盒回報」頁也取消，不再算進庫存）：
- *   未折盒＝初始庫存（未折盒）＋快速輸入（進貨）－快速輸入（折盒）－快速輸入（折盒NG）
+ *   未折盒＝初始庫存（未折盒）＋快速輸入（進貨）－快速輸入（進貨NG）－快速輸入（折盒）－快速輸入（折盒NG）
  *   已折盒＝初始庫存（已折盒）＋快速輸入（折盒）－快速輸入（使用）－快速輸入（使用NG）
  *   總庫存＝未折盒＋已折盒
  * 已撤銷的快速輸入不算。以前的裝盒回報紀錄（packRecords）保留在資料裡，但不再扣庫存。
@@ -49,7 +49,7 @@
   // 包材目前庫存：{ total, unfolded, folded, parts }（parts 是各來源的合計，給說明與檢查用）
   function material(mid) {
     var d = getDb();
-    var parts = { initUnfolded: 0, initFolded: 0, legacyUnfolded: 0, legacyFolded: 0, in: 0, fold: 0, foldNg: 0, use: 0, useNg: 0 };
+    var parts = { initUnfolded: 0, initFolded: 0, legacyUnfolded: 0, legacyFolded: 0, in: 0, inNg: 0, fold: 0, foldNg: 0, use: 0, useNg: 0 };
     if (!d) return { total: 0, unfolded: 0, folded: 0, parts: parts };
     var init = initialOf(d, mid);
     parts.initUnfolded = num(init.unfolded);
@@ -62,7 +62,7 @@
       var q = Math.max(0, num(m.qty));
       if (m.type in parts) parts[m.type] = round2(parts[m.type] + q);
     });
-    var unfolded = round2(parts.initUnfolded + parts.legacyUnfolded + parts.in - parts.fold - parts.foldNg);
+    var unfolded = round2(parts.initUnfolded + parts.legacyUnfolded + parts.in - parts.inNg - parts.fold - parts.foldNg);
     var folded = round2(parts.initFolded + parts.legacyFolded + parts.fold - parts.use - parts.useNg);
     return { total: round2(unfolded + folded), unfolded: unfolded, folded: folded, parts: parts };
   }

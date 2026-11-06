@@ -29,11 +29,13 @@
     fold: { label: '折盒', tone: 'info' },
     use: { label: '使用', tone: 'warn' },
     foldNg: { label: '折盒NG', tone: 'bad' },
+    inNg: { label: '進貨NG', tone: 'bad' },
     useNg: { label: '使用NG', tone: 'bad' }
   };
   // 可以輸入的類型（2026-10-15 起「使用」恢復：裝盒回報取消，用掉的已折盒在這裡登記）
-  var TYPE_KEYS = ['in', 'fold', 'use', 'foldNg', 'useNg'];
-  var TYPE_HINTS = { in: '廠商送來的未折盒', fold: '未折盒折好', use: '裝盒用掉已折盒', foldNg: '折壞', useNg: '裝壞' };
+  var TYPE_KEYS = ['in', 'fold', 'use', 'foldNg', 'useNg', 'inNg'];
+  var ALL_TYPE_KEYS = TYPE_KEYS.slice(); // 連動規則等需要完整類型清單的地方用（makeQuick 裡的 TYPE_KEYS 只有該頁面的類型）
+  var TYPE_HINTS = { in: '廠商送來的未折盒', fold: '折合完成', use: '裝盒用掉已折盒', foldNg: '折壞', useNg: '裝壞', inNg: '廠商送來就不良（從進貨數量扣掉）' };
 
   // =====================================================================
   // 純計算（不碰畫面，可單獨測試）
@@ -61,7 +63,7 @@
   function typeLabel(k) { return TYPES[k] ? TYPES[k].label : (k || '未知'); }
 
   // 一筆異動對庫存的影響（與 js/stock-calc.js 同一套）：
-  // 進貨＋未折；折盒 未折→已折；使用－已折；折盒NG－未折；使用NG－已折
+  // 進貨＋未折；進貨NG－未折；折盒 未折→已折；使用－已折；折盒NG－未折；使用NG－已折
   function movementEffect(type, qty) {
     var q = Math.max(0, round2(qty));
     switch (type) {
@@ -69,6 +71,7 @@
       case 'fold': return { unfolded: -q, folded: q };
       case 'use': return { unfolded: 0, folded: -q };
       case 'foldNg': return { unfolded: -q, folded: 0 };
+      case 'inNg': return { unfolded: -q, folded: 0 };
       case 'useNg': return { unfolded: 0, folded: -q };
       default: return { unfolded: 0, folded: 0 };
     }
@@ -88,7 +91,7 @@
       var q = round2(m.qty);
       if (!(q > 0)) return;
       var k = String(m.materialId), r = map[k];
-      if (!r) { r = map[k] = { materialId: m.materialId, in: 0, fold: 0, use: 0, foldNg: 0, useNg: 0, unfolded: 0, folded: 0, count: 0 }; keys.push(k); }
+      if (!r) { r = map[k] = { materialId: m.materialId, in: 0, inNg: 0, fold: 0, use: 0, foldNg: 0, useNg: 0, unfolded: 0, folded: 0, count: 0 }; keys.push(k); }
       var e = movementEffect(m.type, q);
       r[m.type] = round2(r[m.type] + q);
       r.unfolded = round2(r.unfolded + e.unfolded);
@@ -613,7 +616,7 @@
   function linkDialog(el, rec) {
     var mats = X.materials().filter(function (m) { return m && (m.status !== 'archived' || (rec && (sameId(rec.fromMaterialId, m.id) || sameId(rec.toMaterialId, m.id)))); });
     var mopts = [{ value: '', label: '（選擇包材）' }].concat(mats.map(function (m) { return { value: m.id, label: (m.code ? m.code + ' ' : '') + (m.name || X.materialLabel(m)) }; }));
-    var topts = TYPE_KEYS.map(function (k) { return { value: k, label: TYPES[k].label }; });
+    var topts = ALL_TYPE_KEYS.map(function (k) { return { value: k, label: TYPES[k].label }; });
     X.ui.dialog(rec ? '編輯連動規則' : '新增連動規則', [
       { name: 'fromMaterialId', label: '來源包材（做了這個）', type: 'select', options: mopts, value: rec ? rec.fromMaterialId : '', required: true },
       { name: 'fromType', label: '來源類型', type: 'select', options: topts, value: rec ? rec.fromType : 'fold' },
@@ -903,8 +906,8 @@
     return renderQuickEntry;
   }
   var renderQuickFold = makeQuick({
-    types: ['fold', 'foldNg'], short: '折盒', title: '步驟一：折盒（物管）',
-    intro: '步驟一（物管使用）：登記今天折盒（未折盒折好）和折盒NG（折壞）。每種包材有「折盒、折盒NG」兩格，有做的才填數量，沒做的留白，填完按最下面的「全部送出」。進貨、使用、使用NG 在「進貨與使用」。只能登記今天；今天的紀錄可以修改，超過當天就鎖定。'
+    types: ['fold', 'foldNg', 'inNg'], short: '折盒', title: '步驟一：折盒（物管）',
+    intro: '步驟一（物管使用）：登記今天折盒（折合完成）、折盒NG（折壞）和進貨NG（廠商送來就不良）。每種包材有「折盒、折盒NG、進貨NG」三格，有做的才填數量，沒做的留白，填完按最下面的「全部送出」。進貨、使用、使用NG 在「進貨與使用」。只能登記今天；今天的紀錄可以修改，超過當天就鎖定。'
   });
   var renderQuickStock = makeQuick({
     types: ['in', 'use', 'useNg'], short: '進貨與使用', title: '步驟二：進貨與使用（倉管）',
