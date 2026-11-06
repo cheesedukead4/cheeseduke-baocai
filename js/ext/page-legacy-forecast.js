@@ -129,7 +129,30 @@
       { label: '修改人', render: function (e) { return esc(e.by || ''); } }
     ];
     box.innerHTML = X.ui.card('業績異動歷程', X.ui.table(cols, l.slice(0, 100), { empty: '還沒有異動。鎖定後修改預估量，每次都會記在這裡。' }) +
-      '<p class="small" style="margin:10px 0 0">只增不改，修改人與時間用當下登入的帳號' + (l.length > 100 ? '；只列最新 100 筆' : '') + '。</p>');
+      '<p class="small" style="margin:10px 0 0">只增不改，修改人與時間用當下登入的帳號' + (l.length > 100 ? '；只列最新 100 筆' : '') + '。</p>',
+      (typeof adminIsLoggedIn === 'function' && adminIsLoggedIn() && l.length) ? '<button type="button" class="btn red" data-sf-clearlog style="min-height:34px">清除異動紀錄</button>' : '');
+    box.onclick = function (e) { if (e.target.closest && e.target.closest('[data-sf-clearlog]')) window.sfClearChangeLog(); };
+  };
+
+  // 清除目前檔期的業績異動紀錄（只有管理員；清除前先下載一份備份；清除後不能復原。預估量本身不會變回去，鎖定日期也不變）
+  window.sfClearChangeLog = function () {
+    if (!(typeof adminIsLoggedIn === 'function' && adminIsLoggedIn())) { X.toast('只有管理員能清除異動紀錄'); return; }
+    var sid = seasonKey(), all = X.ensure('forecastChanges'), mine = all.filter(function (e) { return e && (!e.seasonId || e.seasonId === sid); });
+    if (!mine.length) { X.toast('沒有異動紀錄可以清除'); return; }
+    if (!confirm('要清除目前檔期的 ' + mine.length + ' 筆業績異動紀錄嗎？' + String.fromCharCode(10) + String.fromCharCode(10) + '・清除前會先下載一份備份（請留著）。' + String.fromCharCode(10) + '・清除後不能復原；「採購叫貨」頁的業績異動表也會跟著清空。' + String.fromCharCode(10) + '・預估量不會變回去，鎖定日期也不變。')) return;
+    try {
+      var blob = new Blob([JSON.stringify({ forecastChanges: mine, exportedAt: new Date().toISOString(), note: '清除前的業績異動紀錄備份' })], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = '業績異動紀錄_清除前備份_' + X.today() + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    } catch (e) { X.toast('備份下載失敗，沒有清除：' + e.message); return; }
+    var keep = all.filter(function (e) { return mine.indexOf(e) < 0; });
+    all.splice(0, all.length);
+    keep.forEach(function (e) { all.push(e); });
+    X.save();
+    X.toast('已清除 ' + mine.length + ' 筆業績異動紀錄');
+    if (typeof window.renderSfChangeLog === 'function') window.renderSfChangeLog();
   };
 
   function legacyPanel() { return document.querySelector('[data-home-panel="salesForecast"]'); }
