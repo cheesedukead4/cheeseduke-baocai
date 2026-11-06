@@ -448,7 +448,7 @@
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', dept: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
+  var qe = { view: '', note: '', dept: '', ngFrom: '', ngTo: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
   try { if (cfg.dept) qe.dept = localStorage.getItem('cms_fold_dept') || ''; } catch (e) {}
 
   function qeTypeText(t) { return typeLabel(t); }
@@ -561,6 +561,17 @@
       '<input type="date" data-qe="to" aria-label="迄" value="' + esc(qe.to) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
       rbtn('rg-today', '今天') + rbtn('rg-7', '最近 7 天') + rbtn('rg-month', '本月') + '</div>' +
       '<div data-box="qe-range-out"></div>');
+    if (cfg.dept) {
+      if (!dateOk(qe.ngFrom)) qe.ngFrom = d.slice(0, 8) + '01';
+      if (!dateOk(qe.ngTo)) qe.ngTo = d;
+      var nbtn = function (act, text) { return '<button type="button" class="btn gray" data-act="' + act + '" style="min-height:34px;padding:4px 10px">' + text + '</button>'; };
+      html += X.ui.card('NG 統計（折盒NG、進貨NG）',
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><b>日期區間</b>' +
+        '<input type="date" data-qe="ngfrom" aria-label="起" value="' + esc(qe.ngFrom) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
+        '<input type="date" data-qe="ngto" aria-label="迄" value="' + esc(qe.ngTo) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
+        nbtn('ng-today', '今天') + nbtn('ng-7', '最近 7 天') + nbtn('ng-month', '本月') + '</div>' +
+        '<div data-box="qe-ng-out"></div>');
+    }
     html += '<div data-box="qe-records"></div><div data-box="qe-links"></div>';
     el.innerHTML = html;
     bindQuickEntry(el);
@@ -656,6 +667,81 @@
       (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
   }
 
+  // NG 統計（折盒頁）：選日期區間，看折盒NG、進貨NG 的數量，依折盒部門、依包材品項、逐日；不含已撤銷的紀錄
+  // 折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記）
+  function updateNg(el) {
+    var out = q$(el, '[data-box="qe-ng-out"]');
+    if (!out) return;
+    var from = qe.ngFrom, to = qe.ngTo;
+    if (!dateOk(from) || !dateOk(to)) { out.innerHTML = X.ui.banner('info', '請選好起、迄兩個日期。'); return; }
+    if (from > to) { out.innerHTML = X.ui.banner('warn', '「起」不能晚於「迄」。'); return; }
+    var order = {}; orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { order[String(m.id)] = i; });
+    var ord = function (a, b) { return (order[String(a.id)] == null ? 9999 : order[String(a.id)]) - (order[String(b.id)] == null ? 9999 : order[String(b.id)]); };
+    var tot = { fold: 0, foldNg: 0, inNg: 0, in: 0 }, byDept = Object.create(null), byMat = Object.create(null), byDay = Object.create(null);
+    list('movements').forEach(function (r) {
+      if (r.voided === true || !(r.type in tot)) return;
+      var dt = String(r.date || '').slice(0, 10);
+      if (dt < from || dt > to) return;
+      var q = num(r.qty);
+      tot[r.type] += q;
+      var m = byMat[String(r.materialId)] || (byMat[String(r.materialId)] = { id: r.materialId, t: { fold: 0, foldNg: 0, inNg: 0, in: 0 } }); m.t[r.type] += q;
+      if (r.type === 'in') return; // 進貨沒有折盒部門
+      var dk = String(r.dept || '').trim() || '（未填）';
+      var d = byDept[dk] || (byDept[dk] = { name: dk, t: { fold: 0, foldNg: 0, inNg: 0 }, days: {} }); d.t[r.type] += q;
+      if (r.type !== 'fold') {
+        var dd = byDay[dt] || (byDay[dt] = { foldNg: 0, inNg: 0, depts: {} }); dd[r.type] += q;
+        dd.depts[dk] = dd.depts[dk] || { foldNg: 0, inNg: 0 }; dd.depts[dk][r.type] += q;
+      }
+    });
+    var pct = function (a, b) { return b > 0 ? esc(fmt(a / b * 100, 1)) + '%' : muted('—'); };
+    var n = function (v, bold) { return v ? (bold ? '<b>' + esc(fmt(v, 2)) + '</b>' : esc(fmt(v, 2))) : muted('—'); };
+    var ngAll = tot.foldNg + tot.inNg;
+    var kp = X.ui.kpis([
+      { label: '折盒NG 合計', value: fmt(tot.foldNg, 2), tone: tot.foldNg ? 'bad' : 'muted', sub: '折盒NG率 ' + (tot.fold + tot.foldNg > 0 ? fmt(tot.foldNg / (tot.fold + tot.foldNg) * 100, 1) + '%' : '—') + '（折盒 ' + fmt(tot.fold, 2) + '）' },
+      { label: '進貨NG 合計', value: fmt(tot.inNg, 2), tone: tot.inNg ? 'bad' : 'muted', sub: '進貨NG率 ' + (tot.in > 0 ? fmt(tot.inNg / tot.in * 100, 1) + '%' : '—') + '（進貨 ' + fmt(tot.in, 2) + '）' },
+      { label: 'NG 總數量', value: fmt(ngAll, 2), tone: ngAll ? 'bad' : 'muted', sub: slashDate(from) + ' ～ ' + slashDate(to) }
+    ]);
+    // 依折盒部門
+    var drows = Object.keys(byDept).map(function (k) { return byDept[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : (b.t.foldNg + b.t.inNg) - (a.t.foldNg + a.t.inNg)); });
+    var dcols = [
+      { label: '折盒部門', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(r.name); } },
+      { label: '折盒', num: true, render: function (r) { return n(r.t.fold, r.total); } },
+      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg, r.total); } },
+      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg, r.total); } },
+      { label: 'NG 合計', num: true, render: function (r) { return n(r.t.foldNg + r.t.inNg, true); } },
+      { label: '折盒NG率', num: true, render: function (r) { return pct(r.t.foldNg, r.t.fold + r.t.foldNg); } }
+    ];
+    var dtable = drows.length ? X.ui.table(dcols, drows.concat([{ total: true, t: { fold: tot.fold, foldNg: tot.foldNg, inNg: tot.inNg } }]), {}) : X.ui.empty('這段期間沒有折盒或 NG 的登記');
+    // 依包材品項（只列有 NG 的）
+    var mrows = Object.keys(byMat).map(function (k) { return byMat[k]; }).filter(function (m) { return m.t.foldNg + m.t.inNg > 0; }).sort(ord);
+    var mcols = [
+      { label: '包材品項', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(X.materialLabel(r.id)); } },
+      { label: '折盒', num: true, render: function (r) { return n(r.t.fold, r.total); } },
+      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg, r.total); } },
+      { label: '折盒NG率', num: true, render: function (r) { return pct(r.t.foldNg, r.t.fold + r.t.foldNg); } },
+      { label: '進貨', num: true, render: function (r) { return n(r.t.in, r.total); } },
+      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg, r.total); } },
+      { label: '進貨NG率', num: true, render: function (r) { return pct(r.t.inNg, r.t.in); } },
+      { label: 'NG 合計', num: true, render: function (r) { return n(r.t.foldNg + r.t.inNg, true); } }
+    ];
+    var mtable = mrows.length ? X.ui.table(mcols, mrows.concat([{ total: true, t: tot }]), {}) : X.ui.empty('這段期間沒有 NG');
+    // 逐日
+    var days = Object.keys(byDay).sort().reverse();
+    var ycols = [
+      { label: '日期', render: function (k) { return esc(slashDate(k)); } },
+      { label: '折盒NG', num: true, render: function (k) { return n(byDay[k].foldNg); } },
+      { label: '進貨NG', num: true, render: function (k) { return n(byDay[k].inNg); } },
+      { label: '各部門（折盒NG／進貨NG）', render: function (k) {
+        return '<span style="white-space:normal">' + Object.keys(byDay[k].depts).map(function (dn) { var x = byDay[k].depts[dn]; return esc(dn) + ' ' + fmt(x.foldNg, 2) + '／' + fmt(x.inNg, 2); }).join('；') + '</span>';
+      } }
+    ];
+    out.innerHTML = kp +
+      '<p style="margin:10px 0 4px"><b>依折盒部門</b></p>' + dtable +
+      '<p style="margin:14px 0 4px"><b>依包材品項（有 NG 的）</b></p>' + mtable +
+      '<p style="margin:14px 0 4px"><b>逐日 NG</b></p>' + (days.length ? X.ui.table(ycols, days, {}) : X.ui.empty('這段期間沒有 NG')) +
+      '<p class="small" style="margin:8px 0 0">折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記，沒有部門）。折盒部門是登記當下選的，舊紀錄沒有部門歸在「（未填）」。已撤銷的不算。</p>';
+  }
+
   function renderLinksCard(el) {
     var box = q$(el, '[data-box="qe-links"]');
     if (!box) return;
@@ -712,6 +798,12 @@
         var fi = q$(el, '[data-qe="from"]'), ti = q$(el, '[data-qe="to"]'); if (fi) fi.value = qe.from; if (ti) ti.value = qe.to;
         updateQeRange(el);
       }
+      else if (act === 'ng-today' || act === 'ng-7' || act === 'ng-month') {
+        var t1 = X.today();
+        qe.ngTo = t1; qe.ngFrom = act === 'ng-today' ? t1 : (act === 'ng-7' ? shiftDate(t1, -6) : t1.slice(0, 8) + '01');
+        var nf = q$(el, '[data-qe="ngfrom"]'), nt = q$(el, '[data-qe="ngto"]'); if (nf) nf.value = qe.ngFrom; if (nt) nt.value = qe.ngTo;
+        updateNg(el);
+      }
       else if (act === 'dept-edit') editDeptsDialog(el);
       else if (act === 'lk-new') linkDialog(el, null);
       else if (act === 'lk-edit') { var lr = list('materialLinks').find(function (x) { return sameId(x.id, a.dataset.id); }); if (lr) linkDialog(el, lr); }
@@ -738,6 +830,7 @@
       if (!t || !t.dataset) return;
       if (t.dataset.qe === 'view') setQeView(el, t.value);
       else if (t.dataset.qe === 'dept') { if (t.value === '__new__') addDeptDialog(el); else setDept(el, t.value); }
+      else if (t.dataset.qe === 'ngfrom' || t.dataset.qe === 'ngto') { if (dateOk(t.value)) { qe[t.dataset.qe === 'ngfrom' ? 'ngFrom' : 'ngTo'] = t.value; updateNg(el); } }
       else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
       else if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
@@ -768,6 +861,7 @@
     });
     renderQeRecords(el, all, vd, summarizeMovements(all, vd, orderedMaterials()));
     updateQeRange(el);
+    updateNg(el);
     refreshDeptSelect(el);
     renderLinksCard(el);
     updateQeCount(el);
