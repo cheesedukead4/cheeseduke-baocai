@@ -367,3 +367,13 @@ th{font-size:16.5px!important}
 }
 
 .x-qe-cell input[title^="自動填入"]{border-style:dashed}
+
+/* 區塊可折疊（js/ext/collapse.js） */
+.x-cx-head{cursor:pointer;user-select:none}
+.x-cx-head:focus-visible{outline:2px solid var(--brand,#2f6f3e);outline-offset:2px}
+.x-cx-chev{display:inline-block;width:1.2em;text-align:center;margin-right:2px;font-size:.85em;color:var(--muted,#667);transition:transform .15s}
+.x-collapsed > .x-cx-head .x-cx-chev{transform:rotate(-90deg)}
+.x-collapsed > :not(.x-cx-head){display:none!important}
+.x-cx-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
+.forecast-product-block.x-collapsed > table{display:table!important}
+.forecast-product-block.x-collapsed tbody,.forecast-product-block.x-collapsed thead tr + tr{display:none}
