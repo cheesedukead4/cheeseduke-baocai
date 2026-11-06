@@ -132,6 +132,13 @@
         fromQty: '修改前預估量', toQty: '修改後預估量', fromDate: '鎖定日期（修改前）', toDate: '鎖定日期（修改後）', reason: '異動原因'
       }
     },
+    materialLinks: {
+      label: '連動規則', type: 'array',
+      fields: {
+        id: '唯一代號', fromMaterialId: '來源包材 id（做了這個）', fromType: "來源類型：'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG",
+        toMaterialId: '連動包材 id（就會這個）', toType: '連動類型（同上）', ratio: '來源每 1 個，連動包材用幾個（預設 1）', active: '是否啟用 true/false', note: '備註', by: '最後修改者', at: '最後修改時間（毫秒）'
+      }
+    },
     orderChanges: {
       label: '叫貨量異動歷程', type: 'array',
       fields: {

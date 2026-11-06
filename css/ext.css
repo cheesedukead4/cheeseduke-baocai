@@ -365,3 +365,5 @@ th{font-size:16.5px!important}
   .x-qe-n2 .x-qe-row{grid-template-columns:repeat(2,minmax(0,1fr))!important}
   .x-qe-n3 .x-qe-row{grid-template-columns:repeat(3,minmax(0,1fr))!important}
 }
+
+.x-qe-cell input[title^="自動填入"]{border-style:dashed}

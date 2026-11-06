@@ -330,6 +330,38 @@
     var lg = X.ensure('movementLog');
     logs.forEach(function (e) { var i = lg.indexOf(e); if (i >= 0) lg.splice(i, 1); });
   }
+  // ---------- 連動規則（db.materialLinks）----------
+  // { id, fromMaterialId, fromType（'fold' 折盒｜'use' 使用…）, toMaterialId, toType, ratio（來源每 1 個，連動包材用幾個，預設 1）, active, note, by, at }
+  // 例：共用袖套盒（蛋捲）折盒 1 個 → 共用蛋捲內襯 使用 1 個；共用袖套盒（廢雪）使用 1 個 → 共用袖套盒放入廢雪隔板 使用 1 個
+  //   · 來源和連動的類型都在同一個頁面（例如進貨與使用的「使用 → 使用」）：輸入來源數量時，連動那一格自動填入（還可以自己改）
+  //   · 連動的類型在另一個頁面（例如折盒 → 使用）：送出時自動多記一筆連動紀錄（auto=true，srcId 指向來源），不能單獨修改或撤銷，來源撤銷、修改時一起跟著變
+  function linkRules() { return list('materialLinks').filter(function (l) { return l.active !== false && l.fromMaterialId != null && l.toMaterialId != null && TYPES[l.fromType] && TYPES[l.toType]; }); }
+  function linkRatio(l) { var r = num(l.ratio); return r > 0 ? r : 1; }
+  function linkQty(src, l) { return Math.max(0, Math.round(num(src) * linkRatio(l))); }
+  function linkedRecs(recs) { // 這些來源紀錄連動出來、還沒撤銷的自動紀錄
+    var ids = Object.create(null);
+    recs.forEach(function (r) { ids[String(r.id)] = true; });
+    return X.ensure('movements').filter(function (r) { return isObj(r) && r.auto === true && r.voided !== true && ids[String(r.srcId)] && recs.indexOf(r) < 0; });
+  }
+  // 第一次（還沒有任何規則時）依包材名稱建立預設規則：找得到唯一對應的包材才建立，找不到就不建，讓管理員自己新增
+  function seedLinks() {
+    var d = X.db();
+    if (!d || d.materialLinksSeeded || list('materialLinks').length) return;
+    var mats = X.materials().filter(function (m) { return m && m.status !== 'archived'; });
+    var find = function (parts, not) {
+      var hit = mats.filter(function (m) { var n = String(m.name || ''); return parts.every(function (p) { return n.indexOf(p) >= 0; }) && !(not || []).some(function (p) { return n.indexOf(p) >= 0; }); });
+      return hit.length === 1 ? hit[0] : null;
+    };
+    var egg = find(['袖套盒', '蛋捲'], ['內襯', '隔板']), eggLiner = find(['蛋捲', '內襯']);
+    var waste = find(['袖套盒', '廢雪'], ['內襯', '隔板']), wasteDiv = find(['廢雪', '隔板']);
+    var out = [];
+    if (egg && eggLiner) out.push({ id: X.uid('ml'), fromMaterialId: egg.id, fromType: 'fold', toMaterialId: eggLiner.id, toType: 'use', ratio: 1, active: true, note: '共用袖套盒（蛋捲）折 1 個，耗 1 個共用蛋捲內襯', by: '系統預設', at: Date.now() });
+    if (waste && wasteDiv) out.push({ id: X.uid('ml'), fromMaterialId: waste.id, fromType: 'use', toMaterialId: wasteDiv.id, toType: 'use', ratio: 1, active: true, note: '共用袖套盒（廢雪）用 1 個，用 1 個放入廢雪隔板', by: '系統預設', at: Date.now() });
+    d.materialLinksSeeded = true;
+    if (out.length) { out.forEach(function (l) { X.ensure('materialLinks').push(l); }); X.save({ silent: true }); }
+    else X.save({ silent: true });
+  }
+
   function applyVoid(recs, msg, key) {
     if (!recs.length) return false;
     if (!confirm(msg + '\n紀錄會保留並加上刪除線，但不再計算。')) return false;
@@ -343,12 +375,15 @@
   function voidBatch(key, batchId, what) {
     var recs = X.ensure(key).filter(function (r) { return isObj(r) && r.batchId && sameId(r.batchId, batchId) && r.voided !== true; });
     if (key === 'movements' && recs.some(function (r) { return r.date !== X.today(); })) { X.toast('已超過當日，這批紀錄已鎖定，不能撤銷'); return false; }
-    return applyVoid(recs, recs.length > 1 ? '要撤銷這一批 ' + recs.length + ' 筆' + what + '嗎？' : '要撤銷這筆' + what + '嗎？', key);
+    var lk = key === 'movements' ? linkedRecs(recs) : [];
+    return applyVoid(recs.concat(lk), recs.length > 1 ? '要撤銷這一批 ' + recs.length + ' 筆' + what + '嗎？' + (lk.length ? '\n（連動自動登記的 ' + lk.length + ' 筆也會一起撤銷）' : '') : '要撤銷這筆' + what + '嗎？' + (lk.length ? '\n（連動自動登記的 ' + lk.length + ' 筆也會一起撤銷）' : ''), key);
   }
   function voidOne(key, id, what) {
     var rec = X.ensure(key).find(function (r) { return isObj(r) && sameId(r.id, id); });
     if (key === 'movements' && rec && rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能撤銷'); return false; }
-    return applyVoid(rec && rec.voided !== true ? [rec] : [], '要撤銷這筆' + what + '嗎？', key);
+    if (rec && rec.auto === true) { X.toast('這是連動自動登記的紀錄，請撤銷來源那筆'); return false; }
+    var one = rec && rec.voided !== true ? [rec] : [], lk1 = key === 'movements' ? linkedRecs(one) : [];
+    return applyVoid(one.concat(lk1), '要撤銷這筆' + what + '嗎？' + (lk1.length ? '\n（連動自動登記的 ' + lk1.length + ' 筆也會一起撤銷）' : ''), key);
   }
 
   // ---------- 依批次顯示的紀錄 ----------
@@ -361,7 +396,9 @@
     var note = String(g.records[0].note || '');
     var many = g.records.length > 1;
     var editBtn = function (id) { return o.edit ? '<button type="button" class="btn gray" data-act="edit-one" data-id="' + esc(id) + '">修改</button> ' : ''; };
+    var allAuto = g.records.every(function (r) { return r.auto === true; });
     var btn = allVoid ? X.ui.tag('已撤銷', 'muted')
+      : allAuto ? X.ui.tag('自動連動', 'info')
       : o.locked ? X.ui.tag('已鎖定', 'muted')
       : g.batchId ? (many ? '' : editBtn(g.records[0].id)) + '<button type="button" class="btn gray" data-act="void-batch" data-batch="' + esc(g.batchId) + '">' + (many ? '撤銷這一批' : '撤銷') + '</button>'
         : editBtn(g.records[0].id) + '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(g.records[0].id) + '">撤銷</button>';
@@ -378,7 +415,7 @@
           var v = r.voided === true;
           return '<li class="' + P + '-rec' + (v ? ' ' + P + '-rec-void' : '') + '"><span class="' + P + '-rec-text">' + o.line(r) +
             (r.note && String(r.note) !== note ? '<span class="' + P + '-rec-note">' + esc(r.note) + '</span>' : '') + '</span>' +
-            (v ? X.ui.tag('已撤銷', 'muted') : (o.locked ? '' : editBtn(r.id) + '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(r.id) + '">撤銷</button>')) + '</li>';
+            (v ? X.ui.tag('已撤銷', 'muted') : (r.auto === true ? X.ui.tag('自動連動', 'info') : o.locked ? '' : editBtn(r.id) + '<button type="button" class="btn gray" data-act="void-one" data-id="' + esc(r.id) + '">撤銷</button>')) + '</li>';
         }).join('') + '</ul></details>';
     }
     return html + '</div>';
@@ -407,7 +444,7 @@
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', from: '', to: '', vals: Object.create(null) };
+  var qe = { view: '', note: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
 
   function qeTypeText(t) { return typeLabel(t); }
   var QE_BATCH = {
@@ -437,6 +474,7 @@
   }
 
   function renderQuickEntry(el) {
+    try { seedLinks(); } catch (e) { console.warn('連動規則預設建立失敗', e); }
     var mats = orderedMaterials();
     var sig = mats.map(function (m) { return [m.id, m.code, m.name, m.unit].join('\u0001'); }).join('\u0002');
     // 包材清單沒變：只更新紀錄區與「已登記」小字，輸入中的格子完全不動
@@ -476,7 +514,7 @@
       '<input type="date" data-qe="to" aria-label="迄" value="' + esc(qe.to) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
       rbtn('rg-today', '今天') + rbtn('rg-7', '最近 7 天') + rbtn('rg-month', '本月') + '</div>' +
       '<div data-box="qe-range-out"></div>');
-    html += '<div data-box="qe-records"></div>';
+    html += '<div data-box="qe-records"></div><div data-box="qe-links"></div>';
     el.innerHTML = html;
     bindQuickEntry(el);
     refreshQuickEntry(el);
@@ -496,11 +534,11 @@
       var q = num(r.qty); cum[r.type] += q;
       var m = cumM[String(r.materialId)] || (cumM[String(r.materialId)] = { id: r.materialId, t: {} }); m.t[r.type] = (m.t[r.type] || 0) + q;
     });
-    var withNeed = TYPE_KEYS.indexOf('fold') >= 0 && !!window.CMSStock, needBy = Object.create(null), giftBoxes = 0;
+    var withNeed = TYPE_KEYS.indexOf('fold') >= 0 && !!window.CMSStock, needBy = Object.create(null), giftBoxes = 0, giftRows = [];
     if (withNeed) {
       // 今年（目前檔期）預估所需要的盒子數量：業績預估每個禮盒所有日期、所有部門的預估盒數（和首頁「銷售預估」同一個數字）× 配方裡每個包材的用量
       var isSingleP = function (p) { return String((p && p.category) || '').trim() === '單條'; };
-      X.products().forEach(function (p) { if (p && !isSingleP(p)) giftBoxes += num(CMSStock.giftForecast(p.id)); });
+      X.products().forEach(function (p) { if (p && !isSingleP(p)) { var gb = num(CMSStock.giftForecast(p.id)); giftBoxes += gb; if (gb > 0) giftRows.push({ p: p, boxes: gb }); } });
       ((X.db() && X.db().recipes) || []).forEach(function (r) {
         var p = r && X.productById(r.productId);
         if (!p || isSingleP(p)) return;
@@ -508,8 +546,6 @@
         if (f > 0) needBy[String(r.materialId)] = (needBy[String(r.materialId)] || 0) + f * num(r.qty);
       });
     }
-    var kpiItems = (withNeed ? [{ label: '今年預估禮盒總盒數', value: fmt(giftBoxes, 2), tone: 'info', sub: '業績預估所有品項、所有日期' }] : [])
-      .concat(TYPE_KEYS.map(function (k) { return { label: '累計' + TYPES[k].label, value: fmt(cum[k], 2), tone: 'muted', sub: '所有登記合計（不含撤銷）' }; }));
     var ids = {}; Object.keys(cumM).forEach(function (k) { ids[k] = true; }); Object.keys(needBy).forEach(function (k) { ids[k] = true; });
     var trows = Object.keys(ids).map(function (k) { return { id: k, need: needBy[k] || 0, t: cumM[k] ? cumM[k].t : {} }; }).sort(ord);
     var tcols = [{ label: '包材', render: function (r) { return wrapText(X.materialLabel(r.id)); } }];
@@ -519,22 +555,32 @@
       tcols.push({ label: '還差（預估需要 － 累計折盒）', num: true, render: function (r) { if (!r.need) return muted('—'); var left = r.need - (r.t.fold || 0); return left > 0 ? '<b style="color:var(--bad)">' + esc(fmt(left, 2)) + '</b>' : X.ui.tag('已折夠', 'ok'); } });
       tcols.push({ label: '完成率', num: true, render: function (r) { return r.need ? esc(fmt((r.t.fold || 0) / r.need * 100, 1)) + '%' : muted('—'); } });
     }
-    top.innerHTML = X.ui.kpis(kpiItems) + X.ui.table(tcols, trows, { empty: '還沒有登記，也沒有預估需要的包材。' }) +
+    var gcols = [
+      { label: '禮盒品項', render: function (r) { return r.total ? '<b>合計</b>' : wrapText((r.p.code ? r.p.code + ' ' : '') + (r.p.name || '')); } },
+      { label: '今年預估盒數', num: true, render: function (r) { return r.total ? '<b>' + esc(fmt(r.boxes, 2)) + '</b>' : esc(fmt(r.boxes, 2)); } }
+    ];
+    giftRows.sort(function (a, b) { return b.boxes - a.boxes; });
+    var gtable = withNeed ? '<p style="margin:0 0 4px"><b>今年預估（各禮盒品項）</b></p>' + X.ui.table(gcols, giftRows.length ? giftRows.concat([{ total: true, boxes: giftBoxes }]) : [], { empty: '業績預估還沒有填預估量。' }) : '';
+    top.innerHTML = gtable + '<p style="margin:' + (withNeed ? '14px' : '0') + ' 0 4px"><b>' + (withNeed ? '各包材品項：預估需要與累計' : '各包材品項：累計') + '</b></p>' + X.ui.table(tcols, trows, { empty: '還沒有登記，也沒有預估需要的包材。' }) +
       '<p class="small" style="margin:6px 0 12px">這一區是固定的合計，不受下面的日期區間影響。' + (withNeed ? '今年預估需要＝業績預估裡每個禮盒所有日期、所有部門的預估盒數 × 配方裡這個包材的用量，全部禮盒加總（目前檔期，和首頁「銷售預估」同一個數字）；累計是所有登記合計。' : '累計是所有登記合計。') + '已撤銷的不算。</p>';
     // ---- 下：日期區間，逐日看 ----
     var from = qe.from, to = qe.to;
     if (!dateOk(from) || !dateOk(to)) { out.innerHTML = X.ui.banner('info', '請選好起、迄兩個日期。'); return; }
     if (from > to) { out.innerHTML = X.ui.banner('warn', '「起」不能晚於「迄」。'); return; }
-    var tot = {}, byD = Object.create(null), n = 0;
+    var tot = {}, byD = Object.create(null), n = 0, rangeM = Object.create(null);
     TYPE_KEYS.forEach(function (k) { tot[k] = 0; });
     recs.forEach(function (r) {
       var dt = String(r.date || '').slice(0, 10);
       if (dt < from || dt > to) return;
       var q = num(r.qty); n++; tot[r.type] += q;
+      var rm = rangeM[String(r.materialId)] || (rangeM[String(r.materialId)] = { id: r.materialId, t: {} }); rm.t[r.type] = (rm.t[r.type] || 0) + q;
       var dd = byD[dt] || (byD[dt] = { t: {}, m: Object.create(null) }); dd.t[r.type] = (dd.t[r.type] || 0) + q;
       var mm = dd.m[String(r.materialId)] || (dd.m[String(r.materialId)] = { id: r.materialId, t: {} }); mm.t[r.type] = (mm.t[r.type] || 0) + q;
     });
     var dkeys = Object.keys(byD).sort().reverse(), span = X.daysBetween(from, to) + 1;
+    var rcols = [{ label: '包材品項', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
+      return { label: TYPES[k].label, num: true, render: function (r) { var v = r.t[k]; return v ? (r.total ? '<b>' + esc(fmt(v, 2)) + '</b>' : esc(fmt(v, 2))) : muted('—'); } };
+    }));
     var dcols = [{ label: '日期', render: function (k) { return esc(slashDate(k)); } }]
       .concat(TYPE_KEYS.map(function (t) { return { label: TYPES[t].label, num: true, render: function (k) { return byD[k].t[t] ? esc(fmt(byD[k].t[t], 2)) : muted('—'); } }; }))
       .concat([{ label: '各包材（這一天做了多少）', render: function (k) {
@@ -542,8 +588,52 @@
         return '<span style="white-space:normal">' + ms.map(function (m) { return esc(nameOfMaterial(m.id)) + ' ' + TYPE_KEYS.filter(function (t) { return m.t[t]; }).map(function (t) { return esc(TYPES[t].label) + ' <b>' + esc(fmt(m.t[t], 2)) + '</b>'; }).join('、'); }).join('；') + '</span>';
       } }]);
     out.innerHTML = '<p style="margin:0 0 6px"><b>每一天做了多少</b>　<span class="small">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）</span></p>' +
-      '<p style="margin:0 0 8px">區間合計：' + TYPE_KEYS.map(function (k) { return esc(TYPES[k].label) + ' <b style="font-size:1.1em">' + esc(fmt(tot[k], 2)) + '</b>'; }).join('　') + '</p>' +
+      '<p style="margin:0 0 4px"><b>這段期間各包材品項合計</b></p>' + X.ui.table(rcols, Object.keys(rangeM).map(function (k) { return rangeM[k]; }).sort(ord).concat(Object.keys(rangeM).length ? [{ total: true, t: tot }] : []), { empty: '這段期間沒有登記' }) +
+      '<p style="margin:12px 0 4px"><b>逐日明細</b></p>' +
       (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
+  }
+
+  function renderLinksCard(el) {
+    var box = q$(el, '[data-box="qe-links"]');
+    if (!box) return;
+    var admin = X.isAdmin(), rules = list('materialLinks');
+    var cols = [
+      { label: '來源（做了這個）', render: function (l) { return wrapText(nameOfMaterial(l.fromMaterialId)) + ' ' + X.ui.tag(typeLabel(l.fromType), 'info'); } },
+      { label: '連動（就會這個）', render: function (l) { return wrapText(nameOfMaterial(l.toMaterialId)) + ' ' + X.ui.tag(typeLabel(l.toType), 'warn'); } },
+      { label: '比例', num: true, render: function (l) { return '1 : ' + esc(fmt(linkRatio(l), 2)); } },
+      { label: '怎麼連動', render: function (l) { return '<span class="small" style="white-space:normal">' + (TYPE_KEYS.indexOf(l.fromType) >= 0 && TYPE_KEYS.indexOf(l.toType) >= 0 ? '同一頁：連動那格自動填入（可以改）' : '送出時自動多記一筆「' + esc(typeLabel(l.toType)) + '」（不能單獨修改，來源撤銷會一起撤銷）') + '</span>'; } },
+      { label: '狀態', render: function (l) { return l.active === false ? X.ui.tag('停用', 'muted') : X.ui.tag('啟用', 'ok'); } }
+    ];
+    if (admin) cols.push({ label: '', render: function (l) { return '<div class="x-row-actions"><button type="button" class="btn gray" data-act="lk-edit" data-id="' + esc(l.id) + '">編輯</button> <button type="button" class="btn red" data-act="lk-del" data-id="' + esc(l.id) + '">刪除</button></div>'; } });
+    var acts = admin ? '<button type="button" class="btn primary" data-act="lk-new" style="min-height:34px">新增連動規則</button>' + (rules.length ? '' : ' <button type="button" class="btn gray" data-act="lk-seed" style="min-height:34px">依名稱建立預設規則</button>') : '';
+    box.innerHTML = X.ui.card('連動規則（自動填入）', X.ui.table(cols, rules, { empty: '還沒有連動規則。' + (admin ? '按「新增連動規則」，或「依名稱建立預設規則」（共用袖套盒蛋捲折盒 → 共用蛋捲內襯使用；共用袖套盒廢雪使用 → 共用袖套盒放入廢雪隔板使用）。' : '') }) +
+      '<p class="small" style="margin:8px 0 0">例：共用袖套盒（蛋捲）<b>折盒</b> 1 個，就會耗 1 個共用蛋捲內襯（<b>使用</b>）；共用袖套盒（廢雪）<b>使用</b> 1 個，就會用 1 個共用袖套盒放入廢雪隔板（<b>使用</b>）。' +
+      '連動的紀錄不用再自己填，重複填會重複計算。' + (admin ? '' : '規則只有管理員能改。') + '</p>', acts);
+  }
+  function linkDialog(el, rec) {
+    var mats = X.materials().filter(function (m) { return m && (m.status !== 'archived' || (rec && (sameId(rec.fromMaterialId, m.id) || sameId(rec.toMaterialId, m.id)))); });
+    var mopts = [{ value: '', label: '（選擇包材）' }].concat(mats.map(function (m) { return { value: m.id, label: (m.code ? m.code + ' ' : '') + (m.name || X.materialLabel(m)) }; }));
+    var topts = TYPE_KEYS.map(function (k) { return { value: k, label: TYPES[k].label }; });
+    X.ui.dialog(rec ? '編輯連動規則' : '新增連動規則', [
+      { name: 'fromMaterialId', label: '來源包材（做了這個）', type: 'select', options: mopts, value: rec ? rec.fromMaterialId : '', required: true },
+      { name: 'fromType', label: '來源類型', type: 'select', options: topts, value: rec ? rec.fromType : 'fold' },
+      { name: 'toMaterialId', label: '連動包材（就會這個）', type: 'select', options: mopts, value: rec ? rec.toMaterialId : '', required: true },
+      { name: 'toType', label: '連動類型', type: 'select', options: topts, value: rec ? rec.toType : 'use' },
+      { name: 'ratio', label: '比例：來源每 1 個，連動包材用幾個', type: 'number', value: rec ? linkRatio(rec) : 1, min: 0.01, step: 'any', required: true },
+      { name: 'note', label: '備註', type: 'text', value: rec ? rec.note || '' : '' },
+      { name: 'active', label: '啟用中', type: 'checkbox', value: rec ? rec.active !== false : true, full: true }
+    ], function (f) {
+      if (!f.fromMaterialId || !f.toMaterialId) { X.toast('請選來源包材和連動包材'); return false; }
+      if (sameId(f.fromMaterialId, f.toMaterialId) && f.fromType === f.toType) { X.toast('來源和連動不能是同一個包材、同一個類型'); return false; }
+      if (!(f.ratio > 0)) { X.toast('比例要大於 0'); return false; }
+      var all = X.ensure('materialLinks');
+      if (all.some(function (x) { return isObj(x) && (!rec || x.id !== rec.id) && sameId(x.fromMaterialId, f.fromMaterialId) && x.fromType === f.fromType && sameId(x.toMaterialId, f.toMaterialId) && x.toType === f.toType; })) { X.toast('已經有一樣的規則了'); return false; }
+      var l = rec ? all.find(function (x) { return isObj(x) && x.id === rec.id; }) : null;
+      if (rec && !l) { X.toast('找不到這條規則，可能已被刪除'); return false; }
+      if (!l) { l = { id: X.uid('ml') }; all.push(l); }
+      l.fromMaterialId = f.fromMaterialId; l.fromType = f.fromType; l.toMaterialId = f.toMaterialId; l.toType = f.toType; l.ratio = f.ratio; l.note = f.note; l.active = !!f.active; l.by = X.userName(); l.at = Date.now();
+      X.save({ silent: true }); X.toast(rec ? '已更新連動規則' : '已新增連動規則'); refreshQuickEntry(el);
+    });
   }
 
   function bindQuickEntry(el) {
@@ -559,6 +649,13 @@
         var fi = q$(el, '[data-qe="from"]'), ti = q$(el, '[data-qe="to"]'); if (fi) fi.value = qe.from; if (ti) ti.value = qe.to;
         updateQeRange(el);
       }
+      else if (act === 'lk-new') linkDialog(el, null);
+      else if (act === 'lk-edit') { var lr = list('materialLinks').find(function (x) { return sameId(x.id, a.dataset.id); }); if (lr) linkDialog(el, lr); }
+      else if (act === 'lk-del') {
+        var all = X.ensure('materialLinks'), li = all.findIndex(function (x) { return isObj(x) && sameId(x.id, a.dataset.id); });
+        if (li >= 0 && confirm('確定刪除這條連動規則嗎？已經登記的紀錄不會變。')) { all.splice(li, 1); X.save({ silent: true }); X.toast('已刪除'); refreshQuickEntry(el); }
+      }
+      else if (act === 'lk-seed') { var d0 = X.db(); if (d0) d0.materialLinksSeeded = false; seedLinks(); if (list('materialLinks').length) X.toast('已建立預設連動規則'); else X.toast('找不到名稱對得上的包材，請用「新增連動規則」自己選'); refreshQuickEntry(el); }
       else if (act === 'view-today') setQeView(el, X.today());
       else if (act === 'view-prev') setQeView(el, shiftDate(effDate(qe.view), -1));
       else if (act === 'view-next') setQeView(el, shiftDate(effDate(qe.view), 1));
@@ -569,7 +666,7 @@
     el.oninput = function (e) {
       var t = e.target;
       if (!t || !t.dataset) return;
-      if (t.dataset.mv) { keepQeCell(t); updateQeCount(el); }
+      if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
     };
     el.onchange = function (e) {
@@ -577,7 +674,7 @@
       if (!t || !t.dataset) return;
       if (t.dataset.qe === 'view') setQeView(el, t.value);
       else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
-      else if (t.dataset.mv) { keepQeCell(t); updateQeCount(el); }
+      else if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
     };
   }
@@ -606,6 +703,7 @@
     });
     renderQeRecords(el, all, vd, summarizeMovements(all, vd, orderedMaterials()));
     updateQeRange(el);
+    renderLinksCard(el);
     updateQeCount(el);
   }
 
@@ -662,6 +760,7 @@
   function editQuick(el, id) {
     var rec = X.ensure('movements').find(function (r) { return isObj(r) && sameId(r.id, id); });
     if (!rec || rec.voided === true) return;
+    if (rec.auto === true) { X.toast('這是連動自動登記的紀錄，請修改來源那筆'); return; }
     if (rec.date !== X.today()) { X.toast('已超過當日，這筆紀錄已鎖定，不能修改'); refreshQuickEntry(el); return; }
     X.ui.dialog('修改：' + nameOfMaterial(rec.materialId) + ' ' + typeLabel(rec.type), [
       { name: 'qty', label: '數量（' + typeLabel(rec.type) + '）', type: 'number', value: rec.qty, min: 1, step: 1, required: true },
@@ -676,14 +775,40 @@
       var entry = logEntry('edit', rec, { qty: old.qty, note: old.note }, { qty: p.qty, note: newNote });
       X.ensure('movementLog').push(entry);
       rec.qty = p.qty; rec.note = newNote; rec.editedAt = Date.now(); rec.editedBy = X.userName();
-      if (!X.save({ silent: true })) { rec.qty = old.qty; rec.note = old.note; rec.editedAt = old.editedAt; rec.editedBy = old.editedBy; dropLogs([entry]); return false; }
+      // 連動自動登記的紀錄跟著來源的新數量重算
+      var lkd = linkedRecs([rec]).map(function (a) { return { a: a, qty: a.qty, to: Math.max(0, Math.round(p.qty * (num(a.ratio) > 0 ? num(a.ratio) : 1))) }; }).filter(function (x) { return x.to > 0 && x.to !== x.qty; });
+      var lkLogs = lkd.map(function (x) { var e = logEntry('edit', x.a, { qty: x.qty, note: x.a.note }, { qty: x.to, note: x.a.note }); X.ensure('movementLog').push(e); x.a.qty = x.to; return e; });
+      if (!X.save({ silent: true })) { rec.qty = old.qty; rec.note = old.note; rec.editedAt = old.editedAt; rec.editedBy = old.editedBy; lkd.forEach(function (x) { x.a.qty = x.qty; }); dropLogs([entry].concat(lkLogs)); return false; }
       X.toast('已修改，修改歷程已記錄');
       refreshQuickEntry(el);
     }, '儲存修改');
   }
 
+  // 同頁面的連動規則（來源、連動的類型都在這個頁面）：來源格有數字，連動那一格就自動填入（來源 × 比例，四捨五入）；自己改過那一格就不再自動覆蓋
+  function applyLiveLinks(el, changed) {
+    var rules = linkRules().filter(function (l) { return TYPE_KEYS.indexOf(l.fromType) >= 0 && TYPE_KEYS.indexOf(l.toType) >= 0; });
+    if (!rules.length) return;
+    var cell = function (mid, type) { return q$(el, '[data-mid="' + String(mid).replace(/"/g, '') + '"] input[data-mv="' + type + '"]'); };
+    var tg = Object.create(null);
+    rules.forEach(function (l) { var k = l.toMaterialId + '|' + l.toType; (tg[k] = tg[k] || { mid: l.toMaterialId, type: l.toType, rules: [] }).rules.push(l); });
+    Object.keys(tg).forEach(function (k) {
+      var t = tg[k], inp = cell(t.mid, t.type);
+      if (!inp) return;
+      if (changed && changed === inp) { qe.auto[k] = false; return; } // 使用者自己改這一格：之後不再自動填
+      if (qe.auto[k] === false) return;
+      var sum = 0, any = false;
+      t.rules.forEach(function (l) { var s = cell(l.fromMaterialId, l.fromType), p = s ? parseQty(s.value) : { empty: true }; if (!p.empty && !p.bad && p.qty > 0) { sum += linkQty(p.qty, l); any = true; } });
+      if (!any && !qe.auto[k]) return;
+      var v = sum > 0 ? String(sum) : '';
+      if (inp.value === v) return;
+      inp.value = v; qe.auto[k] = sum > 0;
+      inp.title = '自動填入（連動規則），可以自己改';
+      keepQeCell(inp, true);
+    });
+  }
+
   // 輸入時只記下數值、切換格子的顏色，並更新「已填 N 格」
-  function keepQeCell(t) {
+  function keepQeCell(t, fromLink) {
     var row = t.closest('[data-mid]'), k = t.dataset.mv;
     if (!row || !TYPES[k]) return;
     var mid = row.dataset.mid;
@@ -707,8 +832,8 @@
   function clearQuick(el, ask) {
     var c = qeCounts(el);
     if (ask && c.n && !confirm('要清除已填的 ' + c.n + ' 格數字嗎？\n還沒送出的內容會不見。')) return;
-    qe.vals = Object.create(null);
-    q$$(el, 'input[data-mv]').forEach(function (i) { i.value = ''; i.classList.remove('x-qe-on'); i.classList.remove('x-qe-bad'); });
+    qe.vals = Object.create(null); qe.auto = Object.create(null);
+    q$$(el, 'input[data-mv]').forEach(function (i) { i.value = ''; i.title = ''; i.classList.remove('x-qe-on'); i.classList.remove('x-qe-bad'); });
     q$$(el, '.x-qe-row-on').forEach(function (r) { r.classList.remove('x-qe-row-on'); });
     updateQeCount(el);
   }
@@ -737,7 +862,17 @@
     var noteEl = q$(el, '[data-qe="note"]');
     var note = String(noteEl ? noteEl.value : qe.note).trim().slice(0, 100);
     var names = items.map(function (it) { return (it.m.name || X.materialLabel(it.m)) + ' ' + typeLabel(it.type) + ' ' + fmt(it.qty); });
+    // 連動：連動的類型不在這個頁面的規則，送出時自動多記一筆（同頁面的規則已經在格子裡自動填入了）
+    var pending = [];
+    items.forEach(function (it) {
+      linkRules().forEach(function (l) {
+        if (!sameId(l.fromMaterialId, it.m.id) || l.fromType !== it.type || TYPE_KEYS.indexOf(l.toType) >= 0) return;
+        var q = linkQty(it.qty, l), tm = X.materialById(l.toMaterialId);
+        if (q > 0 && tm) pending.push({ it: it, l: l, q: q, m: tm });
+      });
+    });
     var msg = slashDate(date) + ' 共 ' + items.length + ' 筆：' + names.slice(0, 8).join('、') + (names.length > 8 ? ' 等 ' + names.length + ' 筆' : '');
+    if (pending.length) msg += '\n\n連動自動登記 ' + pending.length + ' 筆：' + pending.map(function (x) { return (x.m.name || X.materialLabel(x.m)) + ' ' + typeLabel(x.l.toType) + ' ' + fmt(x.q); }).join('、');
     if (date !== X.today()) msg += '\n\n注意：日期不是今天。';
     if (note) msg += '\n備註：' + note;
     if (rounded) msg += '\n有 ' + rounded + ' 格填了小數，已四捨五入成整數。';
@@ -749,6 +884,13 @@
     var recs = items.map(function (it, i) {
       return { id: ids[i], batchId: batchId, at: at, by: by, date: date, materialId: it.m.id, type: it.type, qty: it.qty, note: note, voided: false };
     });
+    if (pending.length) {
+      var lids = freshIds('mv', pending.length, X.get('movements').concat(recs));
+      pending.forEach(function (x, i) {
+        var src = recs[items.indexOf(x.it)];
+        recs.push({ id: lids[i], batchId: 'ln-' + batchId, at: at, by: by, date: date, materialId: x.m.id, type: x.l.toType, qty: x.q, note: ('連動：' + (x.it.m.name || X.materialLabel(x.it.m)) + ' ' + typeLabel(x.it.type) + ' ' + fmt(x.it.qty)).slice(0, 100), voided: false, auto: true, srcId: src.id, linkId: x.l.id, ratio: linkRatio(x.l) });
+      });
+    }
     if (!pushRecords('movements', recs)) return;
     // 送出成功：清空輸入，紀錄區切到這次的日期
     qe.view = '';
@@ -756,7 +898,7 @@
     if (noteEl) noteEl.value = '';
     clearQuick(el, false);
     refreshQuickEntry(el);
-    X.toast('已登記 ' + recs.length + ' 筆' + (date !== X.today() ? '（' + shortDate(date) + '）' : ''));
+    X.toast('已登記 ' + recs.length + ' 筆' + (pending.length ? '（含連動自動登記 ' + pending.length + ' 筆）' : '') + (date !== X.today() ? '（' + shortDate(date) + '）' : ''));
   }
     return renderQuickEntry;
   }
