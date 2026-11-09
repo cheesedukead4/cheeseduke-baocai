@@ -1090,6 +1090,7 @@ function render(){
  restoreMissingPackagingRecipesOnce();
  if(typeof applyDefaultGiftDiscountsOnce==='function')applyDefaultGiftDiscountsOnce();
  if(typeof migrateSingleForecastOnce==='function')migrateSingleForecastOnce();
+ if(typeof fixForecastRangesOnce==='function')fixForecastRangesOnce();
  if(typeof fixBlankOrderDepartments==='function')fixBlankOrderDepartments(false);
 
  if(!editGiftWithFormula)document.getElementById('giftCurrentListed').checked=false;

@@ -356,3 +356,7 @@ body.admin-mode #page-orderHistory.active-order-history{display:block!important}
 .sf-locked-mode .forecast-product-table td input{color:#333}
 .sf-locked-mode .forecast-summary-table td,.sf-locked-mode .forecast-summary-table input{color:#333}
 
+
+/* 業績預估：每個品項表的「總計」「金額」列（含最右邊小計的總數量、總金額）字小一點，和表格裡其他數字差不多大 */
+[data-home-panel="salesForecast"] .forecast-product-table .sf-total-row th,
+[data-home-panel="salesForecast"] .forecast-product-table .sf-amount-row th{font-size:1.1em!important;font-weight:700}

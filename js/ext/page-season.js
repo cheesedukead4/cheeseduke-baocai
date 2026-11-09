@@ -931,7 +931,7 @@
         if (ls > 0 && d && ds.indexOf(d) < 0) {
           ds.push(d); // 這個品項有填預估的日期（業績預估頁每一週的區間起）
           var e = (r.ends && r.ends[n]) || '', t = dateMs(d);
-          if (!e && t != null) { var t2 = new Date(t + 7 * DAY); e = t2.getUTCFullYear() + '-' + String(t2.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t2.getUTCDate()).padStart(2, '0'); }
+          if (!e && t != null) { var t2 = new Date(t + 6 * DAY); e = t2.getUTCFullYear() + '-' + String(t2.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t2.getUTCDate()).padStart(2, '0'); }
           rgs.push({ start: d, end: e, est: ls });
         }
       });
@@ -940,11 +940,11 @@
     return out;
   };
 
-  // 業績預估頁「小計」的「實際」：訂單（過去訂單匯入＋入口網站訂單）裡品號相同、訂單日期落在每一週區間（起 ≤ 日期 ＜ 迄）的數量合計，整個公司、不分門市
+  // 業績預估頁「小計」的「實際」：訂單（過去訂單匯入＋入口網站訂單）裡品號相同、訂單日期落在每一週區間（起 ≤ 日期 ≤ 迄，迄那天也算）的數量合計，整個公司、不分門市
   // 回傳 { 業績預估的品號（列的 key）: [第 1～5 週的數量] }；品號對應沿用「對照設定」，部門對照設成「不計算」的訂單不算
   var FA_CACHE = { key: '', list: null };
   // 先判別日期、再判別品號，才加總：
-  //   ① 日期：每個訂單的日期要落在某個品項某一週的區間（起 ≤ 日期 ＜ 迄）
+  //   ① 日期：每個訂單的日期要落在某個品項某一週的區間（起 ≤ 日期 ≤ 迄，迄那天也算）
   //   ② 品號：訂單的品號要對得到這個品項（沿用「對照設定」），對不到的另外列在「沒算進去」
   function faCompute() {
     var fo = X.db() && X.db().salesForecastV5, det = { sums: {}, rows: {}, unmatched: {}, inWindow: 0, total: 0, matched: 0, lo: null, hi: null };
@@ -960,7 +960,7 @@
       if (!r || !p) return;
       var ranges = [];
       for (var n = 0; n < 5; n++) {
-        var st = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null, en = r.ends && r.ends[n] ? dateMs(r.ends[n]) : (st != null ? st + 7 * DAY : null);
+        var st = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null, en = r.ends && r.ends[n] ? dateMs(r.ends[n]) + DAY : (st != null ? st + 7 * DAY : null); // 「迄」含當天，所以內部算到迄的隔天零點
         ranges.push(st != null && en != null ? [st, en] : null);
         if (st != null && en != null) { if (st < lo) lo = st; if (en > hi) hi = en; }
       }
@@ -1009,7 +1009,7 @@
       .concat([{ label: '實際合計', num: true, render: function (r) { return '<b>' + X.fmt(r.tot) + '</b>'; } }]);
     var span = d.lo != null ? md2(d.lo) + '～' + md2(d.hi) : '（還沒有日期區間）';
     var html = '<p class="small" style="margin:8px 0">實際＝<b>先判別日期、再判別品號</b>，兩關都過才加進小計：<br>' +
-      '① <b>判別日期</b>：訂單日期要落在品項某一週的區間（起 ≤ 日期 ＜ 迄）。所有區間涵蓋 ' + esc(span) + '，目前有 <b>' + X.fmt(d.inWindow) + '</b> 筆訂單明細的日期落在這段時間內（共 ' + X.fmt(d.total) + ' 筆，其餘日期不在區間內，不算）。<br>' +
+      '① <b>判別日期</b>：訂單日期要落在品項某一週的區間（起 ≤ 日期 ≤ 迄，迄那天也算）。所有區間涵蓋 ' + esc(span) + '，目前有 <b>' + X.fmt(d.inWindow) + '</b> 筆訂單明細的日期落在這段時間內（共 ' + X.fmt(d.total) + ' 筆，其餘日期不在區間內，不算）。<br>' +
       '② <b>判別品號</b>：區間內的訂單，品號要對得到「業績預估」的品項（品號先看「對照設定」，沒有對照再直接比對品號）。<b>' + X.fmt(d.matched) + '</b> 筆對得到，已加進小計；<b>' + X.fmt(un.reduce(function (a, u) { return a + u.n; }, 0)) + '</b> 筆對不到，列在下面，沒有算進去。整個公司加總，不分門市。</p>' +
       '<p style="margin:10px 0 4px"><b>已加進小計的實際（依品項、週）</b></p>' + X.ui.table(cols, rowsTbl, { empty: '區間內還沒有對得到品號的訂單' }) +
       '<p style="margin:14px 0 4px"><b>日期在區間內、但品號沒對到（沒有算進去）</b></p>' +

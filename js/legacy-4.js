@@ -526,7 +526,7 @@ function mergeGrandduchyIntoChannel(){
  if(d.lastYear)add(d.lastYear,'grandduchy','channel');
  if(changed&&typeof scheduleSalesForecastSave==='function')scheduleSalesForecastSave();
 }
-function ensureSalesForecast(){if(!db.salesForecastV5)db.salesForecastV5={campaignName:'',lastYear:{},rows:{}};mergeGrandduchyIntoChannel();SF_LOCATIONS.forEach(k=>{if(db.salesForecastV5.lastYear[k]==null)db.salesForecastV5.lastYear[k]=0;});}
+function ensureSalesForecast(){if(!db.salesForecastV5)db.salesForecastV5={campaignName:'',lastYear:{},rows:{}};try{fixForecastRangesOnce();}catch(e){console.warn('業績預估區間修正失敗',e);}mergeGrandduchyIntoChannel();SF_LOCATIONS.forEach(k=>{if(db.salesForecastV5.lastYear[k]==null)db.salesForecastV5.lastYear[k]=0;});}
 // 業績預估的品項：本期上架的禮盒，再接本期上架的單條（單條單賣的預估量也在這頁填，儀表板的條數、採購叫貨會一起算進去）
 function getForecastProducts(){const l=(db.products||[]).filter(p=>p.isListedCurrent===true);const isS=p=>String(p.category||'').trim()==='單條';return l.filter(p=>!isS(p)).concat(l.filter(isS));}
 // 2026/11/04 短暫做過「在採購叫貨直接填單條預估量」（db.singleForecast），之後改回在這頁填：把填過的數字搬進這頁（放在通路、預估單日期放第一個日期），搬完就清掉
@@ -549,13 +549,45 @@ function migrateSingleForecastOnce(){
 const SF_WEEKS=5;
 // 日期加減天數（YYYY-MM-DD 字串）；格式不對回傳空字串
 function sfAddDays(v,n){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||''));if(!m)return '';const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]+n));return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');}
+// 業績預估指定的 5 週區間（2026/11/09 指定；「迄」含當天）：過年檔期（節日在 1～3 月）固定用
+//   1/4～1/11、1/12～1/18、1/19～1/25、1/26～2/1、2/2～2/8（年份＝節日那一年）；其他檔期沿用「節日往前 5 個星期一」，每週 7 天
+function sfFixedRanges(){
+ const s=(db.seasons||[]).find(x=>x&&x.status==='active'),h=s&&/^\d{4}-\d{2}-\d{2}$/.test(s.holidayDate||'')?s.holidayDate:'';
+ if(!s||s.kind!=='newyear'||!h)return null;
+ const y=h.slice(0,4),m=Number(h.slice(5,7));
+ if(m>3)return null;
+ return {year:y,starts:[y+'-01-04',y+'-01-12',y+'-01-19',y+'-01-26',y+'-02-02'],ends:[y+'-01-11',y+'-01-18',y+'-01-25',y+'-02-01',y+'-02-08']};
+}
+// 這個「起」預設的「迄」：固定區間裡有就用那個，否則起＋6 天（共 7 天）
+function sfDefaultEnd(start){
+ if(!start)return '';
+ const f=sfFixedRanges();
+ if(f){const i=f.starts.indexOf(start);if(i>=0)return f.ends[i];}
+ return sfAddDays(start,6);
+}
+// 一次性：① 「迄」改成含當天（原本是「起 ≤ 日期 ＜ 迄」，舊的迄往前推一天，區間範圍不變）② 套用上面指定的 5 週區間到所有品項（每個檔期只套一次，之後自己改的日期不會被蓋掉）
+function fixForecastRangesOnce(){
+ const d=db&&db.salesForecastV5;if(!d||!d.rows)return;
+ let changed=false;
+ if(!d.endInclusive){
+   Object.keys(d.rows).forEach(code=>{const r=d.rows[code];if(!r||!Array.isArray(r.ends))return;r.ends=r.ends.map(e=>e?sfAddDays(e,-1):e);});
+   d.endInclusive=true;changed=true;
+ }
+ const fx=sfFixedRanges();
+ if(fx&&d.rangesApplied!==fx.year){
+   Object.keys(d.rows).forEach(code=>{const r=d.rows[code];if(!r)return;r.dates=fx.starts.slice();r.ends=fx.ends.slice();});
+   d.rangesApplied=fx.year;changed=true;
+ }
+ if(changed&&typeof scheduleSalesForecastSave==='function')scheduleSalesForecastSave();
+}
 function sfDefaultDates(){
+ {const f=sfFixedRanges();if(f)return f.starts.slice();}
  const s=(db.seasons||[]).find(x=>x&&x.status==='active'),h=s&&/^\d{4}-\d{2}-\d{2}$/.test(s.holidayDate||'')?s.holidayDate:'';
  if(!h)return ['','','','',''];
  const t=new Date(h+'T00:00:00Z').getTime(),mon=t-((new Date(t).getUTCDay()+6)%7)*86400000;
  return [4,3,2,1,0].map(k=>{const d=new Date(mon-k*7*86400000);return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');});
 }
-function sfRow(code){ensureSalesForecast();if(!db.salesForecastV5.rows[code])db.salesForecastV5.rows[code]={price:0,dates:['','','','',''],lines:{}};const r=db.salesForecastV5.rows[code];if(!Array.isArray(r.dates))r.dates=['','','','',''];{const dd=sfDefaultDates();for(let n=0;n<SF_WEEKS;n++)if(!r.dates[n])r.dates[n]=dd[n];if(!Array.isArray(r.ends))r.ends=['','','','',''];for(let n=0;n<SF_WEEKS;n++)if(!r.ends[n]&&r.dates[n])r.ends[n]=sfAddDays(r.dates[n],7);}if(!r.lines)r.lines={};if(r.price==null)r.price=0;if(!r.amounts)r.amounts={};SF_LOCATIONS.forEach(k=>{if(!r.amounts[k])r.amounts[k]={est:null,act:null};});for(let n=0;n<SF_WEEKS;n++){if(!r.lines[n])r.lines[n]={};SF_LOCATIONS.forEach(k=>{if(!r.lines[n][k])r.lines[n][k]={est:0,act:0};});}return r;}
+function sfRow(code){ensureSalesForecast();if(!db.salesForecastV5.rows[code])db.salesForecastV5.rows[code]={price:0,dates:['','','','',''],lines:{}};const r=db.salesForecastV5.rows[code];if(!Array.isArray(r.dates))r.dates=['','','','',''];{const dd=sfDefaultDates();for(let n=0;n<SF_WEEKS;n++)if(!r.dates[n])r.dates[n]=dd[n];if(!Array.isArray(r.ends))r.ends=['','','','',''];for(let n=0;n<SF_WEEKS;n++)if(!r.ends[n]&&r.dates[n])r.ends[n]=sfDefaultEnd(r.dates[n]);}if(!r.lines)r.lines={};if(r.price==null)r.price=0;if(!r.amounts)r.amounts={};SF_LOCATIONS.forEach(k=>{if(!r.amounts[k])r.amounts[k]={est:null,act:null};});for(let n=0;n<SF_WEEKS;n++){if(!r.lines[n])r.lines[n]={};SF_LOCATIONS.forEach(k=>{if(!r.lines[n][k])r.lines[n][k]={est:0,act:0};});}return r;}
 function renderSalesForecast(){ensureSalesForecast();const d=db.salesForecastV5,cn=document.getElementById('forecast-campaign-name');if(cn)cn.value=d.campaignName||'';document.querySelectorAll('.sf-lastyear').forEach(e=>e.value=sfFmtMoney(d.lastYear[e.dataset.sfLast]));{const nb=document.getElementById('sf-lastyear-note');if(nb)nb.textContent=d.lastYearNote||'';}const body=document.getElementById('salesForecastBody');if(!body)return;body.innerHTML=getForecastProducts().map(p=>{const code=String(p.code||p.id||''),r=sfRow(code),key=code.replace(/[^A-Za-z0-9]/g,'_');const heads=SF_LOCATIONS.map(k=>`<th colspan="2">${SF_LABELS[k]}</th>`).join('');const subs=SF_LOCATIONS.map(()=>'<th>預估</th><th>實際</th>').join('');const rows=[0,1,2,3,4].map(n=>`<tr><td class="sf-date"><input type="date" aria-label="區間起 ${n+1}" title="這一週的區間起" value="${escHist(r.dates[n]||'')}" data-sf-code="${code}" data-sf-date-index="${n}" onchange="updateSalesForecastDate(this)"><div class="small" style="margin:1px 0;text-align:center;line-height:1">～</div><input type="date" aria-label="區間迄 ${n+1}" title="這一週的區間迄" value="${escHist(r.ends[n]||'')}" data-sf-code="${code}" data-sf-end-index="${n}" onchange="updateSalesForecastEnd(this)"></td>${SF_LOCATIONS.map(k=>{const x=r.lines[n][k];return `<td class="sf-est"><input type="number" min="0" value="${Number(x.est)||''}" data-sf-code="${code}" data-sf-date="${n}" data-sf-loc="${k}" data-sf-kind="est" oninput="updateSalesForecastCell(this)"${sfLockAttr()}></td><td class="sf-act"><input type="number" min="0" value="${Number(x.act)||''}" data-sf-code="${code}" data-sf-date="${n}" data-sf-loc="${k}" data-sf-kind="act" oninput="updateSalesForecastCell(this)"></td>`}).join('')}<td id="sf-row-${key}-${n}"></td><td id="sf-row-act-${key}-${n}"></td></tr>`).join('');const totals=SF_LOCATIONS.map(k=>`<td id="sf-${key}-${k}-est-total"></td><td id="sf-${key}-${k}-act-total"></td>`).join('');const amounts=SF_LOCATIONS.map(k=>`<td class="sf-est sf-calculated" id="sf-${key}-${k}-est-amount"></td><td class="sf-act sf-calculated" id="sf-${key}-${k}-act-amount"></td>`).join('');return `<div class="forecast-product-block"><table class="sheet-table forecast-product-table"><colgroup><col style="width:12%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"></colgroup><thead><tr><th class="sf-product-name">${p.code?escHist(code)+' ':''}${escHist(p.name||'')}</th>${heads}<th colspan="2">小計</th></tr><tr><th>日期</th>${subs}<th>預估</th><th>實際</th></tr></thead><tbody>${rows}<tr class="sf-total-row"><th>總計</th>${totals}<th id="sf-${key}-grandqty"></th><th id="sf-${key}-grandactqty"></th></tr><tr class="sf-amount-row"><th>金額</th>${amounts}<th id="sf-${key}-grandamount"></th><th id="sf-${key}-grandactamount"></th></tr></tbody></table></div>`;}).join('');recalcSalesForecast();refreshSalesForecastProductOptions();filterSalesForecastProducts();
  try{if(typeof renderSfLock==='function')renderSfLock();if(typeof renderSfChangeLog==='function')renderSfChangeLog();}catch(e){console.warn('業績異動區顯示失敗',e);}
  if(!sfLastYearAuto){sfLastYearAuto=true;if(!SF_LOCATIONS.some(k=>(Number(d.lastYear[k])||0)>0))fillLastYearFromOrders(false);}}
@@ -563,7 +595,7 @@ function updateSalesForecastAmount(el){const r=sfRow(el.dataset.sfCode);r.amount
 function updateSalesForecastPrice(el){sfRow(el.dataset.sfCode).price=Number(el.value)||0;recalcSalesForecast();scheduleSalesForecastSave();}
 function updateSalesForecastDate(el){const r=sfRow(el.dataset.sfCode),n=Number(el.dataset.sfDateIndex),old=r.dates[n]||'',v=el.value||'';
  // 「迄」本來就是「起＋7 天」（或還沒填）時，改「起」會讓「迄」跟著移
- if(!r.ends[n]||r.ends[n]===sfAddDays(old,7)){r.ends[n]=v?sfAddDays(v,7):'';const e=el.closest('td')&&el.closest('td').querySelector('[data-sf-end-index]');if(e)e.value=r.ends[n];}
+ if(!r.ends[n]||r.ends[n]===sfDefaultEnd(old)){r.ends[n]=v?sfDefaultEnd(v):'';const e=el.closest('td')&&el.closest('td').querySelector('[data-sf-end-index]');if(e)e.value=r.ends[n];}
  r.dates[n]=v;scheduleSalesForecastSave();}
 function updateSalesForecastEnd(el){const r=sfRow(el.dataset.sfCode),n=Number(el.dataset.sfEndIndex),v=el.value||'';
  if(v&&r.dates[n]&&v<r.dates[n]){alert('區間的「迄」不能早於「起」。');el.value=r.ends[n]||'';return;}
