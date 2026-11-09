@@ -603,7 +603,7 @@
         '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><b>日期區間</b>' +
         '<input type="date" data-qe="ngfrom" aria-label="起" value="' + esc(qe.ngFrom) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
         '<input type="date" data-qe="ngto" aria-label="迄" value="' + esc(qe.ngTo) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
-        nbtn('ng-today', '今天') + nbtn('ng-7', '最近 7 天') + nbtn('ng-month', '本月') + '</div>' +
+        '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 10px">' +
         '<label class="small" style="display:inline-flex;gap:6px;align-items:center"><b>折盒部門</b><select data-qe="ngdept" aria-label="折盒部門篩選" style="min-height:34px"></select></label>' +
         '<label class="small" style="display:inline-flex;gap:6px;align-items:center"><b>包材品項</b><select data-qe="ngmat" aria-label="包材品項篩選" style="min-height:34px;max-width:260px"></select></label>' +
@@ -859,12 +859,6 @@
         qe.to = t0; qe.from = act === 'rg-today' ? t0 : (act === 'rg-7' ? shiftDate(t0, -6) : t0.slice(0, 8) + '01');
         var fi = q$(el, '[data-qe="from"]'), ti = q$(el, '[data-qe="to"]'); if (fi) fi.value = qe.from; if (ti) ti.value = qe.to;
         updateQeRange(el);
-      }
-      else if (act === 'ng-today' || act === 'ng-7' || act === 'ng-month') {
-        var t1 = X.today();
-        qe.ngTo = t1; qe.ngFrom = act === 'ng-today' ? t1 : (act === 'ng-7' ? shiftDate(t1, -6) : t1.slice(0, 8) + '01');
-        var nf = q$(el, '[data-qe="ngfrom"]'), nt = q$(el, '[data-qe="ngto"]'); if (nf) nf.value = qe.ngFrom; if (nt) nt.value = qe.ngTo;
-        updateNg(el);
       }
       else if (act === 'ng-clear') {
         qe.ngDept = ''; qe.ngMat = '';
