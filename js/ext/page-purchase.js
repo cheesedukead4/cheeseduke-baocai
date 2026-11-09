@@ -30,6 +30,7 @@
   var esc = X.esc;
   var st = { week: '', logPid: '', item: '', basis: 'target' }; // basis：採購交貨表顯示哪一種數量（target 目標叫貨｜u100｜u70） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
+  var EGG_CARTON = 20; // 蛋捲禮盒 20 盒為一箱（每個品項、每個到貨日各自補到整箱）
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
   function label(p) { return (p && p.code ? p.code + ' ' : '') + (p ? p.name : '（已刪除）'); }
@@ -191,7 +192,7 @@
   function render(el) {
     var c = compute(), fee = feePct(), egg = eggPct(), filtered = c.weekFiltering, all = compute({ all: true });
     if (st.item && !all.rows.some(function (r) { return String(r.id) === String(st.item); })) st.item = '';
-    var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。檔期一開始會<b>整批一次叫完</b>：按「整批叫貨」就把每個品項的<b>目標叫貨</b>（費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改）建立成叫貨量；之後有加量或異動，在品項右邊按「修改叫貨量」，改了什麼、為什麼改，都會記在下面的「叫貨量異動歷程」。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
+    var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。下面的<b>採購交貨表</b>依到貨日列出每個口味要交多少條（目標叫貨：費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改）；<b>蛋捲禮盒以 ' + EGG_CARTON + ' 盒為一箱，不足 ' + EGG_CARTON + ' 盒的會補到整箱</b>。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
     // 篩選：預估期間（可複選）、到貨日（起～迄）、品項
     var filterHtml = '', filterBanner = '';
     if (all.weekList.length || all.rows.length) {
@@ -231,12 +232,8 @@
     };
     html += X.ui.kpis([
       kp('費雪禮盒', feeG), kp('蛋捲禮盒', eggG), kp('單條（單賣）', c.singles),
-      { label: '叫貨量異動', value: adjN + ' 次', tone: adjN ? 'warn' : 'muted', sub: lastLog ? '最近 ' + tm(lastLog.at) + ' ' + (lastLog.by || '') : '整批叫貨後的加量、減量會記在下面' }
+      { label: '叫貨量異動', value: adjN + ' 次', tone: adjN ? 'warn' : 'muted', sub: lastLog ? '最近 ' + tm(lastLog.at) + ' ' + (lastLog.by || '') : '目前沒有異動紀錄' }
     ]);
-    if (todo.length) {
-      html += X.ui.banner('warn', '還有 <b>' + todo.length + '</b> 個品項沒有叫貨量（目標合計 <b>' + X.fmt(sum(todo, 'aim')) + '</b> 條）。檔期開始時按「整批叫貨」一次建立。') +
-        '<div style="margin:8px 0"><button type="button" class="btn primary" data-act="batch" style="min-height:36px">整批叫貨（' + todo.length + ' 項）</button></div>';
-    }
 
     if (c.noComp.length) {
       html += X.ui.banner('warn', '這些禮盒還沒有設單條內容物，沒辦法換算成條（先按 1 盒算，單位顯示「盒」）：' + c.noComp.map(function (r) { return esc(label(r.p)); }).join('、') + '。請到「禮盒資料」設定單條內容物。');
@@ -289,10 +286,11 @@
       var ps = c.cv.parts(r.p) || [];
       (r.ranges || []).forEach(function (g) {
         if (!(g.est > 0)) return;
-        var boxes = st.basis === 'u100' ? g.est : (st.basis === 'u70' ? Math.ceil(g.est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, g.est));
+        var boxes = st.basis === 'u100' ? g.est : (st.basis === 'u70' ? Math.ceil(g.est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, g.est)), extra = 0;
+        if (r.egg && !r.single && boxes > 0) { extra = Math.ceil(boxes / EGG_CARTON) * EGG_CARTON - boxes; boxes += extra; } // 不足一箱的補到整箱
         if (r.egg) { // 蛋捲的禮盒（盒）與單賣單條（單支，條）：填進這個到貨日的備註
           var er = piv.egg.rows[g.start] || (piv.egg.rows[g.start] = { start: g.start, end: g.end, v: {} });
-          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, single: r.single });
+          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: extra, single: r.single });
         }
         ps.forEach(function (pt) {
           var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
@@ -320,12 +318,12 @@
         var autoNote = '';
         if (key === 'egg' && r.items && r.items.length) {
           autoNote = r.items.slice().sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || (b.boxes - a.boxes); })
-            .map(function (it) { return it.single ? it.name + '單支' + X.fmt(it.boxes) : it.name + X.fmt(it.boxes) + '盒'; }).join('、');
+            .map(function (it) { return it.single ? esc(it.name + '單支') + '（' + X.fmt(it.boxes) + '條）' : esc(it.name) + '（' + X.fmt(it.boxes) + '盒' + (it.extra ? '，含補 ' + X.fmt(it.extra) + ' 盒' : '') + '）'; }).join('<br>'); // 一個品項一行，名稱後面括號才寫數量
         }
         return '<tr><td style="padding:6px 10px;border:1px solid #cfd8c8;font-weight:700;text-align:center;white-space:nowrap;background:#e2efd9">' + esc(dayText(arrivalOf(r.start))) + '</td>' + tds +
           '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(sub) + '</td>' +
           '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">' + esc(md(r.start) + '-' + md(r.end)) + '</td>' +
-          '<td style="padding:4px 6px;border:1px solid #cfd8c8">' + (autoNote ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;min-width:200px">' + esc(autoNote) + '</div>' : '') + '<input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="備註（例：已交貨）" aria-label="備註" style="width:100%;min-width:150px;box-sizing:border-box;border:0;background:transparent;font:inherit"></td></tr>';
+          '<td style="padding:4px 6px;border:1px solid #cfd8c8">' + (autoNote ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;min-width:200px;line-height:1.5">' + autoNote + '</div>' : '') + '<input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="備註（例：已交貨）" aria-label="備註" style="width:100%;min-width:150px;box-sizing:border-box;border:0;background:transparent;font:inherit"></td></tr>';
       }).join('');
       var foot = '<tr><td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">口味小計</td>' +
         cols.map(function (cp) { return '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(colTot[cp.id] || 0) + '</td>'; }).join('') +
@@ -341,7 +339,7 @@
       '<p class="small" style="margin:8px 0 0">每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；不同品項不加總。每週的目標各自無條件進位，所以同一個品項各週加起來可能和「各品項叫貨量」的目標差一點點。</p></details>';
     html += X.ui.card('採購交貨（依到貨日、口味，單位：條）', filterHtml + filterBanner + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的數量＝禮盒依單條內容物換算成條，加上單賣的單條；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的數量＝禮盒依單條內容物換算成條，加上單賣的單條（<b>蛋捲禮盒以 ' + EGG_CARTON + ' 盒為一箱，每個品項、每個到貨日不足 ' + EGG_CARTON + ' 盒的會補到整箱，補的盒數也算進口味條數</b>）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -371,7 +369,7 @@
       { label: '修改人', render: function (e) { return esc(e.by || ''); } }
     ];
     html += X.ui.card('業績異動（預估量改了多少，轉成要叫的單條數）', X.ui.table(fcols, fcs.slice(0, 100), { empty: '還沒有業績異動。業績預估頁到了鎖定日期之後，每次修改預估量都會列在這裡。' }) +
-      '<p class="small" style="margin:10px 0 0">資料來自「業績預估」頁的業績異動（鎖定日期之後改預估量）。<b>盒數</b>是禮盒的預估盒數（單條單賣的品項是條）；<b>轉單條數量</b>＝盒數 × 每盒單條數（100%，沒乘進貨比例）。實際要叫多少看上面表格的「目標叫貨」（費雪 ' + fee + '%、蛋捲 ' + egg + '%），已經叫的貨用「修改叫貨量」跟著調整。轉單條用的是目前「禮盒資料」的單條內容物。' + (fcs.length > 100 ? '只列最新 100 筆。' : '') + '</p>');
+      '<p class="small" style="margin:10px 0 0">資料來自「業績預估」頁的業績異動（鎖定日期之後改預估量）。<b>盒數</b>是禮盒的預估盒數（單條單賣的品項是條）；<b>轉單條數量</b>＝盒數 × 每盒單條數（100%，沒乘進貨比例）。實際要交多少看上面採購交貨表（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。轉單條用的是目前「禮盒資料」的單條內容物。' + (fcs.length > 100 ? '只列最新 100 筆。' : '') + '</p>');
 
     // 叫貨量異動歷程
     var names = {}, logPids = [];
@@ -393,7 +391,7 @@
     ];
     var logSel = '<label class="small" style="display:inline-flex;gap:6px;align-items:center">只看 <select id="xpLogItem" style="min-height:32px"><option value="">全部品項</option>' +
       logPids.map(function (k) { return '<option value="' + esc(k) + '"' + (k === st.logPid ? ' selected' : '') + '>' + esc(label(c.cv.byId[k])) + '</option>'; }).join('') + '</select></label>';
-    html += X.ui.card('叫貨量異動歷程（整批叫貨之後的加量、減量）', X.ui.table(lcols, logs.slice(0, 100), { empty: '還沒有異動紀錄。整批叫貨、或按品項右邊的「修改叫貨量」後，每次修改都會記在這裡。' }) +
+    html += X.ui.card('叫貨量異動歷程', X.ui.table(lcols, logs.slice(0, 100), { empty: '沒有異動紀錄。' }) +
       '<p class="small" style="margin:10px 0 0">' + (logs.length ? '共 ' + logs.length + ' 筆' + (logs.length > 100 ? '（只列最新 100 筆）' : '') + '；加量合計 <b>' + X.fmt(addQ) + '</b> 條、減量合計 <b>' + X.fmt(cutQ) + '</b> 條（不含整批叫貨的起始量）。' : '') + '歷程只增不改，修改人與時間用當下登入的帳號。</p>', logPids.length ? logSel : '');
 
     // 廠商資料表
@@ -409,7 +407,7 @@
       { label: '', render: function (s) { return '<div class="x-row-actions">' + rowBtn('sedit', s.id, '編輯') + rowBtn('sdel', s.id, '刪除', 'red') + '</div>'; } }
     ];
     html += X.ui.card('廠商資料表', X.ui.table(vcols, sup, { empty: '還沒有廠商資料。按「新增廠商」建立。' }) +
-      '<p class="small" style="margin:10px 0 0">「供應品項」勾了之後，上面表格會顯示這個品項的廠商，整批叫貨時自動帶入，「複製叫貨單」也會依廠商分開。停用的廠商不會再被帶入，舊紀錄還是看得到名稱。</p>',
+      '<p class="small" style="margin:10px 0 0">「供應品項」勾了，代表這個廠商供應這些禮盒、單條；停用的廠商不會再被帶入，舊紀錄還是看得到名稱。</p>',
       '<button type="button" class="btn primary" data-act="snew" style="min-height:34px">新增廠商</button>');
 
     el.innerHTML = html;
@@ -596,7 +594,7 @@
 
   X.registerPage({
     id: 'xPurchase', group: 'plan', order: 20, stage: 'ready',
-    title: '採購叫貨', sub: '檔期開始整批叫貨，之後加量、異動都留歷程；目標：費雪 70%、蛋捲 100%',
+    title: '採購叫貨', sub: '依到貨日、口味列出要交多少條；目標：費雪 70%、蛋捲 100%（蛋捲 20 盒一箱）',
     icon: '<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/>',
     render: render,
     _fn: { compute: compute }
