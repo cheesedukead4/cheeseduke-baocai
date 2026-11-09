@@ -194,9 +194,10 @@
     if (st.item && !all.rows.some(function (r) { return String(r.id) === String(st.item); })) st.item = '';
     var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。檔期一開始會<b>整批一次叫完</b>：按「整批叫貨」就把每個品項的<b>目標叫貨</b>（費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改）建立成叫貨量；之後有加量或異動，在品項右邊按「修改叫貨量」，改了什麼、為什麼改，都會記在下面的「叫貨量異動歷程」。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
     // 篩選：預估期間（可複選）、到貨日（起～迄）、品項
+    var filterHtml = '', filterBanner = '';
     if (all.weekList.length || all.rows.length) {
       var lbl = 'class="small" style="min-width:64px;font-weight:700"';
-      html += '<div class="x-card panel" style="padding:12px 14px;margin-bottom:12px">' +
+      filterHtml = '<div style="padding:12px 14px;margin:0 0 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2,#f7f8f6)">' +
         (all.weekList.length ? '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px"><span ' + lbl + '>預估期間</span>' + chip('week', 'all', '全部', !st.weeks.length) +
           all.weekList.map(function (g) { return chip('week', g.start, md(g.start) + '～' + md(g.end), st.weeks.indexOf(g.start) >= 0); }).join('') + '</div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px"><span ' + lbl + '>到貨日</span>' +
@@ -212,7 +213,7 @@
         if (st.weeks.length) parts.push('預估期間 ' + st.weeks.slice().sort().map(function (w) { var g = all.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、'));
         if (st.arrFrom || st.arrTo) parts.push('到貨日 ' + esc(st.arrFrom ? md(st.arrFrom) : '最早') + '～' + esc(st.arrTo ? md(st.arrTo) : '最晚'));
         if (st.item) { var ip = all.rows.find(function (r) { return String(r.id) === String(st.item); }); parts.push('品項 ' + esc(ip ? label(ip.p) : '')); }
-        html += X.ui.banner('info', '目前篩選：<b>' + parts.join('；') + '</b>。' + (filtered ? '預估、100%、70%、目標叫貨只算篩到的那幾週；<b>叫貨量是整個檔期的，不分週</b>，所以不顯示和目標的差異。' : '') + '按「清除篩選」回到全部。');
+        filterBanner = X.ui.banner('info', '目前篩選：<b>' + parts.join('；') + '</b>。' + (filtered ? '預估、100%、70%、目標叫貨只算篩到的那幾週；<b>叫貨量是整個檔期的，不分週</b>，所以不顯示和目標的差異。' : '') + '按「清除篩選」回到全部。');
       }
     }
 
@@ -299,8 +300,8 @@
       { label: '目標叫貨（條）', num: true, render: function (w) { return '<b>' + X.fmt(w.target) + '</b>' + (w.r.noComp ? ' <span class="small">盒</span>' : ''); } },
       { label: '轉換單條（目標拆成各單條）', render: function (w) { return convText({ single: w.r.single, noComp: w.r.noComp, conv: w.conv }); } }
     ];
-    html += X.ui.card('預估區間與到貨日期（每個品項、每一週一列）', X.ui.table(wcols, wrows, { empty: filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。' }) +
-      '<p class="small" style="margin:10px 0 0">依到貨日期排序。「到貨日期」＝預估區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；<b>不同品項不加總</b>。每週的目標各自無條件進位，所以同一個品項各週加起來可能和上面「各品項」的目標差一點點（上面的目標是整個品項算一次進位）。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。</p>');
+    html += X.ui.card('預估區間與到貨日期（每個品項、每一週一列）', filterHtml + filterBanner + X.ui.table(wcols, wrows, { empty: filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。' }) +
+      '<p class="small" style="margin:10px 0 0">依到貨日期排序。「到貨日期」＝預估區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；<b>不同品項不加總</b>。每週的目標各自無條件進位，所以同一個品項各週加起來可能和上面「各品項」的目標差一點點（上面的目標是整個品項算一次進位）。上面的篩選（預估期間、到貨日、品項）也會跟著篩下面的「各品項叫貨量」和上面的統計。</p>');
 
     html += X.ui.card('各品項叫貨量（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
       '<p class="small" style="margin:10px 0 0">每個品項整個檔期（或篩到的週）的合計；每一週的預估區間、到貨日期看上面「預估區間與到貨日期」。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。</p>',
