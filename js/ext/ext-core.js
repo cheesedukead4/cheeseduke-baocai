@@ -132,6 +132,10 @@
         fromQty: '修改前預估量', toQty: '修改後預估量', fromDate: '鎖定日期（修改前）', toDate: '鎖定日期（修改後）', reason: '異動原因'
       }
     },
+    deliveryActuals: {
+      label: '實際下定量', type: 'array',
+      fields: { id: '唯一代號', seasonId: '檔期 id', group: "'fee' 費雪｜'egg' 蛋捲（採購叫貨頁交貨表）", week: '這一列的預估區間起 YYYY-MM-DD', singleId: '口味（單條品項 id）', qty: '實際下定的條數', by: '最後修改者', at: '最後修改時間（毫秒）' }
+    },
     deliveryNotes: {
       label: '採購交貨備註', type: 'array',
       fields: { id: '唯一代號', seasonId: '檔期 id', group: "'fee' 費雪｜'egg' 蛋捲（採購叫貨頁的交貨表）", week: '這一列的預估區間起 YYYY-MM-DD', note: '備註（例：已交貨）', by: '最後修改者', at: '最後修改時間（毫秒）' }
