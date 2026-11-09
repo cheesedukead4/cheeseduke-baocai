@@ -23,7 +23,7 @@
     orderHistory: '過去訂單紀錄', seasons: '檔期設定',
     codeMap: '訂單品號對照', deptMap: '通路／部門對照', orderImports: '訂單匯入紀錄', pendingOrders: '待確認訂單',
     movements: '包材快速異動', stocktakes: '盤點紀錄',
-    packRecords: '裝盒回報', appSettings: '系統設定', hqStock: '總表現貨', purchaseOrders: '採購叫貨紀錄', orderChanges: '叫貨量異動歷程', materialLinks: '連動規則', foldDepts: '折盒部門清單', materialLinksSeeded: '連動規則預設（已建立）', forecastChanges: '業績異動歷程', movementLog: '快速輸入修改歷程', singleForecast: '單條預估量', portalOrders: '入口網站訂單（實際銷售）', suppliers: '廠商資料表', seasonRecipes: '各檔期配方', seasonForecasts: '各檔期業績預估', calcRules: '計算規則', calcRulesLog: '計算規則修改紀錄', users: '人員與權限',
+    packRecords: '裝盒回報', appSettings: '系統設定', hqStock: '總表現貨', purchaseOrders: '採購叫貨紀錄', orderChanges: '叫貨量異動歷程', materialLinks: '連動規則', foldDepts: '折盒部門清單', foldHiddenMaterials: '折盒頁不顯示的包材', foldHiddenSeeded: '折盒頁隱藏預設（已建立）', materialLinksSeeded: '連動規則預設（已建立）', forecastChanges: '業績異動歷程', movementLog: '快速輸入修改歷程', singleForecast: '單條預估量', portalOrders: '入口網站訂單（實際銷售）', suppliers: '廠商資料表', seasonRecipes: '各檔期配方', seasonForecasts: '各檔期業績預估', calcRules: '計算規則', calcRulesLog: '計算規則修改紀錄', users: '人員與權限',
     packagingRecoveryOnce: '配方補回（已執行）', historicalGiftsOnce: '歷史禮盒補回（已執行）', giftCodeMigrationOnce: '禮盒編號校正（已執行）'
   };
 

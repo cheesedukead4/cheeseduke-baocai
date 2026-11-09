@@ -132,6 +132,10 @@
         fromQty: '修改前預估量', toQty: '修改後預估量', fromDate: '鎖定日期（修改前）', toDate: '鎖定日期（修改後）', reason: '異動原因'
       }
     },
+    foldHiddenMaterials: {
+      label: '折盒頁不顯示的包材', type: 'array',
+      fields: { id: '包材 id（折盒頁的登記格、統計不顯示這個包材；在「進貨與使用」頁照常顯示。例如袖套是倉管才用）' }
+    },
     foldDepts: {
       label: '折盒部門清單', type: 'array',
       fields: { id: '唯一代號', name: '部門名稱（折盒頁的「折盒部門」選單；movements 的 dept 欄存部門名稱）' }
