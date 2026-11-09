@@ -28,7 +28,7 @@
   'use strict';
   if (!X) return;
   var esc = X.esc;
-  var st = { week: '', logPid: '', item: '' }; // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
+  var st = { week: '', logPid: '', item: '', basis: 'target' }; // basis：採購交貨表顯示哪一種數量（target 目標叫貨｜u100｜u70） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
@@ -299,8 +299,57 @@
       { label: '目標叫貨（條）', num: true, render: function (w) { return '<b>' + X.fmt(w.target) + '</b>' + (w.r.noComp ? ' <span class="small">盒</span>' : ''); } },
       { label: '轉換單條（目標拆成各單條）', render: function (w) { return convText({ single: w.r.single, noComp: w.r.noComp, conv: w.conv }); } }
     ];
-    html += X.ui.card('預估區間與到貨日期（每個品項、每一週一列）', filterHtml + filterBanner + X.ui.table(wcols, wrows, { empty: filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。' }) +
-      '<p class="small" style="margin:10px 0 0">依到貨日期排序。「到貨日期」＝預估區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；<b>不同品項不加總</b>。每週的目標各自無條件進位，所以同一個品項各週加起來可能和上面「各品項」的目標差一點點（上面的目標是整個品項算一次進位）。上面的篩選（預估期間、到貨日、品項）也會跟著篩下面的「各品項叫貨量」和上面的統計。</p>');
+    // 採購交貨表（比照 Excel）：每個到貨日一列、每個口味（單條）一欄，每周小計、販售區間、備註；最下面口味小計。費雪、蛋捲各一張，單位都是條
+    var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } };
+    c.rows.forEach(function (r) {
+      var ps = c.cv.parts(r.p);
+      if (!ps) return;
+      (r.ranges || []).forEach(function (g) {
+        if (!(g.est > 0)) return;
+        var boxes = st.basis === 'u100' ? g.est : (st.basis === 'u70' ? Math.ceil(g.est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, g.est));
+        ps.forEach(function (pt) {
+          var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
+          var row = P.rows[g.start] || (P.rows[g.start] = { start: g.start, end: g.end, v: {} });
+          row.v[pt.single.id] = (row.v[pt.single.id] || 0) + boxes * pt.qty;
+          P.cols[pt.single.id] = pt.single;
+        });
+      });
+    });
+    var wdays = ['日', '一', '二', '三', '四', '五', '六'];
+    var dayText = function (d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || '')); return m ? md(d) + '(' + wdays[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()] + ')' : ''; };
+    var noteOf = function (group, week) { var n = X.get('deliveryNotes').find(function (x) { return x && x.group === group && x.week === week && (x.seasonId || '') === seasonId(); }); return n ? String(n.note || '') : ''; };
+    var thS = 'style="background:#2f5d1e;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #1f4012"';
+    var tdS = 'style="padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"';
+    var yel = 'background:#fff36b;font-weight:700;';
+    var pivotHtml = function (key, title) {
+      var P = piv[key], cols = Object.keys(P.cols).map(function (k) { return P.cols[k]; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+      var rows = Object.keys(P.rows).sort().map(function (k) { return P.rows[k]; });
+      if (!rows.length) return '';
+      var colTot = {}, grand = 0;
+      var body = rows.map(function (r) {
+        var sub = 0;
+        var tds = cols.map(function (cp) { var v = r.v[cp.id] || 0; sub += v; colTot[cp.id] = (colTot[cp.id] || 0) + v; return '<td ' + tdS + '>' + X.fmt(v) + '</td>'; }).join('');
+        grand += sub;
+        return '<tr><td style="padding:6px 10px;border:1px solid #cfd8c8;font-weight:700;text-align:center;white-space:nowrap;background:#e2efd9">' + esc(dayText(arrivalOf(r.start))) + '</td>' + tds +
+          '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(sub) + '</td>' +
+          '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">' + esc(md(r.start) + '-' + md(r.end)) + '</td>' +
+          '<td style="padding:4px 6px;border:1px solid #cfd8c8"><input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="備註（例：已交貨）" aria-label="備註" style="width:100%;min-width:150px;box-sizing:border-box;border:0;background:transparent;font:inherit"></td></tr>';
+      }).join('');
+      var foot = '<tr><td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">口味小計</td>' +
+        cols.map(function (cp) { return '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(colTot[cp.id] || 0) + '</td>'; }).join('') +
+        '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(grand) + '</td><td colspan="2" style="border:1px solid #cfd8c8"></td></tr>';
+      return '<p style="margin:14px 0 6px"><b>' + title + '</b></p><div class="tablewrap" style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%;font-size:inherit"><thead><tr><th ' + thS + '>到貨日</th>' +
+        cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th><th ' + thS + '>販售區間</th><th ' + thS + '>備註</th></tr></thead><tbody>' + body + foot + '</tbody></table></div>';
+    };
+    var basisChips = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px"><span class="small" style="min-width:64px;font-weight:700">顯示數量</span>' +
+      chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '</div>';
+    var pivots = pivotHtml('fee', '費雪（單位：條）') + pivotHtml('egg', '蛋捲（單位：條）');
+    // 每個品項、每一週的明細（含禮盒轉換單條）收在下面
+    var detail = '<details style="margin:16px 0 0"><summary style="cursor:pointer;font-weight:700;padding:4px 0">看每個品項、每一週的明細（含禮盒轉換成單條）</summary>' + X.ui.table(wcols, wrows, { empty: '沒有預估量。' }) +
+      '<p class="small" style="margin:8px 0 0">每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；不同品項不加總。每週的目標各自無條件進位，所以同一個品項各週加起來可能和「各品項叫貨量」的目標差一點點。</p></details>';
+    html += X.ui.card('採購交貨（依到貨日、口味，單位：條）', filterHtml + filterBanner + basisChips +
+      (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的數量＝禮盒依單條內容物換算成條，加上單賣的單條；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）也會跟著篩下面的「各品項叫貨量」和上面的統計。</p>' + detail);
 
     html += X.ui.card('各品項叫貨量（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
       '<p class="small" style="margin:10px 0 0">每個品項整個檔期（或篩到的週）的合計；每一週的預估區間、到貨日期看上面「預估區間與到貨日期」。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。</p>',
@@ -381,6 +430,13 @@
       if (id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
       else if (id === 'xpItem') { st.item = e.target.value; render(el); }
       else if (id === 'xpWeek' || id === 'xpArr') { st.week = e.target.value; render(el); }
+      else if (e.target && e.target.dataset && e.target.dataset.dnote) {
+        var group = e.target.dataset.dnote, wk = e.target.dataset.week, v = String(e.target.value || '').trim().slice(0, 100), arr = X.ensure('deliveryNotes'), sid = seasonId();
+        var rec = arr.find(function (x) { return x && x.group === group && x.week === wk && (x.seasonId || '') === sid; });
+        if (!rec) { if (!v) return; rec = { id: X.uid('dn'), seasonId: sid, group: group, week: wk }; arr.push(rec); }
+        rec.note = v; rec.by = X.userName(); rec.at = Date.now();
+        X.save({ silent: true });
+      }
     };
     el.onclick = function (e) { onClick(e, el, c); };
   }
@@ -534,6 +590,7 @@
     if (!b) return;
     var a = b.dataset.act, id = b.dataset.id;
     if (a === 'filter-clear') { st.week = ''; st.item = ''; render(el); }
+    else if (a === 'basis') { st.basis = b.dataset.v; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
     else if (a === 'copy') copyList(c);
