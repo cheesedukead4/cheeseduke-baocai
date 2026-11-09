@@ -28,7 +28,7 @@
   'use strict';
   if (!X) return;
   var esc = X.esc;
-  var st = { weeks: [], logPid: '', arrFrom: '', arrTo: '', item: '' }; // arrFrom～arrTo：到貨日篩選（含當天）；item：只看某個品項 // weeks：日期篩選選到的預估區間（區間起日期；空＝全部）；logPid：異動歷程只看哪個品項
+  var st = { week: '', logPid: '', item: '' }; // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
@@ -135,10 +135,9 @@
     var weeksAll = Object.create(null);
     rows.forEach(function (r) { (r.ranges || []).forEach(function (g) { weeksAll[g.start] = g; }); });
     var weekList = Object.keys(weeksAll).sort().map(function (k) { return weeksAll[k]; });
-    // 篩選：預估期間（可複選）、到貨日（起～迄，含當天）兩個條件都要符合的那幾週；品項另外篩
-    var useF = !(opts && opts.all), weekFiltering = useF && (st.weeks.length > 0 || !!st.arrFrom || !!st.arrTo);
-    var arrOk = function (w) { var a = arrivalOf(w); return (!st.arrFrom || a >= st.arrFrom) && (!st.arrTo || a <= st.arrTo); };
-    var sel = weekFiltering ? weekList.map(function (g) { return g.start; }).filter(function (w) { return (!st.weeks.length || st.weeks.indexOf(w) >= 0) && arrOk(w); }) : [];
+    // 篩選：預估期間、到貨日（下拉選單，選到同一週）；品項另外篩
+    var useF = !(opts && opts.all), weekFiltering = useF && !!st.week && !!weeksAll[st.week];
+    var sel = weekFiltering ? [st.week] : [];
     if (weekFiltering) {
       rows = rows.filter(function (r) {
         var rg = (r.ranges || []).filter(function (g) { return sel.indexOf(g.start) >= 0; });
@@ -198,20 +197,20 @@
     if (all.weekList.length || all.rows.length) {
       var lbl = 'class="small" style="min-width:64px;font-weight:700"';
       filterHtml = '<div style="padding:12px 14px;margin:0 0 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2,#f7f8f6)">' +
-        (all.weekList.length ? '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px"><span ' + lbl + '>預估期間</span>' + chip('week', 'all', '全部', !st.weeks.length) +
-          all.weekList.map(function (g) { return chip('week', g.start, md(g.start) + '～' + md(g.end), st.weeks.indexOf(g.start) >= 0); }).join('') + '</div>' +
-          '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px"><span ' + lbl + '>到貨日</span>' +
-          '<input type="date" id="xpArrFrom" value="' + esc(st.arrFrom) + '" aria-label="到貨日起" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
-          '<input type="date" id="xpArrTo" value="' + esc(st.arrTo) + '" aria-label="到貨日迄" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
-          '<span class="small">可選的到貨日：' + all.weekList.map(function (g) { return esc(md(arrivalOf(g.start))); }).join('、') + '</span></div>' : '') +
+        (all.weekList.length ? '<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:10px">' +
+          '<label style="display:inline-flex;gap:8px;align-items:center"><span ' + lbl + '>預估期間</span>' +
+          '<select id="xpWeek" aria-label="預估期間篩選" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><option value="">全部期間</option>' +
+          all.weekList.map(function (g) { return '<option value="' + esc(g.start) + '"' + (g.start === st.week ? ' selected' : '') + '>' + esc(md(g.start) + '～' + md(g.end)) + '</option>'; }).join('') + '</select></label>' +
+          '<label style="display:inline-flex;gap:8px;align-items:center"><span ' + lbl + '>到貨日</span>' +
+          '<select id="xpArr" aria-label="到貨日篩選" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><option value="">全部到貨日</option>' +
+          all.weekList.map(function (g) { return '<option value="' + esc(g.start) + '"' + (g.start === st.week ? ' selected' : '') + '>' + esc(md(arrivalOf(g.start)) + '（三）') + '</option>'; }).join('') + '</select></label></div>' : '') +
         '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span ' + lbl + '>品項</span>' +
         '<select id="xpItem" aria-label="品項篩選" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;max-width:340px"><option value="">全部品項</option>' +
         all.rows.map(function (r) { return '<option value="' + esc(r.id) + '"' + (String(r.id) === String(st.item) ? ' selected' : '') + '>' + esc((r.single ? '單條｜' : '禮盒｜') + label(r.p)) + '</option>'; }).join('') + '</select>' +
-        (st.weeks.length || st.arrFrom || st.arrTo || st.item ? '<button type="button" class="btn gray" data-act="filter-clear" style="min-height:34px">清除篩選</button>' : '') + '</div></div>';
+        (st.week || st.item ? '<button type="button" class="btn gray" data-act="filter-clear" style="min-height:34px">清除篩選</button>' : '') + '</div></div>';
       if (filtered || st.item) {
         var parts = [];
-        if (st.weeks.length) parts.push('預估期間 ' + st.weeks.slice().sort().map(function (w) { var g = all.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、'));
-        if (st.arrFrom || st.arrTo) parts.push('到貨日 ' + esc(st.arrFrom ? md(st.arrFrom) : '最早') + '～' + esc(st.arrTo ? md(st.arrTo) : '最晚'));
+        if (st.week) { var gw = all.weekList.find(function (x) { return x.start === st.week; }); parts.push('預估期間 ' + esc(md(st.week) + '～' + md(gw ? gw.end : '')) + '（到貨日 ' + esc(md(arrivalOf(st.week))) + '）'); }
         if (st.item) { var ip = all.rows.find(function (r) { return String(r.id) === String(st.item); }); parts.push('品項 ' + esc(ip ? label(ip.p) : '')); }
         filterBanner = X.ui.banner('info', '目前篩選：<b>' + parts.join('；') + '</b>。' + (filtered ? '預估、100%、70%、目標叫貨只算篩到的那幾週；<b>叫貨量是整個檔期的，不分週</b>，所以不顯示和目標的差異。' : '') + '按「清除篩選」回到全部。');
       }
@@ -381,7 +380,7 @@
       var id = e.target && e.target.id;
       if (id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
       else if (id === 'xpItem') { st.item = e.target.value; render(el); }
-      else if (id === 'xpArrFrom' || id === 'xpArrTo') { var v = e.target.value; if (id === 'xpArrFrom') st.arrFrom = v; else st.arrTo = v; if (st.arrFrom && st.arrTo && st.arrFrom > st.arrTo) { X.toast('到貨日的「起」不能晚於「迄」'); if (id === 'xpArrFrom') st.arrFrom = ''; else st.arrTo = ''; } render(el); }
+      else if (id === 'xpWeek' || id === 'xpArr') { st.week = e.target.value; render(el); }
     };
     el.onclick = function (e) { onClick(e, el, c); };
   }
@@ -534,13 +533,7 @@
     var b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!b) return;
     var a = b.dataset.act, id = b.dataset.id;
-    if (a === 'filter-clear') { st.weeks = []; st.arrFrom = ''; st.arrTo = ''; st.item = ''; render(el); }
-    else if (a === 'week') {
-      var wv = b.dataset.v;
-      if (wv === 'all') st.weeks = [];
-      else { var wi = st.weeks.indexOf(wv); if (wi >= 0) st.weeks.splice(wi, 1); else st.weeks.push(wv); }
-      render(el);
-    }
+    if (a === 'filter-clear') { st.week = ''; st.item = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
     else if (a === 'copy') copyList(c);
