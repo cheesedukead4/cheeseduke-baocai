@@ -448,7 +448,7 @@
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', dept: '', ngFrom: '', ngTo: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
+  var qe = { view: '', note: '', dept: '', ngFrom: '', ngTo: '', ngDept: '', ngMat: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
   try { if (cfg.dept) qe.dept = localStorage.getItem('cms_fold_dept') || ''; } catch (e) {}
 
   function qeTypeText(t) { return typeLabel(t); }
@@ -604,6 +604,10 @@
         '<input type="date" data-qe="ngfrom" aria-label="起" value="' + esc(qe.ngFrom) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
         '<input type="date" data-qe="ngto" aria-label="迄" value="' + esc(qe.ngTo) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
         nbtn('ng-today', '今天') + nbtn('ng-7', '最近 7 天') + nbtn('ng-month', '本月') + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 10px">' +
+        '<label class="small" style="display:inline-flex;gap:6px;align-items:center"><b>折盒部門</b><select data-qe="ngdept" aria-label="折盒部門篩選" style="min-height:34px"></select></label>' +
+        '<label class="small" style="display:inline-flex;gap:6px;align-items:center"><b>包材品項</b><select data-qe="ngmat" aria-label="包材品項篩選" style="min-height:34px;max-width:260px"></select></label>' +
+        nbtn('ng-clear', '清除篩選') + '</div>' +
         '<div data-box="qe-ng-out"></div>');
     }
     html += '<div data-box="qe-records"></div><div data-box="qe-links"></div>';
@@ -706,6 +710,19 @@
       (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
   }
 
+  // NG 統計的篩選選單：折盒部門（清單＋登記過的＋「未填」）、包材品項（折盒頁顯示的包材）；保留目前選的
+  function refreshNgFilters(el) {
+    var sd = q$(el, 'select[data-qe="ngdept"]'), sm = q$(el, 'select[data-qe="ngmat"]');
+    if (!sd || !sm) return;
+    var names = foldDepts().map(function (d) { return String(d.name).trim(); });
+    list('movements').forEach(function (r) { var k = String(r.dept || '').trim(); if (k && names.indexOf(k) < 0) names.push(k); });
+    if (qe.ngDept && qe.ngDept !== '__none__' && names.indexOf(qe.ngDept) < 0) names.push(qe.ngDept);
+    sd.innerHTML = '<option value="">全部部門</option>' + names.map(function (n) { return '<option value="' + esc(n) + '"' + (n === qe.ngDept ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '<option value="__none__"' + (qe.ngDept === '__none__' ? ' selected' : '') + '>（未填）</option>';
+    var hs = cfg.hideable ? hiddenSet() : {};
+    var mats = orderedMaterials().filter(function (m) { return !hs[String(m.id)]; });
+    sm.innerHTML = '<option value="">全部品項</option>' + mats.map(function (m) { return '<option value="' + esc(m.id) + '"' + (String(m.id) === qe.ngMat ? ' selected' : '') + '>' + esc((m.code ? m.code + ' ' : '') + (m.name || X.materialLabel(m))) + '</option>'; }).join('');
+  }
+
   // NG 統計（折盒頁）：選日期區間，看折盒NG、進貨NG 的數量，依折盒部門、依包材品項、逐日；不含已撤銷的紀錄
   // 折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記）
   function updateNg(el) {
@@ -717,16 +734,18 @@
     var order = {}; orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { order[String(m.id)] = i; });
     var ord = function (a, b) { return (order[String(a.id)] == null ? 9999 : order[String(a.id)]) - (order[String(b.id)] == null ? 9999 : order[String(b.id)]); };
     var tot = { fold: 0, foldNg: 0, inNg: 0, in: 0 }, byDept = Object.create(null), byMat = Object.create(null), byDay = Object.create(null);
-    var hsN = cfg.hideable ? hiddenSet() : {};
+    var hsN = cfg.hideable ? hiddenSet() : {}, fd = qe.ngDept, fm = qe.ngMat;
     list('movements').forEach(function (r) {
       if (r.voided === true || !(r.type in tot) || hsN[String(r.materialId)]) return;
       var dt = String(r.date || '').slice(0, 10);
       if (dt < from || dt > to) return;
       var q = num(r.qty);
+      var dk = String(r.dept || '').trim() || '（未填）';
+      if (fm && String(r.materialId) !== fm) return; // 包材品項篩選
+      if (fd && (r.type === 'in' || dk !== (fd === '__none__' ? '（未填）' : fd))) return; // 部門篩選：進貨沒有部門，篩部門時不列
       tot[r.type] += q;
       var m = byMat[String(r.materialId)] || (byMat[String(r.materialId)] = { id: r.materialId, t: { fold: 0, foldNg: 0, inNg: 0, in: 0 } }); m.t[r.type] += q;
       if (r.type === 'in') return; // 進貨沒有折盒部門
-      var dk = String(r.dept || '').trim() || '（未填）';
       var d = byDept[dk] || (byDept[dk] = { name: dk, mats: {} });
       var dmx = d.mats[String(r.materialId)] || (d.mats[String(r.materialId)] = { id: r.materialId, t: { fold: 0, foldNg: 0, inNg: 0 } }); dmx.t[r.type] += q;
       if (r.type !== 'fold') {
@@ -775,7 +794,11 @@
         }).join('；') + '</span>';
       } }
     ];
-    out.innerHTML = '<p style="margin:0 0 4px"><b>依折盒部門（各品項分開）</b></p>' + dtable +
+    var filt = [];
+    if (fd) filt.push('折盒部門＝' + (fd === '__none__' ? '（未填）' : fd));
+    if (fm) filt.push('包材品項＝' + nameOfMaterial(fm));
+    out.innerHTML = (filt.length ? '<p class="small" style="margin:0 0 8px"><b>目前篩選：</b>' + esc(filt.join('、')) + (fd ? '（進貨沒有部門，篩部門時不列進貨，進貨NG率也不算）' : '') + '</p>' : '') +
+      '<p style="margin:0 0 4px"><b>依折盒部門（各品項分開）</b></p>' + dtable +
       '<p style="margin:14px 0 4px"><b>依包材品項（有 NG 的）</b></p>' + mtable +
       '<p style="margin:14px 0 4px"><b>逐日 NG</b></p>' + (days.length ? X.ui.table(ycols, days, {}) : X.ui.empty('這段期間沒有 NG')) +
       '<p class="small" style="margin:8px 0 0">折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記，沒有部門）。不同包材品項分開列，不加總。折盒部門是登記當下選的，舊紀錄沒有部門歸在「（未填）」。已撤銷的不算。</p>';
@@ -843,6 +866,10 @@
         var nf = q$(el, '[data-qe="ngfrom"]'), nt = q$(el, '[data-qe="ngto"]'); if (nf) nf.value = qe.ngFrom; if (nt) nt.value = qe.ngTo;
         updateNg(el);
       }
+      else if (act === 'ng-clear') {
+        qe.ngDept = ''; qe.ngMat = '';
+        refreshNgFilters(el); updateNg(el);
+      }
       else if (act === 'hide-edit') foldHideDialog(el);
       else if (act === 'dept-edit') editDeptsDialog(el);
       else if (act === 'lk-new') linkDialog(el, null);
@@ -870,6 +897,7 @@
       if (!t || !t.dataset) return;
       if (t.dataset.qe === 'view') setQeView(el, t.value);
       else if (t.dataset.qe === 'dept') { if (t.value === '__new__') addDeptDialog(el); else setDept(el, t.value); }
+      else if (t.dataset.qe === 'ngdept' || t.dataset.qe === 'ngmat') { qe[t.dataset.qe === 'ngdept' ? 'ngDept' : 'ngMat'] = t.value; updateNg(el); }
       else if (t.dataset.qe === 'ngfrom' || t.dataset.qe === 'ngto') { if (dateOk(t.value)) { qe[t.dataset.qe === 'ngfrom' ? 'ngFrom' : 'ngTo'] = t.value; updateNg(el); } }
       else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
       else if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
@@ -901,6 +929,7 @@
     });
     renderQeRecords(el, all, vd, summarizeMovements(all, vd, orderedMaterials()));
     updateQeRange(el);
+    refreshNgFilters(el);
     updateNg(el);
     refreshDeptSelect(el);
     var hn = q$(el, '[data-box="qe-hidden-note"]'); if (hn) hn.innerHTML = hiddenNoteHtml();
