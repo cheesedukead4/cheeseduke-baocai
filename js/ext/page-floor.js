@@ -677,17 +677,21 @@
         if (dt < from || dt > to) return;
         var k = String(r.dept || '').trim();
         if (k) hasDept = true;
-        var e = dm[k || '（未填）'] || (dm[k || '（未填）'] = { name: k || '（未填）', t: {} });
-        e.t[r.type] = (e.t[r.type] || 0) + num(r.qty);
+        var e = dm[k || '（未填）'] || (dm[k || '（未填）'] = { name: k || '（未填）', mats: {} });
+        var em = e.mats[String(r.materialId)] || (e.mats[String(r.materialId)] = { id: r.materialId, t: {} });
+        em.t[r.type] = (em.t[r.type] || 0) + num(r.qty);
       });
-      deptRows = Object.keys(dm).map(function (k) { return dm[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : String(a.name).localeCompare(String(b.name), 'zh-TW')); });
+      // 每個部門、每個包材品項各一列（不同品項不加總）
+      Object.keys(dm).map(function (k) { return dm[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : String(a.name).localeCompare(String(b.name), 'zh-TW')); }).forEach(function (d) {
+        Object.keys(d.mats).map(function (k) { return d.mats[k]; }).sort(ord).forEach(function (m) { deptRows.push({ name: d.name, id: m.id, t: m.t }); });
+      });
     }
-    var dcolsDept = [{ label: '折盒部門', render: function (r) { return wrapText(r.name); } }].concat(TYPE_KEYS.map(function (k) {
+    var dcolsDept = [{ label: '折盒部門', render: function (r) { return wrapText(r.name); } }, { label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
       return { label: TYPES[k].label, num: true, render: function (r) { return r.t[k] ? esc(fmt(r.t[k], 2)) : muted('—'); } };
     }));
     var dkeys = Object.keys(byD).sort().reverse(), span = X.daysBetween(from, to) + 1;
-    var rcols = [{ label: '包材品項', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
-      return { label: TYPES[k].label, num: true, render: function (r) { var v = r.t[k]; return v ? (r.total ? '<b>' + esc(fmt(v, 2)) + '</b>' : esc(fmt(v, 2))) : muted('—'); } };
+    var rcols = [{ label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
+      return { label: TYPES[k].label, num: true, render: function (r) { var v = r.t[k]; return v ? esc(fmt(v, 2)) : muted('—'); } };
     }));
     var dcols = [{ label: '日期', render: function (k) { return esc(slashDate(k)); } }]
       .concat(TYPE_KEYS.map(function (t) { return { label: TYPES[t].label, num: true, render: function (k) { return byD[k].t[t] ? esc(fmt(byD[k].t[t], 2)) : muted('—'); } }; }))
@@ -696,8 +700,8 @@
         return '<span style="white-space:normal">' + ms.map(function (m) { return esc(nameOfMaterial(m.id)) + ' ' + TYPE_KEYS.filter(function (t) { return m.t[t]; }).map(function (t) { return esc(TYPES[t].label) + ' <b>' + esc(fmt(m.t[t], 2)) + '</b>'; }).join('、'); }).join('；') + '</span>';
       } }]);
     out.innerHTML = '<p style="margin:0 0 6px"><b>每一天做了多少</b>　<span class="small">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）</span></p>' +
-      '<p style="margin:0 0 4px"><b>這段期間各包材品項合計</b></p>' + X.ui.table(rcols, Object.keys(rangeM).map(function (k) { return rangeM[k]; }).sort(ord).concat(Object.keys(rangeM).length ? [{ total: true, t: tot }] : []), { empty: '這段期間沒有登記' }) +
-      (hasDept ? '<p style="margin:12px 0 4px"><b>這段期間依折盒部門</b></p>' + X.ui.table(dcolsDept, deptRows, {}) : '') +
+      '<p style="margin:0 0 4px"><b>這段期間各包材品項合計</b></p>' + X.ui.table(rcols, Object.keys(rangeM).map(function (k) { return rangeM[k]; }).sort(ord), { empty: '這段期間沒有登記' }) +
+      (hasDept ? '<p style="margin:12px 0 4px"><b>這段期間依折盒部門（各品項分開）</b></p>' + X.ui.table(dcolsDept, deptRows, {}) : '') +
       '<p style="margin:12px 0 4px"><b>逐日明細</b></p>' +
       (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
   }
@@ -723,59 +727,58 @@
       var m = byMat[String(r.materialId)] || (byMat[String(r.materialId)] = { id: r.materialId, t: { fold: 0, foldNg: 0, inNg: 0, in: 0 } }); m.t[r.type] += q;
       if (r.type === 'in') return; // 進貨沒有折盒部門
       var dk = String(r.dept || '').trim() || '（未填）';
-      var d = byDept[dk] || (byDept[dk] = { name: dk, t: { fold: 0, foldNg: 0, inNg: 0 }, days: {} }); d.t[r.type] += q;
+      var d = byDept[dk] || (byDept[dk] = { name: dk, mats: {} });
+      var dmx = d.mats[String(r.materialId)] || (d.mats[String(r.materialId)] = { id: r.materialId, t: { fold: 0, foldNg: 0, inNg: 0 } }); dmx.t[r.type] += q;
       if (r.type !== 'fold') {
-        var dd = byDay[dt] || (byDay[dt] = { foldNg: 0, inNg: 0, depts: {} }); dd[r.type] += q;
-        dd.depts[dk] = dd.depts[dk] || { foldNg: 0, inNg: 0 }; dd.depts[dk][r.type] += q;
+        var dd = byDay[dt] || (byDay[dt] = { depts: {} }), dx = dd.depts[dk] || (dd.depts[dk] = {});
+        var mx = dx[String(r.materialId)] || (dx[String(r.materialId)] = { id: r.materialId, foldNg: 0, inNg: 0 }); mx[r.type] += q;
       }
     });
     var pct = function (a, b) { return b > 0 ? esc(fmt(a / b * 100, 1)) + '%' : muted('—'); };
     var n = function (v, bold) { return v ? (bold ? '<b>' + esc(fmt(v, 2)) + '</b>' : esc(fmt(v, 2))) : muted('—'); };
-    var ngAll = tot.foldNg + tot.inNg;
-    var kp = X.ui.kpis([
-      { label: '折盒NG 合計', value: fmt(tot.foldNg, 2), tone: tot.foldNg ? 'bad' : 'muted', sub: '折盒NG率 ' + (tot.fold + tot.foldNg > 0 ? fmt(tot.foldNg / (tot.fold + tot.foldNg) * 100, 1) + '%' : '—') + '（折盒 ' + fmt(tot.fold, 2) + '）' },
-      { label: '進貨NG 合計', value: fmt(tot.inNg, 2), tone: tot.inNg ? 'bad' : 'muted', sub: '進貨NG率 ' + (tot.in > 0 ? fmt(tot.inNg / tot.in * 100, 1) + '%' : '—') + '（進貨 ' + fmt(tot.in, 2) + '）' },
-      { label: 'NG 總數量', value: fmt(ngAll, 2), tone: ngAll ? 'bad' : 'muted', sub: slashDate(from) + ' ～ ' + slashDate(to) }
-    ]);
     // 依折盒部門
-    var drows = Object.keys(byDept).map(function (k) { return byDept[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : (b.t.foldNg + b.t.inNg) - (a.t.foldNg + a.t.inNg)); });
+    var drows = [];
+    Object.keys(byDept).map(function (k) { return byDept[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : String(a.name).localeCompare(String(b.name), 'zh-TW')); }).forEach(function (d) {
+      Object.keys(d.mats).map(function (k) { return d.mats[k]; }).sort(ord).forEach(function (m) { drows.push({ name: d.name, id: m.id, t: m.t }); });
+    });
     var dcols = [
-      { label: '折盒部門', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(r.name); } },
-      { label: '折盒', num: true, render: function (r) { return n(r.t.fold, r.total); } },
-      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg, r.total); } },
-      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg, r.total); } },
-      { label: 'NG 合計', num: true, render: function (r) { return n(r.t.foldNg + r.t.inNg, true); } },
+      { label: '折盒部門', render: function (r) { return wrapText(r.name); } },
+      { label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } },
+      { label: '折盒', num: true, render: function (r) { return n(r.t.fold); } },
+      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg); } },
+      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg); } },
+      { label: '這個品項 NG 合計', num: true, render: function (r) { return n(r.t.foldNg + r.t.inNg, true); } },
       { label: '折盒NG率', num: true, render: function (r) { return pct(r.t.foldNg, r.t.fold + r.t.foldNg); } }
     ];
-    var dtable = drows.length ? X.ui.table(dcols, drows.concat([{ total: true, t: { fold: tot.fold, foldNg: tot.foldNg, inNg: tot.inNg } }]), {}) : X.ui.empty('這段期間沒有折盒或 NG 的登記');
+    var dtable = drows.length ? X.ui.table(dcols, drows, {}) : X.ui.empty('這段期間沒有折盒或 NG 的登記');
     // 依包材品項（只列有 NG 的）
     var mrows = Object.keys(byMat).map(function (k) { return byMat[k]; }).filter(function (m) { return m.t.foldNg + m.t.inNg > 0; }).sort(ord);
     var mcols = [
-      { label: '包材品項', render: function (r) { return r.total ? '<b>全部合計</b>' : wrapText(X.materialLabel(r.id)); } },
-      { label: '折盒', num: true, render: function (r) { return n(r.t.fold, r.total); } },
-      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg, r.total); } },
+      { label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } },
+      { label: '折盒', num: true, render: function (r) { return n(r.t.fold); } },
+      { label: '折盒NG', num: true, render: function (r) { return n(r.t.foldNg); } },
       { label: '折盒NG率', num: true, render: function (r) { return pct(r.t.foldNg, r.t.fold + r.t.foldNg); } },
-      { label: '進貨', num: true, render: function (r) { return n(r.t.in, r.total); } },
-      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg, r.total); } },
+      { label: '進貨', num: true, render: function (r) { return n(r.t.in); } },
+      { label: '進貨NG', num: true, render: function (r) { return n(r.t.inNg); } },
       { label: '進貨NG率', num: true, render: function (r) { return pct(r.t.inNg, r.t.in); } },
       { label: 'NG 合計', num: true, render: function (r) { return n(r.t.foldNg + r.t.inNg, true); } }
     ];
-    var mtable = mrows.length ? X.ui.table(mcols, mrows.concat([{ total: true, t: tot }]), {}) : X.ui.empty('這段期間沒有 NG');
+    var mtable = mrows.length ? X.ui.table(mcols, mrows, {}) : X.ui.empty('這段期間沒有 NG');
     // 逐日
     var days = Object.keys(byDay).sort().reverse();
     var ycols = [
       { label: '日期', render: function (k) { return esc(slashDate(k)); } },
-      { label: '折盒NG', num: true, render: function (k) { return n(byDay[k].foldNg); } },
-      { label: '進貨NG', num: true, render: function (k) { return n(byDay[k].inNg); } },
-      { label: '各部門（折盒NG／進貨NG）', render: function (k) {
-        return '<span style="white-space:normal">' + Object.keys(byDay[k].depts).map(function (dn) { var x = byDay[k].depts[dn]; return esc(dn) + ' ' + fmt(x.foldNg, 2) + '／' + fmt(x.inNg, 2); }).join('；') + '</span>';
+      { label: '各部門、各品項的 NG（折盒NG／進貨NG）', render: function (k) {
+        return '<span style="white-space:normal">' + Object.keys(byDay[k].depts).map(function (dn) {
+          var ms = Object.keys(byDay[k].depts[dn]).map(function (x) { return byDay[k].depts[dn][x]; }).sort(ord);
+          return '<b>' + esc(dn) + '</b>：' + ms.map(function (x) { return esc(nameOfMaterial(x.id)) + ' ' + fmt(x.foldNg, 2) + '／' + fmt(x.inNg, 2); }).join('、');
+        }).join('；') + '</span>';
       } }
     ];
-    out.innerHTML = kp +
-      '<p style="margin:10px 0 4px"><b>依折盒部門</b></p>' + dtable +
+    out.innerHTML = '<p style="margin:0 0 4px"><b>依折盒部門（各品項分開）</b></p>' + dtable +
       '<p style="margin:14px 0 4px"><b>依包材品項（有 NG 的）</b></p>' + mtable +
       '<p style="margin:14px 0 4px"><b>逐日 NG</b></p>' + (days.length ? X.ui.table(ycols, days, {}) : X.ui.empty('這段期間沒有 NG')) +
-      '<p class="small" style="margin:8px 0 0">折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記，沒有部門）。折盒部門是登記當下選的，舊紀錄沒有部門歸在「（未填）」。已撤銷的不算。</p>';
+      '<p class="small" style="margin:8px 0 0">折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記，沒有部門）。不同包材品項分開列，不加總。折盒部門是登記當下選的，舊紀錄沒有部門歸在「（未填）」。已撤銷的不算。</p>';
   }
 
   function renderLinksCard(el) {
