@@ -281,69 +281,122 @@
       { label: '轉換單條（目標拆成各單條）', render: function (w) { return convText({ single: w.r.single, noComp: w.r.noComp, conv: w.conv }); } }
     ];
     // 採購交貨表（比照 Excel）：每個到貨日一列、每個口味（單條）一欄，每周小計、販售區間、備註；最下面口味小計。費雪、蛋捲各一張，單位都是條
-    var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } }, eggTotals = {};
-    var entries = []; // 每個品項、每一週一筆：{ r, g, ps, boxes, extra }
-    c.rows.forEach(function (r) {
-      var ps = c.cv.parts(r.p) || [];
-      (r.ranges || []).forEach(function (g) {
-        if (!(g.est > 0)) return;
-        var boxes = st.basis === 'u100' ? g.est : (st.basis === 'u70' ? Math.ceil(g.est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, g.est));
-        entries.push({ r: r, g: g, ps: ps, boxes: boxes, extra: 0 });
+    // 業績預估量改過（鎖定日期後的「業績異動」）：這頁是連動業績預估的，所以同一份算兩次——現在的量、和「原本的量」（第一次異動前），有差的地方標紅
+    var fo0 = X.db() && X.db().salesForecastV5, sdepts = typeof SF_LOCATIONS !== 'undefined' ? SF_LOCATIONS : [];
+    var deptName = function (k) { return typeof SF_LABELS !== 'undefined' && SF_LABELS[k] ? SF_LABELS[k] : k; };
+    var origOf = {}; // 'code|週別(0起)|單位' → 原本的量
+    X.get('forecastChanges').filter(function (e) { return e && e.kind === 'change' && (!e.seasonId || e.seasonId === seasonId()); })
+      .sort(function (a, b) { return X.num(a.at) - X.num(b.at); })
+      .forEach(function (e) { var k = e.code + '|' + (X.num(e.week) - 1) + '|' + e.loc; if (!(k in origOf)) origOf[k] = X.num(e.fromQty); });
+    var deptEst = function (code, n, k, orig) {
+      var fr = fo0 && fo0.rows && fo0.rows[code];
+      if (orig) { var key = code + '|' + n + '|' + k; if (key in origOf) return origOf[key]; }
+      return X.num(fr && fr.lines && fr.lines[n] && fr.lines[n][k] && fr.lines[n][k].est);
+    };
+    var buildPiv = function (orig) {
+      var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } }, eggTotals = {}, entries = [];
+      c.rows.forEach(function (r) {
+        var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
+        if (!fr) return;
+        var ps = c.cv.parts(r.p) || [];
+        for (var n = 0; n < 5; n++) {
+          var start = fr.dates && fr.dates[n];
+          if (!start) continue;
+          if (c.weekFiltering && c.sel.indexOf(start) < 0) continue;
+          var est = 0;
+          sdepts.forEach(function (k) { est += deptEst(code, n, k, orig); });
+          if (!(est > 0)) continue;
+          var g = { start: start, end: (fr.ends && fr.ends[n]) || (typeof sfAddDays === 'function' ? sfAddDays(start, 6) : ''), est: est };
+          var boxes = st.basis === 'u100' ? est : (st.basis === 'u70' ? Math.ceil(est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, est));
+          entries.push({ r: r, g: g, ps: ps, boxes: boxes, extra: 0 });
+        }
       });
-    });
-    // 蛋捲禮盒以 20 盒為一箱：看「單次交貨（同一個到貨日）所有蛋捲禮盒的盒數合計」，不是單一品項；合計不足 20 的倍數就補到整箱，差額加在那天盒數最多的禮盒上
-    var eggByWeek = {};
-    entries.forEach(function (e) { if (e.r.egg && !e.r.single && e.boxes > 0) (eggByWeek[e.g.start] = eggByWeek[e.g.start] || []).push(e); });
-    Object.keys(eggByWeek).forEach(function (w) {
-      var list = eggByWeek[w], total = list.reduce(function (t, e) { return t + e.boxes; }, 0), pad = Math.ceil(total / EGG_CARTON) * EGG_CARTON - total;
-      if (pad > 0) {
-        list.sort(function (a, b) { return (b.boxes - a.boxes) || String(a.r.p.code || '').localeCompare(String(b.r.p.code || ''), 'zh-TW', { numeric: true }); });
-        list[0].extra = pad; list[0].boxes += pad;
-      }
-      eggTotals[w] = total + pad;
-    });
-    entries.forEach(function (e) {
-      var r = e.r, g = e.g, boxes = e.boxes;
-      if (r.egg) { // 蛋捲的禮盒（盒）與單賣單條（單支，條）：填進這個到貨日的備註
-        var er = piv.egg.rows[g.start] || (piv.egg.rows[g.start] = { start: g.start, end: g.end, v: {} });
-        (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single });
-      }
-      e.ps.forEach(function (pt) {
-        var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
-        var row = P.rows[g.start] || (P.rows[g.start] = { start: g.start, end: g.end, v: {} });
-        row.v[pt.single.id] = (row.v[pt.single.id] || 0) + boxes * pt.qty;
-        P.cols[pt.single.id] = pt.single;
+      // 蛋捲禮盒以 20 盒為一箱：看「單次交貨（同一個到貨日）所有蛋捲禮盒的盒數合計」，不是單一品項；合計不足 20 的倍數就補到整箱，差額加在那天盒數最多的禮盒上
+      var eggByWeek = {};
+      entries.forEach(function (e) { if (e.r.egg && !e.r.single && e.boxes > 0) (eggByWeek[e.g.start] = eggByWeek[e.g.start] || []).push(e); });
+      Object.keys(eggByWeek).forEach(function (w) {
+        var list = eggByWeek[w], total = list.reduce(function (t, e) { return t + e.boxes; }, 0), pad = Math.ceil(total / EGG_CARTON) * EGG_CARTON - total;
+        if (pad > 0) {
+          list.sort(function (a, b) { return (b.boxes - a.boxes) || String(a.r.p.code || '').localeCompare(String(b.r.p.code || ''), 'zh-TW', { numeric: true }); });
+          list[0].extra = pad; list[0].boxes += pad;
+        }
+        eggTotals[w] = total + pad;
       });
-    });
+      entries.forEach(function (e) {
+        var r = e.r, g = e.g, boxes = e.boxes;
+        if (r.egg) { // 蛋捲的禮盒（盒）與單賣單條（單支，條）：填進這個到貨日的備註
+          var er = piv.egg.rows[g.start] || (piv.egg.rows[g.start] = { start: g.start, end: g.end, v: {} });
+          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single });
+        }
+        e.ps.forEach(function (pt) {
+          var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
+          var row = P.rows[g.start] || (P.rows[g.start] = { start: g.start, end: g.end, v: {} });
+          row.v[pt.single.id] = (row.v[pt.single.id] || 0) + boxes * pt.qty;
+          P.cols[pt.single.id] = pt.single;
+        });
+      });
+      return { piv: piv, eggTotals: eggTotals };
+    };
+    var nowP = buildPiv(false), orgP = buildPiv(true), piv = nowP.piv, eggTotals = nowP.eggTotals, pivDiff = false;
     var wdays = ['日', '一', '二', '三', '四', '五', '六'];
     var dayText = function (d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || '')); return m ? md(d) + '(' + wdays[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()] + ')' : ''; };
     var noteOf = function (group, week) { var n = X.get('deliveryNotes').find(function (x) { return x && x.group === group && x.week === week && (x.seasonId || '') === seasonId(); }); return n ? String(n.note || '') : ''; };
     var thS = 'style="background:#2f5d1e;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #1f4012"';
     var tdS = 'style="padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"';
     var yel = 'background:#fff36b;font-weight:700;';
+    var RED = 'color:#c00000;font-weight:700;', REDBG = 'background:#ffe6e6;';
+    var cell = function (cv, ov, extraStyle, base) { // 一格數字：有改過 → 紅字 ＋ 下面小字「原 xx」
+      if (cv === ov) return '<td ' + (base || tdS) + '>' + X.fmt(cv) + '</td>';
+      pivDiff = true;
+      return '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap;' + (extraStyle || '') + REDBG + '"><span style="' + RED + '">' + X.fmt(cv) + '</span><div style="color:#c00000;font-size:.8em;font-weight:400">原 ' + X.fmt(ov) + '</div></td>';
+    };
     var pivotHtml = function (key, title) {
-      var P = piv[key], cols = Object.keys(P.cols).map(function (k) { return P.cols[k]; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
-      var rows = Object.keys(P.rows).sort().map(function (k) { return P.rows[k]; });
+      var P = nowP.piv[key], O = orgP.piv[key], colMap = {};
+      Object.keys(P.cols).forEach(function (k) { colMap[k] = P.cols[k]; });
+      Object.keys(O.cols).forEach(function (k) { colMap[k] = colMap[k] || O.cols[k]; });
+      var cols = Object.keys(colMap).map(function (k) { return colMap[k]; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+      var starts = {};
+      Object.keys(P.rows).forEach(function (k) { starts[k] = 1; });
+      Object.keys(O.rows).forEach(function (k) { starts[k] = 1; });
+      var rows = Object.keys(starts).sort();
       if (!rows.length) return '';
-      var colTot = {}, grand = 0;
-      var body = rows.map(function (r) {
-        var sub = 0;
-        var tds = cols.map(function (cp) { var v = r.v[cp.id] || 0; sub += v; colTot[cp.id] = (colTot[cp.id] || 0) + v; return '<td ' + tdS + '>' + X.fmt(v) + '</td>'; }).join('');
-        grand += sub;
+      var colTot = {}, ocolTot = {}, grand = 0, ogrand = 0;
+      var body = rows.map(function (st0) {
+        var r = P.rows[st0] || { start: st0, end: O.rows[st0].end, v: {}, items: [] }, o = O.rows[st0] || { v: {}, items: [] };
+        var sub = 0, osub = 0;
+        var tds = cols.map(function (cp) {
+          var v = r.v[cp.id] || 0, ov = o.v[cp.id] || 0;
+          sub += v; osub += ov; colTot[cp.id] = (colTot[cp.id] || 0) + v; ocolTot[cp.id] = (ocolTot[cp.id] || 0) + ov;
+          return cell(v, ov);
+        }).join('');
+        grand += sub; ogrand += osub;
         var autoNote = '';
-        if (key === 'egg' && r.items && r.items.length) {
-          autoNote = r.items.slice().sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || (b.boxes - a.boxes); })
-            .map(function (it) { return it.single ? esc(it.name + '單支') + '（' + X.fmt(it.boxes) + '條）' : esc(it.name) + '（' + X.fmt(it.boxes) + '盒' + (it.extra ? '，含補 ' + X.fmt(it.extra) + ' 盒' : '') + '）'; }).join('<br>'); // 一個品項一行，名稱後面括號才寫數量
-          if (eggTotals[r.start] > 0) autoNote += '<br><span style="font-weight:400">禮盒合計 ' + X.fmt(eggTotals[r.start]) + ' 盒（' + X.fmt(eggTotals[r.start] / EGG_CARTON) + ' 箱）</span>';
+        if (key === 'egg') {
+          // 一個品項一行，名稱後面括號才寫數量；改過的那一行紅字，寫現在和原本
+          var names = {}, order = [];
+          (r.items || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: it, org: null }; order.push(k); } else names[k].cur = it; });
+          (o.items || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: null, org: it }; order.push(k); } else names[k].org = it; });
+          var lines = order.map(function (k) { return names[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || (((b.cur || b.org).boxes) - ((a.cur || a.org).boxes)); }).map(function (x) {
+            var cb = x.cur ? x.cur.boxes : 0, ob = x.org ? x.org.boxes : 0, unit = x.single ? '條' : '盒', nm = x.single ? x.name + '單支' : x.name;
+            if (cb === ob) return esc(nm) + '（' + X.fmt(cb) + unit + (x.cur && x.cur.extra ? '，含補 ' + X.fmt(x.cur.extra) + ' 盒' : '') + '）';
+            pivDiff = true;
+            return '<span style="' + RED + '">' + esc(nm) + '（現 ' + X.fmt(cb) + unit + (x.cur && x.cur.extra ? '，含補 ' + X.fmt(x.cur.extra) + ' 盒' : '') + '，原 ' + X.fmt(ob) + unit + '）</span>';
+          });
+          if (lines.length) {
+            var et = nowP.eggTotals[st0] || 0, eo = orgP.eggTotals[st0] || 0;
+            autoNote = lines.join('<br>');
+            if (et > 0 || eo > 0) autoNote += '<br>' + (et === eo ? '<span style="font-weight:400">禮盒合計 ' + X.fmt(et) + ' 盒（' + X.fmt(et / EGG_CARTON) + ' 箱）</span>' : '<span style="' + RED + '">禮盒合計 現 ' + X.fmt(et) + ' 盒（' + X.fmt(et / EGG_CARTON) + ' 箱），原 ' + X.fmt(eo) + ' 盒（' + X.fmt(eo / EGG_CARTON) + ' 箱）</span>');
+          }
         }
         return '<tr><td style="padding:6px 10px;border:1px solid #cfd8c8;font-weight:700;text-align:center;white-space:nowrap;background:#e2efd9">' + esc(dayText(arrivalOf(r.start))) + '</td>' + tds +
-          '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(sub) + '</td>' +
+          cell(sub, osub, yel, 'style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"') +
           '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">' + esc(md(r.start) + '-' + md(r.end)) + '</td>' +
           '<td style="padding:4px 6px;border:1px solid #cfd8c8">' + (autoNote ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;min-width:200px;line-height:1.5">' + autoNote + '</div>' : '') + '<input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="備註（例：已交貨）" aria-label="備註" style="width:100%;min-width:150px;box-sizing:border-box;border:0;background:transparent;font:inherit"></td></tr>';
       }).join('');
+      var yb = 'style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"';
       var foot = '<tr><td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">口味小計</td>' +
-        cols.map(function (cp) { return '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(colTot[cp.id] || 0) + '</td>'; }).join('') +
-        '<td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(grand) + '</td><td colspan="2" style="border:1px solid #cfd8c8"></td></tr>';
+        cols.map(function (cp) { return cell(colTot[cp.id] || 0, ocolTot[cp.id] || 0, yel, yb); }).join('') +
+        cell(grand, ogrand, yel, yb) + '<td colspan="2" style="border:1px solid #cfd8c8"></td></tr>';
       return '<p style="margin:14px 0 6px"><b>' + title + '</b></p><div class="tablewrap" style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%;font-size:inherit"><thead><tr><th ' + thS + '>到貨日</th>' +
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th><th ' + thS + '>販售區間</th><th ' + thS + '>備註</th></tr></thead><tbody>' + body + foot + '</tbody></table></div>';
     };
@@ -351,22 +404,24 @@
       chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '</div>';
     var pivots = pivotHtml('fee', '費雪（單位：條）') + pivotHtml('egg', '蛋捲（單位：條）');
     // 每個品項、每一週、每個單位（東橋、A11、京站、官網、通路、公關贈、執行長）的預估量，含禮盒換算成單條：收在下面，裡面有自己的篩選
-    var sdepts = typeof SF_LOCATIONS !== 'undefined' ? SF_LOCATIONS : [];
-    var deptName = function (k) { return typeof SF_LABELS !== 'undefined' && SF_LABELS[k] ? SF_LABELS[k] : k; };
-    var fo = X.db() && X.db().salesForecastV5, drows = [];
+    var drows = [], detailDiff = false;
     c.rows.forEach(function (r) {
-      var fr = fo && fo.rows && fo.rows[String(r.p.code || r.p.id)];
+      var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
       if (!fr) return;
       var ps = c.cv.parts(r.p) || [];
-      (r.ranges || []).forEach(function (g) {
-        var n = (fr.dates || []).indexOf(g.start);
-        if (n < 0) return;
+      for (var n = 0; n < 5; n++) {
+        var start = fr.dates && fr.dates[n];
+        if (!start) continue;
+        if (c.weekFiltering && c.sel.indexOf(start) < 0) continue;
+        var g = { start: start, end: (fr.ends && fr.ends[n]) || '' };
         sdepts.forEach(function (k) {
-          var est = X.num(fr.lines && fr.lines[n] && fr.lines[n][k] && fr.lines[n][k].est);
-          if (!(est > 0)) return;
-          drows.push({ r: r, g: g, dept: k, est: est, arr: arrivalOf(g.start), units: est * r.per, conv: (r.single || r.noComp) ? [] : ps.map(function (pt) { return { p: pt.single, n: est * pt.qty }; }) });
+          var cur = deptEst(code, n, k, false), org = deptEst(code, n, k, true);
+          if (!(cur > 0) && !(org > 0)) return;
+          if (cur !== org) detailDiff = true;
+          drows.push({ r: r, g: g, dept: k, est: cur, orig: org, changed: cur !== org, arr: arrivalOf(start), units: cur * r.per, ounits: org * r.per,
+            conv: (r.single || r.noComp) ? [] : ps.map(function (pt) { return { p: pt.single, n: cur * pt.qty }; }) });
         });
-      });
+      }
     });
     drows = drows.filter(function (w) { return (!st.dWeek || w.g.start === st.dWeek) && (!st.dItem || String(w.r.id) === String(st.dItem)) && (!st.dDept || w.dept === st.dDept); });
     drows.sort(function (a, b) { return String(a.arr).localeCompare(String(b.arr)) || ((a.r.single ? 1 : 0) - (b.r.single ? 1 : 0)) || String(a.r.p.code || '').localeCompare(String(b.r.p.code || ''), 'zh-TW', { numeric: true }) || (sdepts.indexOf(a.dept) - sdepts.indexOf(b.dept)); });
@@ -375,8 +430,8 @@
       { label: '預估區間', render: function (w) { return esc(md(w.g.start) + (w.g.end ? '～' + md(w.g.end) : '')); } },
       { label: '品項', render: function (w) { return '<span style="display:inline-block;min-width:150px;white-space:normal"><b>' + esc(label(w.r.p)) + '</b> <span class="small">' + (w.r.single ? '單條' : (w.r.egg ? '蛋捲' : '費雪')) + '</span></span>'; } },
       { label: '單位', render: function (w) { return '<b>' + esc(deptName(w.dept)) + '</b>'; } },
-      { label: '預估量', num: true, render: function (w) { return X.fmt(w.est) + (w.r.single ? ' 條' : ' 盒'); } },
-      { label: '換算條數（預估 × 每盒條數）', num: true, render: function (w) { return w.r.noComp ? '<span class="small">沒設單條內容物</span>' : X.fmt(w.units) + ' 條'; } },
+      { label: '預估量', num: true, render: function (w) { var u = w.r.single ? ' 條' : ' 盒'; return w.changed ? '<b style="color:#c00000">' + X.fmt(w.est) + u + '</b><div class="small" style="color:#c00000;white-space:nowrap">原本 ' + X.fmt(w.orig) + ' → 預計改 ' + X.fmt(w.est) + '</div>' : X.fmt(w.est) + u; } },
+      { label: '換算條數（預估 × 每盒條數）', num: true, render: function (w) { if (w.r.noComp) return '<span class="small">沒設單條內容物</span>'; return w.changed ? '<b style="color:#c00000">' + X.fmt(w.units) + ' 條</b><div class="small" style="color:#c00000;white-space:nowrap">原本 ' + X.fmt(w.ounits) + ' 條</div>' : X.fmt(w.units) + ' 條'; } },
       { label: '轉換單條', render: function (w) { return convText({ single: w.r.single, noComp: w.r.noComp, conv: w.conv }); } }
     ];
     var dsel = 'style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;max-width:300px"', dlbl = 'class="small" style="font-weight:700"';
@@ -393,7 +448,8 @@
     var detail = '<details data-xp-detail="1"' + (st.dOpen ? ' open' : '') + ' style="margin:16px 0 0"><summary style="cursor:pointer;font-weight:700;padding:4px 0">看每個品項、每一週、每個單位的預估量（含禮盒轉換成單條）</summary>' + dfilter +
       X.ui.table(dcols, drows, { empty: '沒有符合的預估量。' }) +
       '<p class="small" style="margin:8px 0 0">每一列是「這個品項、這一週、這個單位」的預估量（業績預估頁填的數字），可以用上面的選單篩選（這裡的篩選只影響這張明細）。<b>不同品項、不同單位不加總。</b>目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）要整個品項這一週合起來才進位，不能按單位拆，所以看上面的交貨表。</p></details>';
-    html += X.ui.card('採購交貨（依到貨日、口味，單位：條）', filterHtml + filterBanner + basisChips +
+    var redLegend = (pivDiff || detailDiff) ? X.ui.banner('warn', '<b style="color:#c00000">紅字</b>＝這裡連動的「業績預估」量有改過（鎖定日期之後的業績異動）。<b>大的紅字是現在（預計要交）的量，下面小字「原」是改之前的量。</b>') : '';
+    html += X.ui.card('採購交貨（依到貨日、口味，單位：條）', filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
       '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的數量＝禮盒依單條內容物換算成條，加上單賣的單條（<b>蛋捲禮盒以 ' + EGG_CARTON + ' 盒為一箱：每個到貨日（單次交貨）所有蛋捲禮盒的盒數合計，不足 ' + EGG_CARTON + ' 的倍數就補到整箱，補的盒數加在那天盒數最多的禮盒上，也算進口味條數</b>）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
 
