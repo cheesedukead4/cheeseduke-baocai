@@ -28,7 +28,7 @@
   'use strict';
   if (!X) return;
   var esc = X.esc;
-  var st = { weeks: [], logPid: '' }; // weeks：日期篩選選到的預估區間（區間起日期；空＝全部）；logPid：異動歷程只看哪個品項
+  var st = { weeks: [], logPid: '', arrFrom: '', arrTo: '', item: '' }; // arrFrom～arrTo：到貨日篩選（含當天）；item：只看某個品項 // weeks：日期篩選選到的預估區間（區間起日期；空＝全部）；logPid：異動歷程只看哪個品項
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
@@ -135,8 +135,11 @@
     var weeksAll = Object.create(null);
     rows.forEach(function (r) { (r.ranges || []).forEach(function (g) { weeksAll[g.start] = g; }); });
     var weekList = Object.keys(weeksAll).sort().map(function (k) { return weeksAll[k]; });
-    var sel = (opts && opts.all) ? [] : st.weeks.filter(function (w) { return weeksAll[w]; });
-    if (sel.length) {
+    // 篩選：預估期間（可複選）、到貨日（起～迄，含當天）兩個條件都要符合的那幾週；品項另外篩
+    var useF = !(opts && opts.all), weekFiltering = useF && (st.weeks.length > 0 || !!st.arrFrom || !!st.arrTo);
+    var arrOk = function (w) { var a = arrivalOf(w); return (!st.arrFrom || a >= st.arrFrom) && (!st.arrTo || a <= st.arrTo); };
+    var sel = weekFiltering ? weekList.map(function (g) { return g.start; }).filter(function (w) { return (!st.weeks.length || st.weeks.indexOf(w) >= 0) && arrOk(w); }) : [];
+    if (weekFiltering) {
       rows = rows.filter(function (r) {
         var rg = (r.ranges || []).filter(function (g) { return sel.indexOf(g.start) >= 0; });
         var estSel = rg.reduce(function (t, g) { return t + g.est; }, 0);
@@ -148,6 +151,7 @@
         return true;
       });
     }
+    if (useF && st.item) rows = rows.filter(function (r) { return String(r.id) === String(st.item); });
     var gifts = rows.filter(function (r) { return !r.single; }), singles = rows.filter(function (r) { return r.single; });
     // 統計：依規格（5 入、8 入、蛋捲 10 入、其他禮盒、單條），都以條計
     var stats = {};
@@ -155,7 +159,7 @@
       var g = stats[r.spec] || (stats[r.spec] = { key: r.spec, est: 0, u100: 0, u70: 0, target: 0, ordered: 0, n: 0 });
       g.est += r.est; g.u100 += r.u100; g.u70 += r.u70; g.target += r.target; g.ordered += r.ordered; g.n++;
     });
-    return { fb: fb, gifts: gifts, singles: singles, rows: rows, orders: orders, cv: cv, weekList: weekList, sel: sel,
+    return { fb: fb, gifts: gifts, singles: singles, rows: rows, orders: orders, cv: cv, weekList: weekList, sel: sel, weekFiltering: weekFiltering,
       stats: SPEC_ORDER.filter(function (k) { return stats[k]; }).map(function (k) { return stats[k]; }),
       noComp: gifts.filter(function (r) { return r.noComp; }) };
   }
@@ -186,13 +190,30 @@
   function kindTag(k) { var t = KIND_TEXT[k] || [k || '', 'muted']; return X.ui.tag(t[0], t[1]); }
 
   function render(el) {
-    var c = compute(), fee = feePct(), egg = eggPct(), filtered = c.sel.length > 0;
+    var c = compute(), fee = feePct(), egg = eggPct(), filtered = c.weekFiltering, all = compute({ all: true });
+    if (st.item && !all.rows.some(function (r) { return String(r.id) === String(st.item); })) st.item = '';
     var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。檔期一開始會<b>整批一次叫完</b>：按「整批叫貨」就把每個品項的<b>目標叫貨</b>（費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改）建立成叫貨量；之後有加量或異動，在品項右邊按「修改叫貨量」，改了什麼、為什麼改，都會記在下面的「叫貨量異動歷程」。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
-    if (c.weekList.length) {
-      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px"><span class="small" style="min-width:60px;font-weight:700">日期篩選</span>' +
-        chip('week', 'all', '全部', !filtered) +
-        c.weekList.map(function (g) { return chip('week', g.start, md(g.start) + '～' + md(g.end) + '（到貨 ' + md(arrivalOf(g.start)) + '）', c.sel.indexOf(g.start) >= 0); }).join('') + '</div>';
-      if (filtered) html += X.ui.banner('info', '目前只看 <b>' + c.sel.map(function (w) { var g = c.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、') + '</b> 這幾週：預估、100%、70%、目標叫貨只算這幾週；<b>叫貨量是整個檔期的，不分週</b>，所以這裡不顯示和目標的差異。按「全部」回到整個檔期。');
+    // 篩選：預估期間（可複選）、到貨日（起～迄）、品項
+    if (all.weekList.length || all.rows.length) {
+      var lbl = 'class="small" style="min-width:64px;font-weight:700"';
+      html += '<div class="x-card panel" style="padding:12px 14px;margin-bottom:12px">' +
+        (all.weekList.length ? '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px"><span ' + lbl + '>預估期間</span>' + chip('week', 'all', '全部', !st.weeks.length) +
+          all.weekList.map(function (g) { return chip('week', g.start, md(g.start) + '～' + md(g.end), st.weeks.indexOf(g.start) >= 0); }).join('') + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px"><span ' + lbl + '>到貨日</span>' +
+          '<input type="date" id="xpArrFrom" value="' + esc(st.arrFrom) + '" aria-label="到貨日起" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
+          '<input type="date" id="xpArrTo" value="' + esc(st.arrTo) + '" aria-label="到貨日迄" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
+          '<span class="small">可選的到貨日：' + all.weekList.map(function (g) { return esc(md(arrivalOf(g.start))); }).join('、') + '</span></div>' : '') +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span ' + lbl + '>品項</span>' +
+        '<select id="xpItem" aria-label="品項篩選" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;max-width:340px"><option value="">全部品項</option>' +
+        all.rows.map(function (r) { return '<option value="' + esc(r.id) + '"' + (String(r.id) === String(st.item) ? ' selected' : '') + '>' + esc((r.single ? '單條｜' : '禮盒｜') + label(r.p)) + '</option>'; }).join('') + '</select>' +
+        (st.weeks.length || st.arrFrom || st.arrTo || st.item ? '<button type="button" class="btn gray" data-act="filter-clear" style="min-height:34px">清除篩選</button>' : '') + '</div></div>';
+      if (filtered || st.item) {
+        var parts = [];
+        if (st.weeks.length) parts.push('預估期間 ' + st.weeks.slice().sort().map(function (w) { var g = all.weekList.find(function (x) { return x.start === w; }); return esc(md(w) + '～' + md(g ? g.end : '')); }).join('、'));
+        if (st.arrFrom || st.arrTo) parts.push('到貨日 ' + esc(st.arrFrom ? md(st.arrFrom) : '最早') + '～' + esc(st.arrTo ? md(st.arrTo) : '最晚'));
+        if (st.item) { var ip = all.rows.find(function (r) { return String(r.id) === String(st.item); }); parts.push('品項 ' + esc(ip ? label(ip.p) : '')); }
+        html += X.ui.banner('info', '目前篩選：<b>' + parts.join('；') + '</b>。' + (filtered ? '預估、100%、70%、目標叫貨只算篩到的那幾週；<b>叫貨量是整個檔期的，不分週</b>，所以不顯示和目標的差異。' : '') + '按「清除篩選」回到全部。');
+      }
     }
 
     if (!c.fb.any) {
@@ -202,7 +223,7 @@
 
     var sum = function (list, k) { return list.reduce(function (t, r) { return t + r[k]; }, 0); };
     var feeG = c.gifts.filter(function (r) { return !r.egg; }), eggG = c.gifts.filter(function (r) { return r.egg; });
-    var all = compute({ all: true }), todo = all.rows.filter(function (r) { return r.aim > 0 && !(r.ordered > 0); });
+    var todo = all.rows.filter(function (r) { return r.aim > 0 && !(r.ordered > 0); });
     var logsAll = changesOf(''), adjN = logsAll.filter(function (e) { return e.kind !== 'create'; }).length, lastLog = logsAll[0];
     var kp = function (name, list) {
       var o = sum(list, 'ordered'), a = sum(list, 'aim');
@@ -244,9 +265,7 @@
       return r.conv.length ? r.conv.map(function (x) { return esc(x.p.name) + ' <b>' + X.fmt(x.n, 1) + '</b> 條'; }).join('<br>') : '<span class="small">—</span>';
     };
     var cols = [
-      { label: '預估區間', render: datesText },
-      { label: '到貨日期', render: arrivalText },
-      { label: '品項', render: function (r) { return '<b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>' + (r.extra ? ' ' + X.ui.tag('預估沒填', 'muted') : ''); } },
+      { label: '品項', render: function (r) { return '<span style="display:inline-block;min-width:150px;white-space:normal"><b>' + esc(label(r.p)) + '</b> <span class="small">' + (r.single ? '單條' : (r.egg ? '蛋捲' : '費雪')) + '</span>' + (r.extra ? ' ' + X.ui.tag('預估沒填', 'muted') : '') + '</span>'; } },
       { label: '廠商', render: function (r) { return r.supplier ? esc(r.supplier.name) : '<span class="small">未指定</span>'; } },
       { label: '業績預估', num: true, render: function (r) { return r.est > 0 ? X.fmt(r.est) + (r.single ? ' 條' : ' 盒') : '—'; } },
       { label: '每盒條數', num: true, render: function (r) { return r.single ? '—' : (r.noComp ? '—' : X.fmt(r.per, 2)); } },
@@ -258,8 +277,33 @@
       { label: '和目標的差異', num: true, render: function (r) { return diffHtml(r, filtered); } },
       { label: '', render: function (r) { return rowBtn('adj', r.id, r.ordered > 0 ? '修改叫貨量' : '設定叫貨量', r.ordered > 0 ? 'gray' : 'primary'); } }
     ];
-    html += X.ui.card('禮盒與單條（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
-      '<p class="small" style="margin:10px 0 0">「預估區間」是「業績預估」頁這個品項有填預估的每一週區間（起～迄）；「到貨日期」＝區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。</p>',
+    // 預估區間與到貨日期：每個品項、每一週各一列（依到貨日排序），不同品項不加總
+    var wrows = [];
+    c.rows.forEach(function (r) {
+      (r.ranges || []).forEach(function (g) {
+        if (!(g.est > 0)) return;
+        var feeB = Math.ceil(g.est * (fee / 100) - 1e-9), tB = X.buyBoxes(r.p, g.est), ps = c.cv.parts(r.p);
+        wrows.push({ r: r, g: g, arr: arrivalOf(g.start), est: g.est, u100: g.est * r.per, u70: feeB * r.per, target: tB * r.per,
+          conv: (r.single || r.noComp || !ps) ? [] : ps.map(function (pt) { return { p: pt.single, n: tB * pt.qty }; }) });
+      });
+    });
+    wrows.sort(function (a, b) { return String(a.arr).localeCompare(String(b.arr)) || String(a.g.start).localeCompare(String(b.g.start)) || ((a.r.single ? 1 : 0) - (b.r.single ? 1 : 0)) || String(a.r.p.code || '').localeCompare(String(b.r.p.code || ''), 'zh-TW', { numeric: true }); });
+    var wcols = [
+      { label: '到貨日期', render: function (w) { return '<b>' + esc(md(w.arr)) + '</b> <span class="small">（三）</span>'; } },
+      { label: '預估區間', render: function (w) { return esc(md(w.g.start) + (w.g.end ? '～' + md(w.g.end) : '')); } },
+      { label: '品項', render: function (w) { return '<span style="display:inline-block;min-width:150px;white-space:normal"><b>' + esc(label(w.r.p)) + '</b> <span class="small">' + (w.r.single ? '單條' : (w.r.egg ? '蛋捲' : '費雪')) + '</span></span>'; } },
+      { label: '廠商', render: function (w) { return w.r.supplier ? esc(w.r.supplier.name) : '<span class="small">未指定</span>'; } },
+      { label: '業績預估', num: true, render: function (w) { return X.fmt(w.est) + (w.r.single ? ' 條' : ' 盒'); } },
+      { label: '100%（條）', num: true, render: function (w) { return X.fmt(w.u100); } },
+      { label: fee + '%（條）', num: true, render: function (w) { return X.fmt(w.u70); } },
+      { label: '目標叫貨（條）', num: true, render: function (w) { return '<b>' + X.fmt(w.target) + '</b>' + (w.r.noComp ? ' <span class="small">盒</span>' : ''); } },
+      { label: '轉換單條（目標拆成各單條）', render: function (w) { return convText({ single: w.r.single, noComp: w.r.noComp, conv: w.conv }); } }
+    ];
+    html += X.ui.card('預估區間與到貨日期（每個品項、每一週一列）', X.ui.table(wcols, wrows, { empty: filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。' }) +
+      '<p class="small" style="margin:10px 0 0">依到貨日期排序。「到貨日期」＝預估區間起往前推一週的星期三（例如 1/4～1/11 → 12/30）。每一列是這個品項這一週的預估、100%、' + fee + '%、目標叫貨；<b>不同品項不加總</b>。每週的目標各自無條件進位，所以同一個品項各週加起來可能和上面「各品項」的目標差一點點（上面的目標是整個品項算一次進位）。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。</p>');
+
+    html += X.ui.card('各品項叫貨量（叫貨以條計）', X.ui.table(cols, c.gifts.concat(c.singles), { empty: '「業績預估」頁還沒有填預估量。' }) +
+      '<p class="small" style="margin:10px 0 0">每個品項整個檔期（或篩到的週）的合計；每一週的預估區間、到貨日期看上面「預估區間與到貨日期」。<b>100%（條）</b>＝預估 × 每盒條數；<b>' + fee + '%（條）</b>＝預估 × ' + fee + '% 後（無條件進位）× 每盒條數；<b>目標叫貨</b>是實際採用的比例（費雪 ' + fee + '%、蛋捲 ' + egg + '%）。<b>轉換單條</b>＝這個禮盒的目標拆成各單條的條數。單條單賣列在禮盒後面，預估量也在「業績預估」頁填。<b>叫貨量</b>＝這個檔期目前實際叫的條數；「和目標的差異」＝叫貨量 － 目標（負數＝少叫、正數＝多叫）' + '。按「修改叫貨量」可以加量或減量，會記錄修改前後。</p>',
       todo.length ? '<button type="button" class="btn primary" data-act="batch" style="min-height:34px">整批叫貨</button>' : '');
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -333,7 +377,10 @@
     el.innerHTML = html;
     el.oninput = null;
     el.onchange = function (e) {
-      if (e.target && e.target.id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
+      var id = e.target && e.target.id;
+      if (id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
+      else if (id === 'xpItem') { st.item = e.target.value; render(el); }
+      else if (id === 'xpArrFrom' || id === 'xpArrTo') { var v = e.target.value; if (id === 'xpArrFrom') st.arrFrom = v; else st.arrTo = v; if (st.arrFrom && st.arrTo && st.arrFrom > st.arrTo) { X.toast('到貨日的「起」不能晚於「迄」'); if (id === 'xpArrFrom') st.arrFrom = ''; else st.arrTo = ''; } render(el); }
     };
     el.onclick = function (e) { onClick(e, el, c); };
   }
@@ -486,7 +533,8 @@
     var b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!b) return;
     var a = b.dataset.act, id = b.dataset.id;
-    if (a === 'week') {
+    if (a === 'filter-clear') { st.weeks = []; st.arrFrom = ''; st.arrTo = ''; st.item = ''; render(el); }
+    else if (a === 'week') {
       var wv = b.dataset.v;
       if (wv === 'all') st.weeks = [];
       else { var wi = st.weeks.indexOf(wv); if (wi >= 0) st.weeks.splice(wi, 1); else st.weeks.push(wv); }
