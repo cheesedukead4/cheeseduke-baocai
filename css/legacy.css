@@ -346,6 +346,7 @@ body.admin-mode #page-orderHistory.active-order-history{display:block!important}
 .forecast-product-table td.sf-date{padding:2px 3px}
 
 .forecast-product-table td input.sf-locked{cursor:pointer}
+.forecast-product-table td input.sf-locked.sf-hard{cursor:not-allowed}
 /* 鎖定後（業績預估頁加上 sf-locked-mode）：整頁改成灰色，不用其他顏色 */
 .sf-locked-mode .forecast-summary-table thead th,.sf-locked-mode .forecast-product-table thead th{background:#6b6b6b!important;color:#fff!important}
 .sf-locked-mode .forecast-summary-table tbody th{background:#808080!important;color:#fff!important}

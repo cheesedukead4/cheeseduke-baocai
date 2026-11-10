@@ -8,7 +8,8 @@
   if (!X) return;
 
   // ---------- 鎖定日期與業績異動 ----------
-  // db.salesForecastV5.lockDate：今天（含）起預估量不能直接填，改成「業績異動」：挑品項、週、部門，填新的預估量與原因，系統記錄修改前後
+  // db.salesForecastV5.lockDate：今天（含）起預估量完全鎖住、不能修改。
+  // db.salesForecastV5.lockAllowChange（管理員勾選）＝true 時改成「業績異動」：挑品項、週、部門，填新的預估量與原因，系統記錄修改前後
   // db.forecastChanges（只增不改）：{ id, seasonId, at, by, kind（'change' 業績異動｜'lock' 鎖定日期設定）, code, name, week（1～5）, range（區間文字）, loc, fromQty, toQty, fromDate, toDate, reason }
   var esc = X.esc;
   function fdb() { return X.db() && X.db().salesForecastV5; }
@@ -36,11 +37,12 @@
     // 「去年業績」「實際」是怎麼算的（說明文字與判別明細）只有管理員看得到
     var adm0 = typeof adminIsLoggedIn === 'function' && adminIsLoggedIn();
     ['sf-lastyear-note', 'sf-actual-detail', 'sf-actual-explain'].forEach(function (id) { var e = document.getElementById(id); if (e) e.style.display = adm0 ? '' : 'none'; });
-    var L = d.lockDate || '', locked = typeof sfLocked === 'function' && sfLocked(), isAdm = typeof adminIsLoggedIn === 'function' && adminIsLoggedIn(), left = L ? X.daysBetween(X.today(), L) : 0;
+    var L = d.lockDate || '', locked = typeof sfLocked === 'function' && sfLocked(), isAdm = typeof adminIsLoggedIn === 'function' && adminIsLoggedIn(), left = L ? X.daysBetween(X.today(), L) : 0, allow = !!d.lockAllowChange;
     var pnl = document.querySelector('[data-home-panel="salesForecast"]'); if (pnl) pnl.classList.toggle('sf-locked-mode', !!locked); // 鎖定後整頁改成灰色
     var h = '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 10px"><label style="display:inline-flex;gap:6px;align-items:center;white-space:nowrap"><b>鎖定日期</b><input type="date" id="sf-lock-date" value="' + esc(L) + '"' + (isAdm ? '' : ' disabled') + ' onchange="sfSetLockDate(this.value)"></label>' +
-      '<span class="small">' + (!L ? '還沒設定：目前預估量可以直接填。設定後，從那一天（含）起預估量不能直接改，要用「業績異動」。' + (isAdm ? '' : '（只有管理員能設定）') : (locked ? '' : '還有 ' + left + ' 天鎖定，之前可以直接填。') + (isAdm ? '' : '（只有管理員能改）')) + '</span></div>';
-    if (locked) h += '<div class="x-banner" style="margin:0 0 10px;background:#ececec;border-color:#bbb;color:#333">預估量已鎖定（' + esc(L) + ' 起）：格子不能直接改，<b>點格子</b>就會出現業績異動，填新的預估量和原因，修改前後會記在下面的「業績異動歷程」。</div>';
+      '<span class="small">' + (!L ? '還沒設定：目前預估量可以直接填。設定後，從那一天（含）起預估量就鎖住，不能修改。' + (isAdm ? '' : '（只有管理員能設定）') : (locked ? '' : '還有 ' + left + ' 天鎖定，之前可以直接填。') + (isAdm ? '' : '（只有管理員能改）')) + '</span>' +
+      (L ? '<label class="small" style="display:inline-flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" id="sf-allow-change"' + (allow ? ' checked' : '') + (isAdm ? '' : ' disabled') + ' onchange="sfSetAllowChange(this.checked)">鎖定後允許用「業績異動」修改</label>' : '') + '</div>';
+    if (locked) h += '<div class="x-banner" style="margin:0 0 10px;background:#ececec;border-color:#bbb;color:#333">' + (allow ? '預估量已鎖定（' + esc(L) + ' 起）：格子不能直接改，<b>點格子</b>就會出現業績異動，填新的預估量和原因，修改前後會記在下面的「業績異動歷程」。' : '預估量已鎖定（' + esc(L) + ' 起）：<b>不能修改</b>。' + (isAdm ? '（真的要改，可以勾上面「鎖定後允許用業績異動修改」，或取消鎖定日期。）' : '要改請找管理員。')) + '</div>';
     box.innerHTML = h;
   };
 
@@ -52,7 +54,7 @@
     if (v === (d.lockDate || '')) return;
     if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { X.toast('日期格式不對'); renderSfLock(); return; }
     var was = d.lockDate || '';
-    if (v && v <= X.today() && !confirm('鎖定日期 ' + v + ' 已經到了，設定後預估量馬上鎖定，要改只能用「業績異動」。確定嗎？')) { renderSfLock(); return; }
+    if (v && v <= X.today() && !confirm('鎖定日期 ' + v + ' 已經到了，設定後預估量馬上鎖定，不能修改。確定嗎？')) { renderSfLock(); return; }
     if (!v && was && !confirm('確定取消鎖定嗎？取消後預估量又可以直接填。')) { renderSfLock(); return; }
     d.lockDate = v;
     X.ensure('forecastChanges').push({ id: X.uid('fc'), seasonId: seasonKey(), at: Date.now(), by: X.userName(), kind: 'lock', fromDate: was, toDate: v, reason: v ? '設定鎖定日期' : '取消鎖定' });
@@ -62,9 +64,23 @@
     if (typeof renderSalesForecast === 'function') renderSalesForecast();
   };
 
+  window.sfSetAllowChange = function (on) {
+    var d = fdb();
+    if (!d) return;
+    if (!(typeof adminIsLoggedIn === 'function' && adminIsLoggedIn())) { X.toast('只有管理員能設定'); renderSfLock(); return; }
+    if (!!d.lockAllowChange === !!on) return;
+    d.lockAllowChange = !!on;
+    X.ensure('forecastChanges').push({ id: X.uid('fc'), seasonId: seasonKey(), at: Date.now(), by: X.userName(), kind: 'lock', fromDate: d.lockDate || '', toDate: d.lockDate || '', reason: on ? '鎖定後改為允許用「業績異動」修改' : '鎖定後改為完全不能修改' });
+    if (typeof scheduleSalesForecastSave === 'function') scheduleSalesForecastSave();
+    X.save();
+    X.toast(on ? '鎖定後可以用業績異動修改' : '鎖定後完全不能修改');
+    if (typeof renderSalesForecast === 'function') renderSalesForecast();
+  };
+
   window.sfOpenChange = function (el) {
     var d = fdb();
     if (!d || typeof getForecastProducts !== 'function') return;
+    if (typeof sfLocked === 'function' && sfLocked() && !d.lockAllowChange) { X.toast('業績預估已鎖定，不能修改'); return; }
     var prods = getForecastProducts();
     if (!prods.length) { X.toast('還沒有本期上架的品項'); return; }
     var pre = el && el.dataset ? { code: el.dataset.sfCode, n: Number(el.dataset.sfDate), loc: el.dataset.sfLoc } : {};

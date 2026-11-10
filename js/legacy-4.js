@@ -600,10 +600,12 @@ function updateSalesForecastDate(el){const r=sfRow(el.dataset.sfCode),n=Number(e
 function updateSalesForecastEnd(el){const r=sfRow(el.dataset.sfCode),n=Number(el.dataset.sfEndIndex),v=el.value||'';
  if(v&&r.dates[n]&&v<r.dates[n]){alert('區間的「迄」不能早於「起」。');el.value=r.ends[n]||'';return;}
  r.ends[n]=v;scheduleSalesForecastSave();}
-// 鎖定日期（db.salesForecastV5.lockDate，YYYY-MM-DD）：今天（含）起，預估量不能直接填，要走「業績異動」（寫進異動歷程）
+// 鎖定日期（db.salesForecastV5.lockDate，YYYY-MM-DD）：今天（含）起，預估量完全鎖住、不能修改；
+// 管理員在鎖定面板勾「鎖定後允許用業績異動修改」（db.salesForecastV5.lockAllowChange＝true）才會改成：點格子走「業績異動」（寫進異動歷程）
 function sfLocked(){const L=db.salesForecastV5&&db.salesForecastV5.lockDate;return !!L&&((window.CMSX&&CMSX.today)?CMSX.today():new Date().toISOString().slice(0,10))>=L;}
-function sfLockAttr(){return sfLocked()?' readonly class="sf-locked" title="已鎖定：點一下改用「業績異動」修改" onclick="sfOpenChange(this)"':'';}
-function updateSalesForecastCell(el){if(el.dataset.sfKind==='est'&&sfLocked()){const r0=sfRow(el.dataset.sfCode);el.value=Number(r0.lines[Number(el.dataset.sfDate)][el.dataset.sfLoc].est)||'';if(typeof sfOpenChange==='function')sfOpenChange(el);return;}
+function sfAllowChange(){return !!(db.salesForecastV5&&db.salesForecastV5.lockAllowChange);}
+function sfLockAttr(){return sfLocked()?(sfAllowChange()?' readonly class="sf-locked" title="已鎖定：點一下改用「業績異動」修改" onclick="sfOpenChange(this)"':' readonly class="sf-locked sf-hard" title="已鎖定，不能修改"'):'';}
+function updateSalesForecastCell(el){if(el.dataset.sfKind==='est'&&sfLocked()){const r0=sfRow(el.dataset.sfCode);el.value=Number(r0.lines[Number(el.dataset.sfDate)][el.dataset.sfLoc].est)||'';if(sfAllowChange()){if(typeof sfOpenChange==='function')sfOpenChange(el);}else if(window.CMSX&&CMSX.toast)CMSX.toast('業績預估已鎖定，不能修改');return;}
  const r=sfRow(el.dataset.sfCode),n=Number(el.dataset.sfDate);r.lines[n][el.dataset.sfLoc][el.dataset.sfKind]=Number(el.value)||0;recalcSalesForecast();scheduleSalesForecastSave();}
 // 把過去訂單算出來的去年業績（依接單部門）填進「去年業績」那一列；manual＝按按鈕（有填過的數字會先問要不要取代）；自動（頁面第一次打開、整列都是空的）才會自己填
 var sfLastYearAuto=false;
