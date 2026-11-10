@@ -752,25 +752,6 @@
       var dd = byD[dt] || (byD[dt] = { t: {}, m: Object.create(null) }); dd.t[r.type] = (dd.t[r.type] || 0) + q;
       var mm = dd.m[String(r.materialId)] || (dd.m[String(r.materialId)] = { id: r.materialId, t: {} }); mm.t[r.type] = (mm.t[r.type] || 0) + q;
     });
-    var deptRows = [], hasDept = false, dm = Object.create(null);
-    if (cfg.dept) {
-      recs.forEach(function (r) {
-        var dt = String(r.date || '').slice(0, 10);
-        if (dt < from || dt > to) return;
-        var k = String(r.dept || '').trim();
-        if (k) hasDept = true;
-        var e = dm[k || '（未填）'] || (dm[k || '（未填）'] = { name: k || '（未填）', mats: {} });
-        var em = e.mats[String(r.materialId)] || (e.mats[String(r.materialId)] = { id: r.materialId, t: {} });
-        em.t[r.type] = (em.t[r.type] || 0) + num(r.qty);
-      });
-      // 每個部門、每個包材品項各一列（不同品項不加總）
-      Object.keys(dm).map(function (k) { return dm[k]; }).sort(function (a, b) { return a.name === '（未填）' ? 1 : (b.name === '（未填）' ? -1 : String(a.name).localeCompare(String(b.name), 'zh-TW')); }).forEach(function (d) {
-        Object.keys(d.mats).map(function (k) { return d.mats[k]; }).sort(ord).forEach(function (m) { deptRows.push({ name: d.name, id: m.id, t: m.t }); });
-      });
-    }
-    var dcolsDept = [{ label: '折盒部門', render: function (r) { return wrapText(r.name); } }, { label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
-      return { label: TYPES[k].label, num: true, render: function (r) { return r.t[k] ? esc(fmt(r.t[k], 2)) : muted('—'); } };
-    }));
     var dkeys = Object.keys(byD).sort().reverse(), span = X.daysBetween(from, to) + 1;
     var rcols = [{ label: '包材品項', render: function (r) { return wrapText(X.materialLabel(r.id)); } }].concat(TYPE_KEYS.map(function (k) {
       return { label: TYPES[k].label, num: true, render: function (r) { var v = r.t[k]; return v ? esc(fmt(v, 2)) : muted('—'); } };
@@ -783,7 +764,6 @@
       } }]);
     out.innerHTML = '<p style="margin:0 0 6px"><b>每一天做了多少</b>　<span class="small">' + esc(slashDate(from)) + ' ～ ' + esc(slashDate(to)) + '（共 ' + span + ' 天，有登記的 ' + dkeys.length + ' 天、' + n + ' 筆）</span></p>' +
       '<p style="margin:0 0 4px"><b>這段期間各包材品項合計</b></p>' + X.ui.table(rcols, Object.keys(rangeM).map(function (k) { return rangeM[k]; }).sort(ord), { empty: '這段期間沒有登記' }) +
-      (hasDept ? '<p style="margin:12px 0 4px"><b>這段期間依折盒部門（各品項分開）</b></p>' + X.ui.table(dcolsDept, deptRows, {}) : '') +
       '<p style="margin:12px 0 4px"><b>逐日明細</b></p>' +
       (dkeys.length ? X.ui.table(dcols, dkeys, {}) : X.ui.empty('這段期間沒有登記'));
   }
