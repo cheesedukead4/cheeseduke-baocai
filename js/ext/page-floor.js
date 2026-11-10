@@ -411,6 +411,7 @@
       (g.voided && !allVoid ? X.ui.tag('已撤銷 ' + g.voided + ' 筆', 'muted') : '') + '</div>' +
       '<div class="' + P + '-batch-sum">' + esc(sum) + '</div>' +
       (g.records[0].dept ? '<div class="' + P + '-batch-note">折盒部門：' + esc(g.records[0].dept) + '</div>' : '') +
+      (g.records[0].worker || g.records[0].workMin ? '<div class="' + P + '-batch-note">' + (g.records[0].worker ? '折盒人員：' + esc(g.records[0].worker) : '') + (g.records[0].workMin ? '　' + esc(g.records[0].startTime) + '～' + esc(g.records[0].endTime) + '（' + g.records[0].workMin + ' 分鐘）' : '') + '</div>' : '') +
       (note ? '<div class="' + P + '-batch-note">備註：' + esc(note) + '</div>' : '') +
       '</div>' + btn + '</div>';
     if (many) {
@@ -448,8 +449,8 @@
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', dept: '', ngFrom: '', ngTo: '', ngDept: '', ngMat: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
-  try { if (cfg.dept) qe.dept = localStorage.getItem('cms_fold_dept') || ''; } catch (e) {}
+  var qe = { view: '', note: '', dept: '', worker: '', ngFrom: '', ngTo: '', ngDept: '', ngMat: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
+  try { if (cfg.dept) { qe.dept = localStorage.getItem('cms_fold_dept') || ''; qe.worker = localStorage.getItem('cms_fold_worker') || ''; } } catch (e) {}
 
   function qeTypeText(t) { return typeLabel(t); }
   var QE_BATCH = {
@@ -484,6 +485,14 @@
     var names = foldDepts().map(function (d) { return String(d.name).trim(); });
     if (qe.dept && names.indexOf(qe.dept) < 0) names.push(qe.dept);
     return '<option value="">（未選）</option>' + names.map(function (n) { return '<option value="' + esc(n) + '"' + (n === qe.dept ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '<option value="__new__">＋ 新增部門…</option>';
+  }
+  function hmMin(v) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
+  function durText(a, b) { var x = hmMin(a), y = hmMin(b); return x != null && y != null && y > x ? (y - x) + ' 分鐘（' + (Math.round((y - x) / 6) / 10) + ' 小時）' : ''; }
+  function refreshWorkers(el) {
+    var dl = q$(el, '#x-fold-workers');
+    if (dl) { var seen = {}; list('movements').forEach(function (r) { var w = String(r.worker || '').trim(); if (w) seen[w] = 1; }); dl.innerHTML = Object.keys(seen).sort().map(function (w) { return '<option value="' + esc(w) + '"></option>'; }).join(''); }
+    var d = q$(el, '[data-box="qe-dur"]'), a = q$(el, '[data-qe="tStart"]'), b = q$(el, '[data-qe="tEnd"]');
+    if (d && a && b) d.textContent = durText(a.value, b.value) ? '＝ ' + durText(a.value, b.value) : '';
   }
   function refreshDeptSelect(el) {
     var sel = q$(el, 'select[data-qe="dept"]');
@@ -572,6 +581,11 @@
         '<input type="text" data-qe="note" maxlength="100" placeholder="例：早班、A 倉" aria-label="備註" value="' + esc(qe.note) + '"></div>' +
         (cfg.dept ? '<div class="x-field"><span>折盒部門（這次是哪個部門折的，會套用到這次送出的每一筆）' + (X.isAdmin() ? ' <button type="button" class="btn gray" data-act="dept-edit" style="min-height:26px;padding:1px 8px;font-size:13px">管理部門清單</button>' : '') + '</span>' +
           '<select data-qe="dept" aria-label="折盒部門">' + deptOptionsHtml() + '</select></div>' : '') +
+        (cfg.dept ? '<div class="x-field"><span>折盒人員（誰折的，之後算效率用）</span><input type="text" data-qe="worker" list="x-fold-workers" maxlength="20" placeholder="例：王小明" aria-label="折盒人員" value="' + esc(qe.worker) + '"><datalist id="x-fold-workers"></datalist></div>' +
+          '<div class="x-field"><span>起訖時間（這次折盒從幾點做到幾點，之後算效率用）</span><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
+          '<input type="time" data-qe="tStart" aria-label="開始時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><button type="button" class="btn gray" data-act="now-start" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
+          '<span>～</span><input type="time" data-qe="tEnd" aria-label="結束時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><button type="button" class="btn gray" data-act="now-end" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
+          '<span class="small" data-box="qe-dur"></span></div></div>' : '') +
         '</div>' +
         '<div class="x-qe-legend">' + TYPE_KEYS.map(function (k) { return '<span><b>' + esc(TYPES[k].label) + '</b> ' + esc(TYPE_HINTS[k]) + '</span>'; }).join('') + '</div>' +
         '<div class="x-qe-grid" data-box="qe-grid">' +
@@ -864,6 +878,11 @@
         qe.ngDept = ''; qe.ngMat = '';
         refreshNgFilters(el); updateNg(el);
       }
+      else if (act === 'now-start' || act === 'now-end') {
+        var nd = new Date(), hm = String(nd.getHours()).padStart(2, '0') + ':' + String(nd.getMinutes()).padStart(2, '0'), ti = q$(el, act === 'now-start' ? '[data-qe="tStart"]' : '[data-qe="tEnd"]');
+        if (ti) ti.value = hm;
+        refreshWorkers(el);
+      }
       else if (act === 'hide-edit') foldHideDialog(el);
       else if (act === 'dept-edit') editDeptsDialog(el);
       else if (act === 'lk-new') linkDialog(el, null);
@@ -885,12 +904,15 @@
       if (!t || !t.dataset) return;
       if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
       else if (t.dataset.qe === 'note') qe.note = t.value;
+      else if (t.dataset.qe === 'worker') { qe.worker = t.value; try { localStorage.setItem('cms_fold_worker', qe.worker.trim()); } catch (e) {} }
+      else if (t.dataset.qe === 'tStart' || t.dataset.qe === 'tEnd') refreshWorkers(el);
     };
     el.onchange = function (e) {
       var t = e.target;
       if (!t || !t.dataset) return;
       if (t.dataset.qe === 'view') setQeView(el, t.value);
       else if (t.dataset.qe === 'dept') { if (t.value === '__new__') addDeptDialog(el); else setDept(el, t.value); }
+      else if (t.dataset.qe === 'tStart' || t.dataset.qe === 'tEnd') refreshWorkers(el);
       else if (t.dataset.qe === 'ngdept' || t.dataset.qe === 'ngmat') { qe[t.dataset.qe === 'ngdept' ? 'ngDept' : 'ngMat'] = t.value; updateNg(el); }
       else if (t.dataset.qe === 'ngfrom' || t.dataset.qe === 'ngto') { if (dateOk(t.value)) { qe[t.dataset.qe === 'ngfrom' ? 'ngFrom' : 'ngTo'] = t.value; updateNg(el); } }
       else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
@@ -926,6 +948,7 @@
     refreshNgFilters(el);
     updateNg(el);
     refreshDeptSelect(el);
+    refreshWorkers(el);
     var hn = q$(el, '[data-box="qe-hidden-note"]'); if (hn) hn.innerHTML = hiddenNoteHtml();
     renderLinksCard(el);
     updateQeCount(el);
@@ -1086,6 +1109,14 @@
     var noteEl = q$(el, '[data-qe="note"]');
     var note = String(noteEl ? noteEl.value : qe.note).trim().slice(0, 100);
     var deptSel = q$(el, 'select[data-qe="dept"]'), foldDept = cfg.dept ? String(deptSel && deptSel.value !== '__new__' ? deptSel.value : qe.dept || '').trim() : '';
+    // 折盒人員、起訖時間（之後算效率統計用）：起訖要兩個都填、結束晚於開始（同一天）；人員、起訖沒填可以送出，但會提醒不會算進效率統計
+    var wEl = q$(el, '[data-qe="worker"]'), tsEl = q$(el, '[data-qe="tStart"]'), teEl = q$(el, '[data-qe="tEnd"]');
+    var worker = cfg.dept ? String(wEl ? wEl.value : qe.worker).trim().slice(0, 20) : '', tStart = cfg.dept && tsEl ? tsEl.value : '', tEnd = cfg.dept && teEl ? teEl.value : '';
+    if (cfg.dept && (tStart || tEnd)) {
+      if (!tStart || !tEnd) { alert('起訖時間要兩個都填（開始時間、結束時間），或兩個都留白。'); focusEl(tStart ? teEl : tsEl); return; }
+      if (!(hmMin(tEnd) > hmMin(tStart))) { alert('結束時間要晚於開始時間（同一天內）。'); focusEl(teEl); return; }
+    }
+    var workMin = tStart && tEnd ? hmMin(tEnd) - hmMin(tStart) : 0;
     var names = items.map(function (it) { return (it.m.name || X.materialLabel(it.m)) + ' ' + typeLabel(it.type) + ' ' + fmt(it.qty); });
     // 連動：連動的類型不在這個頁面的規則，送出時自動多記一筆（同頁面的規則已經在格子裡自動填入了）
     var pending = [];
@@ -1099,7 +1130,8 @@
     var msg = slashDate(date) + ' 共 ' + items.length + ' 筆：' + names.slice(0, 8).join('、') + (names.length > 8 ? ' 等 ' + names.length + ' 筆' : '');
     if (pending.length) msg += '\n\n連動自動登記 ' + pending.length + ' 筆：' + pending.map(function (x) { return (x.m.name || X.materialLabel(x.m)) + ' ' + typeLabel(x.l.toType) + ' ' + fmt(x.q); }).join('、');
     if (date !== X.today()) msg += '\n\n注意：日期不是今天。';
-    if (cfg.dept) msg += '\n折盒部門：' + (foldDept || '（未選）');
+    if (cfg.dept) msg += '\n折盒部門：' + (foldDept || '（未選）') + '\n折盒人員：' + (worker || '（未填）') + '\n起訖時間：' + (workMin ? tStart + '～' + tEnd + '（' + workMin + ' 分鐘）' : '（未填）');
+    if (cfg.dept && (!foldDept || !worker || !workMin)) msg += '\n※ 部門、人員、起訖時間沒填齊，這次不會算進之後的效率統計。';
     if (note) msg += '\n備註：' + note;
     if (rounded) msg += '\n有 ' + rounded + ' 格填了小數，已四捨五入成整數。';
     if (big) msg += '\n有數量在 ' + fmt(warnQty) + ' 以上，請確認沒有多打 0。';
@@ -1110,6 +1142,8 @@
     var recs = items.map(function (it, i) {
       var rec0 = { id: ids[i], batchId: batchId, at: at, by: by, date: date, materialId: it.m.id, type: it.type, qty: it.qty, note: note, voided: false };
       if (foldDept) rec0.dept = foldDept;
+      if (worker) rec0.worker = worker;
+      if (workMin) { rec0.startTime = tStart; rec0.endTime = tEnd; rec0.workMin = workMin; }
       return rec0;
     });
     if (pending.length) {
@@ -1126,6 +1160,7 @@
     qe.note = '';
     if (noteEl) noteEl.value = '';
     clearQuick(el, false);
+    if (cfg.dept) { if (tsEl) tsEl.value = ''; if (teEl) teEl.value = ''; try { localStorage.setItem('cms_fold_worker', worker); } catch (e) {} refreshWorkers(el); }
     refreshQuickEntry(el);
     X.toast('已登記 ' + recs.length + ' 筆' + (pending.length ? '（含連動自動登記 ' + pending.length + ' 筆）' : '') + (date !== X.today() ? '（' + shortDate(date) + '）' : ''));
   }

@@ -57,7 +57,7 @@
       label: '包材快速異動', type: 'array',
       fields: {
         id: '唯一代號', at: '輸入時間（毫秒）', by: '輸入者', date: '作業日期 YYYY-MM-DD', materialId: '包材 id',
-        type: "'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG｜'inNg' 進貨NG（廠商送來就不良，從未折盒扣掉）", qty: '數量（正數）', note: '備註', dept: '折盒部門名稱（折盒頁登記時選的，選填）', voided: '是否已撤銷 true/false',
+        type: "'in' 進貨｜'fold' 折盒｜'use' 使用｜'foldNg' 折盒NG｜'useNg' 使用NG｜'inNg' 進貨NG（廠商送來就不良，從未折盒扣掉）", qty: '數量（正數）', note: '備註', dept: '折盒部門名稱（折盒頁登記時選的，選填）', worker: '折盒人員（折盒頁登記時填的，選填，效率統計用）', startTime: '折盒開始時間 HH:MM', endTime: '折盒結束時間 HH:MM', workMin: '工時（分鐘＝結束－開始，效率統計用）', voided: '是否已撤銷 true/false',
         batchId: '同一次送出的批次代號（同一批共用）', editedAt: '最後修改時間（毫秒；當天可修改數量與備註，超過當天鎖定）', editedBy: '修改的人'
       }
     },
