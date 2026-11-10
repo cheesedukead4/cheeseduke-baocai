@@ -741,4 +741,47 @@
     render: render,
     _fn: { compute: compute }
   });
+  // ---------- 首頁「預計進貨」：每個單條（口味）最近一個還沒到的到貨日（採購交貨表的到貨日）與數量 ----------
+  // 數量＝那個到貨日、那個口味的「實際下定量」（有填才用），沒填就用預估量（目標叫貨：費雪／蛋捲各自的進貨比例）。
+  // 到貨日 ≥ 今天才算（已過的到貨日不顯示）。回傳 { 單條 id: { date: 'YYYY-MM-DD', qty, actual: 是否為實際下定量, more: 之後還有幾個到貨日 } }
+  window.cmsPurchaseEtaMap = function () {
+    var out = {};
+    try {
+      var c = compute({ all: true }), fo0 = X.db() && X.db().salesForecastV5, sdepts = typeof SF_LOCATIONS !== 'undefined' ? SF_LOCATIONS : [];
+      if (!fo0 || !fo0.rows) return out;
+      var actId = seasonId(), today = X.today(), byKey = {}; // arrival|single id → { date, week, group, qty }
+      c.rows.forEach(function (r) {
+        var code = String(r.p.code || r.p.id), fr = fo0.rows[code];
+        if (!fr) return;
+        var ps = c.cv.parts(r.p) || [];
+        for (var n = 0; n < 5; n++) {
+          var start = fr.dates && fr.dates[n];
+          if (!start) continue;
+          var arr = arrivalOf(start);
+          if (!arr || arr < today) continue;
+          var est = 0;
+          sdepts.forEach(function (k) { est += X.num(fr.lines && fr.lines[n] && fr.lines[n][k] && fr.lines[n][k].est); });
+          if (!(est > 0)) continue;
+          var boxes = X.buyBoxes(r.p, est);
+          ps.forEach(function (pt) {
+            var sid = String(pt.single.id), group = X.isEggGift(pt.single) ? 'egg' : 'fee', k = arr + '|' + sid;
+            var e = byKey[k] || (byKey[k] = { date: arr, week: start, group: group, sid: sid, qty: 0 });
+            e.qty += boxes * pt.qty;
+          });
+        }
+      });
+      var act = {};
+      X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === actId) act[a.group + '|' + a.week + '|' + a.singleId] = X.num(a.qty); });
+      var list = {};
+      Object.keys(byKey).forEach(function (k) {
+        var e = byKey[k], ak = e.group + '|' + e.week + '|' + e.sid, has = ak in act;
+        (list[e.sid] = list[e.sid] || []).push({ date: e.date, qty: has ? act[ak] : e.qty, actual: has });
+      });
+      Object.keys(list).forEach(function (sid) {
+        var l = list[sid].sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+        out[sid] = { date: l[0].date, qty: l[0].qty, actual: l[0].actual, more: l.length - 1 };
+      });
+    } catch (e) { console.warn('預計進貨計算失敗', e); }
+    return out;
+  };
 })(window.CMSX);

@@ -1036,6 +1036,9 @@ function renderDashboard(){
    return sum+q*per;
  },0);
 
+ // 預計進貨：單條取「採購叫貨」交貨表最近一個還沒到的到貨日（日期＋數量）；包材目前沒有叫貨資料，顯示「—」
+ let etaMap={};try{if(typeof window.cmsPurchaseEtaMap==='function')etaMap=window.cmsPurchaseEtaMap()||{};}catch(e){}
+ const etaCell=(id)=>{const e=etaMap[String(id)];if(!e)return '<td class="manual-cell" title="採購叫貨裡沒有還沒到的到貨日">—</td>';const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(e.date||'');const d=m?Number(m[1])+'/'+Number(m[2]):e.date;return '<td style="white-space:nowrap" title="'+(e.actual?'實際下定量':'預估量（採購還沒填實際下定量）')+(e.more?'；之後還有 '+e.more+' 個到貨日（看採購叫貨）':'')+'">'+d+'（'+Number(e.qty).toLocaleString()+'）'+(e.actual?'':' <span class="small">預估</span>')+(e.more?' <span class="small">＋'+e.more+'</span>':'')+'</td>';};
  matBody.innerHTML=materials.length?materials.map((m,i)=>{
    const live=materialLiveInventory(m.id);
    const stock=live.total, demand=matDemand(m.id), safety=Number(m.safety)||0;
@@ -1049,8 +1052,8 @@ function renderDashboard(){
     <td class="code-col">${m.code||''}</td><td class="name-cell">${m.name||''}</td>
     <td data-home-total-id="${m.id}">${stock}</td><td class="linked-stock-cell" data-home-unfolded-id="${m.id}">${unfolded}</td><td class="linked-stock-cell" data-home-folded-id="${m.id}">${folded}</td><td class="${packed==null?'manual-cell':''}">${packed==null?'—':packed}</td>
     <td>${demand}</td><td data-home-remain-id="${m.id}" class="${remain<0?'neg':''}">${remain}</td><td>${safety}</td>
-    <td><span data-home-status-id="${m.id}" class="sheet-status ${low?'bad':'good'}">${low?'不足':'正常'}</span></td></tr>`;
- }).join(''):'<tr><td colspan="11" class="empty">尚無包材資料</td></tr>';
+    <td><span data-home-status-id="${m.id}" class="sheet-status ${low?'bad':'good'}">${low?'不足':'正常'}</span></td><td class="manual-cell" title="包材目前沒有叫貨資料">—</td></tr>`;
+ }).join(''):'<tr><td colspan="12" class="empty">尚無包材資料</td></tr>';
 
  singleHome.innerHTML=singles.length?singles.map((p,i)=>{
    const demand=(db.campaigns||[]).reduce((sum,c)=>{
@@ -1062,8 +1065,8 @@ function renderDashboard(){
    return `<tr><td class="sort-action-col">${dragHandle('single',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td><td>${demand}</td>
     ${(()=>{const sg=window.CMSStock?CMSStock.stockByCode(p.code):null;return `<td class="${sg==null?'manual-cell':''}" title="${sg==null?'總表沒有這個品號，或還沒同步現貨':'入口網站總表的剩餘庫存現貨'}">${sg==null?'—':sg}</td>`;})()}${(()=>{const sp=window.CMSStock?CMSStock.singlePacked(p.id):null;return `<td class="${sp==null?'manual-cell':''}" title="${sp==null?'含這個單條的禮盒都還沒有現貨資料':'各禮盒現貨 × 配方裡這個單條的用量'}">${sp==null?'—':sp}</td>`;})()}${(()=>{const po=window.CMSStock?CMSStock.preorderByCode(p.code):null;return `<td class="${po==null?'manual-cell':''}" title="${po==null?'還沒同步預購單資料':'排單的4週累計訂單量 − 今天實際揀貨'}">${po==null?'—':po}</td>`;})()}
-    <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td></tr>`;
- }).join(''):'<tr><td colspan="10" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
+    <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td>${etaCell(p.id)}</tr>`;
+ }).join(''):'<tr><td colspan="11" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
 
  giftHome.innerHTML=gifts.length?gifts.map((p,i)=>{
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
