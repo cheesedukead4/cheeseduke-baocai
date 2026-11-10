@@ -159,6 +159,20 @@
   // 直接做在原本的總額表上：選了規格，「預估業績總額」那一列（各部門、總計）只算那個規格；格子顯示「金額（盒數）」，單條是條數。去年業績那一列不受影響。
   var SPEC_LABEL = { box5: '5入費雪', box8: '8入費雪', egg10: '蛋捲10入', other: '其他禮盒', single: '單條（單賣）' };
   var SPEC_ORDER = ['box5', 'box8', 'egg10', 'other', 'single'];
+  // 選了規格時，列出這個規格有哪些品項（本期上架的）和各自的預估量（5 週合計）；沒有預估量的也列出來，標 0
+  function specItemList(spec) {
+    var d = fdb();
+    if (!d || typeof getForecastProducts !== 'function') return '';
+    var items = getForecastProducts().filter(function (p) { return sfSpecKey(p) === spec; }).map(function (p) {
+      var code = String(p.code || p.id || ''), r = d.rows && d.rows[code], q = 0;
+      if (r && r.lines) Object.keys(r.lines).forEach(function (n) { SF_LOCATIONS.forEach(function (k) { q += X.num(r.lines[n] && r.lines[n][k] && r.lines[n][k].est); }); });
+      return { name: (p.code ? p.code + ' ' : '') + (p.name || ''), q: q, unit: spec === 'single' ? '條' : '盒' };
+    }).sort(function (a, b) { return b.q - a.q || a.name.localeCompare(b.name, 'zh-TW', { numeric: true }); });
+    if (!items.length) return '';
+    var tot = items.reduce(function (t, x) { return t + x.q; }, 0);
+    return '<div class="small" style="margin:0 0 10px;white-space:normal"><b>' + esc(SPEC_LABEL[spec]) + ' 的品項（' + items.length + ' 個，預估合計 ' + X.fmt(tot) + ' ' + (spec === 'single' ? '條' : '盒') + '）：</b><br>' +
+      items.map(function (x) { return esc(x.name) + '　<b' + (x.q ? '' : ' style="font-weight:400;color:#888"') + '>' + X.fmt(x.q) + ' ' + x.unit + '</b>'; }).join('<br>') + '</div>';
+  }
   window.renderSfSummaryCtl = function () {
     var box = document.getElementById('sf-summary-ctl');
     if (!box) return;
@@ -172,7 +186,8 @@
       '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center"><span ' + lbl + '>規格</span>' + chip('data-sfsum-spec', 'all', '全部', sfSummarySpec === 'all') +
       order.map(function (k) { return chip('data-sfsum-spec', k, SPEC_LABEL[k], sfSummarySpec === k); }).join('') + '</span>' +
       '</div>' +
-      '<p class="small" style="margin:0 0 8px">格子顯示「金額（盒數）」：禮盒算盒，單條算條' + (sfSummarySpec !== 'all' ? '；「預估業績總額」那一列只算「' + esc(SPEC_LABEL[sfSummarySpec]) + '」，去年業績不分規格，照原本' : '') + '。</p>';
+      '<p class="small" style="margin:0 0 8px">格子顯示「金額（盒數）」：禮盒算盒，單條算條' + (sfSummarySpec !== 'all' ? '；「預估業績總額」那一列只算「' + esc(SPEC_LABEL[sfSummarySpec]) + '」，去年業績不分規格，照原本' : '') + '。</p>' +
+      (sfSummarySpec !== 'all' ? specItemList(sfSummarySpec) : '');
     box.onclick = function (e) {
       var b = e.target.closest ? e.target.closest('[data-sfsum-spec]') : null;
       if (!b) return;
