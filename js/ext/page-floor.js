@@ -446,10 +446,66 @@
   // =====================================================================
   // 頁面一：快速輸入（xQuickEntry）
   // =====================================================================
+  // ---------- 匯出 Excel（.xlsx）：自己產生，不需要外部程式庫 ----------
+  // sheets: [{ name, widths: [欄寬], rows: [[格子]] }]；格子可以是字串、數字，或 { v, f（公式）, s（樣式：h 表頭｜i 整數｜p 百分比｜d 兩位小數｜b 粗體｜bi｜bp｜bd）}
+  var XL_STYLE = { h: 1, i: 2, p: 3, d: 4, b: 5, bi: 6, bp: 7, bd: 8 };
+  var CRC_T = (function () { var t = [], c, n, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+  function crc32(b) { var c = 0xFFFFFFFF, i; for (i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function xmlEsc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function colName(i) { var n = i + 1, o = ''; while (n > 0) { var m = (n - 1) % 26; o = String.fromCharCode(65 + m) + o; n = Math.floor((n - 1) / 26); } return o; }
+  function sheetXml(sh) {
+    var o = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>';
+    if (sh.widths) o += '<cols>' + sh.widths.map(function (w, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols>';
+    o += '<sheetData>';
+    sh.rows.forEach(function (row, ri) {
+      o += '<row r="' + (ri + 1) + '">';
+      row.forEach(function (c, ci) {
+        if (c == null || c === '') return;
+        var cell = (typeof c === 'object') ? c : { v: c }, ref = colName(ci) + (ri + 1), sid = cell.s ? (XL_STYLE[cell.s] || 0) : 0, st = sid ? ' s="' + sid + '"' : '';
+        if (cell.f) o += '<c r="' + ref + '"' + st + '><f>' + xmlEsc(cell.f) + '</f><v>' + (isFinite(cell.v) ? cell.v : 0) + '</v></c>';
+        else if (typeof cell.v === 'number') o += '<c r="' + ref + '"' + st + '><v>' + (isFinite(cell.v) ? cell.v : 0) + '</v></c>';
+        else o += '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t>' + xmlEsc(cell.v) + '</t></is></c>';
+      });
+      o += '</row>';
+    });
+    return o + '</sheetData></worksheet>';
+  }
+  function buildXlsx(sheets) {
+    var enc = new TextEncoder(), files = [], n = sheets.length, i;
+    var head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    var ct = head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+    for (i = 1; i <= n; i++) ct += '<Override PartName="/xl/worksheets/sheet' + i + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    ct += '</Types>';
+    var rels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+    var wb = head + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>' +
+      sheets.map(function (sh, k) { return '<sheet name="' + xmlEsc(sh.name) + '" sheetId="' + (k + 1) + '" r:id="rId' + (k + 1) + '"/>'; }).join('') + '</sheets><calcPr fullCalcOnLoad="1"/></workbook>';
+    var wbRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + sheets.map(function (sh, k) { return '<Relationship Id="rId' + (k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (k + 1) + '.xml"/>'; }).join('') +
+      '<Relationship Id="rId' + (n + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+    var xf = function (numFmt, font, fill) { return '<xf numFmtId="' + numFmt + '" fontId="' + font + '" fillId="' + fill + '" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>'; };
+    var styles = head + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF275D16"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9">' + xf(0, 0, 0) + xf(0, 2, 2) + xf(3, 0, 0) + xf(10, 0, 0) + xf(2, 0, 0) + xf(0, 1, 0) + xf(3, 1, 0) + xf(10, 1, 0) + xf(2, 1, 0) + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    files.push({ name: '[Content_Types].xml', data: enc.encode(ct) }, { name: '_rels/.rels', data: enc.encode(rels) }, { name: 'xl/workbook.xml', data: enc.encode(wb) }, { name: 'xl/_rels/workbook.xml.rels', data: enc.encode(wbRels) }, { name: 'xl/styles.xml', data: enc.encode(styles) });
+    sheets.forEach(function (sh, k) { files.push({ name: 'xl/worksheets/sheet' + (k + 1) + '.xml', data: enc.encode(sheetXml(sh)) }); });
+    var parts = [], central = [], offset = 0;
+    files.forEach(function (f) {
+      var nameB = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+      var lh = new Uint8Array(30 + nameB.length), dv = new DataView(lh.buffer);
+      dv.setUint32(0, 0x04034b50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 0x0800, true); dv.setUint16(12, 0x21, true); dv.setUint32(14, crc, true); dv.setUint32(18, size, true); dv.setUint32(22, size, true); dv.setUint16(26, nameB.length, true); lh.set(nameB, 30);
+      parts.push(lh, f.data);
+      var ch = new Uint8Array(46 + nameB.length), cv = new DataView(ch.buffer);
+      cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true); cv.setUint16(14, 0x21, true); cv.setUint32(16, crc, true); cv.setUint32(20, size, true); cv.setUint32(24, size, true); cv.setUint16(28, nameB.length, true); cv.setUint32(42, offset, true); ch.set(nameB, 46);
+      central.push(ch); offset += lh.length + size;
+    });
+    var cdSize = central.reduce(function (t, c) { return t + c.length; }, 0), end = new Uint8Array(22), ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true); ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
-  var qe = { view: '', note: '', dept: '', worker: '', ngFrom: '', ngTo: '', ngDept: '', ngMat: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
+  var qe = { view: '', note: '', dept: '', worker: '', effFrom: '', effTo: '', ngFrom: '', ngTo: '', ngDept: '', ngMat: '', from: '', to: '', auto: Object.create(null), vals: Object.create(null) };
   try { if (cfg.dept) { qe.dept = localStorage.getItem('cms_fold_dept') || ''; qe.worker = localStorage.getItem('cms_fold_worker') || ''; } } catch (e) {}
 
   function qeTypeText(t) { return typeLabel(t); }
@@ -623,6 +679,14 @@
         '<label class="small" style="display:inline-flex;gap:6px;align-items:center"><b>包材品項</b><select data-qe="ngmat" aria-label="包材品項篩選" style="min-height:34px;max-width:260px"></select></label>' +
         nbtn('ng-clear', '清除篩選') + '</div>' +
         '<div data-box="qe-ng-out"></div>');
+      if (!dateOk(qe.effFrom)) qe.effFrom = d.slice(0, 8) + '01';
+      if (!dateOk(qe.effTo)) qe.effTo = d;
+      html += X.ui.card('折盒效率統計（每人折盒總數、NG、效率）',
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px"><b>日期區間</b>' +
+        '<input type="date" data-qe="efffrom" aria-label="起" value="' + esc(qe.effFrom) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"> ～ ' +
+        '<input type="date" data-qe="effto" aria-label="迄" value="' + esc(qe.effTo) + '" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit">' +
+        '<button type="button" class="btn primary" data-act="eff-export" style="min-height:34px">匯出 Excel</button></div>' +
+        '<div data-box="qe-eff-out"></div>');
     }
     html += '<div data-box="qe-records"></div><div data-box="qe-links"></div>';
     el.innerHTML = html;
@@ -739,6 +803,90 @@
 
   // NG 統計（折盒頁）：選日期區間，看折盒NG、進貨NG 的數量，依折盒部門、依包材品項、逐日；不含已撤銷的紀錄
   // 折盒NG率＝折盒NG ÷（折盒＋折盒NG）；進貨NG率＝進貨NG ÷ 這段期間的進貨（進貨在「進貨與使用」頁登記）
+  // ---------- 折盒效率統計（每人）----------
+  // 一次送出（同一個 batchId）算一個「工作場次」：有人員、起訖時間（工時）。
+  //   折盒數量＝這個人所有場次的折盒合計（各包材加總）；折盒NG、進貨NG 同理；NG率＝折盒NG ÷（折盒＋折盒NG）
+  //   折盒效率（盒／小時）＝有填起訖時間的場次的折盒量 ÷ 這些場次的工時（小時）；沒填起訖時間的場次不算效率
+  function effData(from, to) {
+    var sess = Object.create(null), keys = [];
+    list('movements').forEach(function (r) {
+      if (r.voided === true || (r.type !== 'fold' && r.type !== 'foldNg' && r.type !== 'inNg')) return;
+      var dt = String(r.date || '').slice(0, 10);
+      if (dt < from || dt > to) return;
+      var k = r.batchId ? 'b:' + r.batchId : 'r:' + r.id, g = sess[k];
+      if (!g) { g = sess[k] = { date: dt, worker: String(r.worker || '').trim(), dept: String(r.dept || '').trim(), start: r.startTime || '', end: r.endTime || '', min: num(r.workMin), fold: 0, foldNg: 0, inNg: 0, note: String(r.note || ''), at: num(r.at), items: Object.create(null) }; keys.push(k); }
+      var q = num(r.qty); g[r.type] += q;
+      var it = g.items[String(r.materialId)] || (g.items[String(r.materialId)] = { fold: 0, foldNg: 0, inNg: 0 }); it[r.type] += q;
+    });
+    var people = Object.create(null), sessions = keys.map(function (k) { return sess[k]; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || (a.at - b.at); });
+    sessions.forEach(function (g) {
+      var name = g.worker || '（未填人員）', P = people[name] || (people[name] = { name: name, depts: Object.create(null), n: 0, fold: 0, foldNg: 0, inNg: 0, min: 0, timedFold: 0, items: Object.create(null) });
+      if (g.dept) P.depts[g.dept] = 1;
+      P.n++; P.fold += g.fold; P.foldNg += g.foldNg; P.inNg += g.inNg;
+      if (g.min > 0 && g.worker) { P.min += g.min; P.timedFold += g.fold; }
+      Object.keys(g.items).forEach(function (mid) { var i0 = P.items[mid] || (P.items[mid] = { fold: 0, foldNg: 0, inNg: 0 }); i0.fold += g.items[mid].fold; i0.foldNg += g.items[mid].foldNg; i0.inNg += g.items[mid].inNg; });
+    });
+    var list2 = Object.keys(people).map(function (k) { return people[k]; }).sort(function (a, b) { return (a.name === '（未填人員）') - (b.name === '（未填人員）') || (b.fold - a.fold); });
+    return { people: list2, sessions: sessions };
+  }
+  function effXlsx(from, to) {
+    var d = effData(from, to), ord = {}, rowsP = [], rowsI = [], rowsS = [], r;
+    orderMaterials(X.materials(), homeOrderOf('material')).forEach(function (m, i) { ord[String(m.id)] = i; });
+    rowsP.push(['人員', '部門', '登記次數', '折盒數量（各包材加總）', '折盒NG', '進貨NG', '折盒NG率', '工時（分鐘）', '工時（小時）', '有計時的折盒量', '折盒效率（盒／小時）'].map(function (h) { return { v: h, s: 'h' }; }));
+    d.people.forEach(function (P) {
+      r = rowsP.length + 1;
+      rowsP.push([P.name, Object.keys(P.depts).join('、'), { v: P.n, s: 'i' }, { v: P.fold, s: 'i' }, { v: P.foldNg, s: 'i' }, { v: P.inNg, s: 'i' },
+        { v: P.fold + P.foldNg > 0 ? P.foldNg / (P.fold + P.foldNg) : 0, f: 'IF(D' + r + '+E' + r + '>0,E' + r + '/(D' + r + '+E' + r + '),0)', s: 'p' },
+        { v: P.min, s: 'i' }, { v: P.min / 60, f: 'H' + r + '/60', s: 'd' }, { v: P.timedFold, s: 'i' },
+        { v: P.min > 0 ? P.timedFold / (P.min / 60) : 0, f: 'IF(I' + r + '>0,J' + r + '/I' + r + ',0)', s: 'd' }]);
+    });
+    var last = rowsP.length, tr = last + 1, sum = d.people.reduce(function (t, P) { return { n: t.n + P.n, fold: t.fold + P.fold, ng: t.ng + P.foldNg, ing: t.ing + P.inNg, min: t.min + P.min, tf: t.tf + P.timedFold }; }, { n: 0, fold: 0, ng: 0, ing: 0, min: 0, tf: 0 });
+    if (d.people.length) rowsP.push([{ v: '全部合計', s: 'b' }, '', { v: sum.n, f: 'SUM(C2:C' + last + ')', s: 'bi' }, { v: sum.fold, f: 'SUM(D2:D' + last + ')', s: 'bi' }, { v: sum.ng, f: 'SUM(E2:E' + last + ')', s: 'bi' }, { v: sum.ing, f: 'SUM(F2:F' + last + ')', s: 'bi' },
+      { v: sum.fold + sum.ng > 0 ? sum.ng / (sum.fold + sum.ng) : 0, f: 'IF(D' + tr + '+E' + tr + '>0,E' + tr + '/(D' + tr + '+E' + tr + '),0)', s: 'bp' }, { v: sum.min, f: 'SUM(H2:H' + last + ')', s: 'bi' }, { v: sum.min / 60, f: 'H' + tr + '/60', s: 'bd' },
+      { v: sum.tf, f: 'SUM(J2:J' + last + ')', s: 'bi' }, { v: sum.min > 0 ? sum.tf / (sum.min / 60) : 0, f: 'IF(I' + tr + '>0,J' + tr + '/I' + tr + ',0)', s: 'bd' }]);
+    rowsI.push(['人員', '包材品項', '折盒', '折盒NG', '進貨NG'].map(function (h) { return { v: h, s: 'h' }; }));
+    d.people.forEach(function (P) {
+      Object.keys(P.items).sort(function (a, b) { return (ord[a] == null ? 9999 : ord[a]) - (ord[b] == null ? 9999 : ord[b]); }).forEach(function (mid) {
+        rowsI.push([P.name, X.materialLabel(mid), { v: P.items[mid].fold, s: 'i' }, { v: P.items[mid].foldNg, s: 'i' }, { v: P.items[mid].inNg, s: 'i' }]);
+      });
+    });
+    rowsS.push(['日期', '人員', '部門', '開始時間', '結束時間', '工時（分鐘）', '折盒', '折盒NG', '進貨NG', '內容（各包材）', '備註'].map(function (h) { return { v: h, s: 'h' }; }));
+    d.sessions.forEach(function (g) {
+      rowsS.push([g.date, g.worker || '（未填人員）', g.dept, g.start, g.end, { v: g.min, s: 'i' }, { v: g.fold, s: 'i' }, { v: g.foldNg, s: 'i' }, { v: g.inNg, s: 'i' },
+        Object.keys(g.items).map(function (mid) { var i = g.items[mid]; return nameOfMaterial(mid) + (i.fold ? ' 折盒' + i.fold : '') + (i.foldNg ? ' 折盒NG' + i.foldNg : '') + (i.inNg ? ' 進貨NG' + i.inNg : ''); }).join('；'), g.note]);
+    });
+    var notes = [['說明'].map(function (h) { return { v: h, s: 'h' }; }),
+      ['統計期間：' + from + ' ～ ' + to + '（含當天），匯出時間：' + new Date().toLocaleString('zh-TW')],
+      ['資料來源：折盒頁登記的紀錄（折盒、折盒NG、進貨NG），已撤銷的不算。一次「全部送出」算一個工作場次，有折盒人員、起訖時間（工時）。'],
+      ['折盒數量：這個人所有場次的折盒合計，各種包材（盒、蓋、袖套盒…）加在一起；每個包材各自的數量看「人員×包材」工作表。'],
+      ['折盒NG率＝折盒NG ÷（折盒＋折盒NG）。'],
+      ['折盒效率（盒／小時）＝有填起訖時間的場次的折盒量 ÷ 這些場次的工時（小時）；沒填起訖時間的場次只算數量，不算效率。'],
+      ['提醒：同一段工作時間請只登記一次（一次送出一個起訖時間），分成好幾次送出又填同一段時間，工時會重複計算。'],
+      ['「（未填人員）」是登記時沒填折盒人員的紀錄。']];
+    return buildXlsx([{ name: '人員效率', widths: [14, 16, 10, 22, 10, 10, 12, 12, 12, 16, 20], rows: rowsP }, { name: '人員×包材', widths: [14, 26, 10, 10, 10], rows: rowsI }, { name: '工作場次明細', widths: [12, 14, 12, 10, 10, 12, 8, 8, 8, 50, 20], rows: rowsS }, { name: '說明', widths: [120], rows: notes }]);
+  }
+  window.cmsFoldEffXlsx = effXlsx; // 測試與匯出共用
+  function updateEff(el) {
+    var out = q$(el, '[data-box="qe-eff-out"]');
+    if (!out) return;
+    var from = qe.effFrom, to = qe.effTo;
+    if (!dateOk(from) || !dateOk(to)) { out.innerHTML = X.ui.banner('info', '請選好起、迄兩個日期。'); return; }
+    if (from > to) { out.innerHTML = X.ui.banner('warn', '「起」不能晚於「迄」。'); return; }
+    var d = effData(from, to), f1 = function (v) { return esc(fmt(Math.round(v * 10) / 10, 1)); };
+    var cols = [
+      { label: '人員', render: function (P) { return '<b>' + esc(P.name) + '</b>'; } },
+      { label: '部門', render: function (P) { return '<span class="small" style="white-space:normal">' + esc(Object.keys(P.depts).join('、')) + '</span>'; } },
+      { label: '登記次數', num: true, render: function (P) { return fmt(P.n); } },
+      { label: '折盒數量', num: true, render: function (P) { return '<b>' + esc(fmt(P.fold)) + '</b>'; } },
+      { label: '折盒NG', num: true, render: function (P) { return P.foldNg ? esc(fmt(P.foldNg)) : muted('—'); } },
+      { label: 'NG率', num: true, render: function (P) { return P.fold + P.foldNg > 0 ? f1(P.foldNg / (P.fold + P.foldNg) * 100) + '%' : muted('—'); } },
+      { label: '工時（小時）', num: true, render: function (P) { return P.min > 0 ? f1(P.min / 60) : muted('—'); } },
+      { label: '折盒效率（盒／小時）', num: true, render: function (P) { return P.min > 0 ? '<b>' + f1(P.timedFold / (P.min / 60)) + '</b>' : muted('沒填起訖時間'); } }
+    ];
+    out.innerHTML = X.ui.table(cols, d.people, { empty: '這段期間沒有折盒登記' }) +
+      '<p class="small" style="margin:8px 0 0">折盒數量是各包材加在一起；每個包材各自的數量在匯出的 Excel「人員×包材」。折盒效率＝有填起訖時間的場次的折盒量 ÷ 工時；沒填起訖時間的不算效率。</p>';
+  }
+
   function updateNg(el) {
     var out = q$(el, '[data-box="qe-ng-out"]');
     if (!out) return;
@@ -874,6 +1022,16 @@
         var fi = q$(el, '[data-qe="from"]'), ti = q$(el, '[data-qe="to"]'); if (fi) fi.value = qe.from; if (ti) ti.value = qe.to;
         updateQeRange(el);
       }
+      else if (act === 'eff-export') {
+        if (!dateOk(qe.effFrom) || !dateOk(qe.effTo) || qe.effFrom > qe.effTo) { X.toast('請先選好日期區間（起不能晚於迄）'); return; }
+        try {
+          var blob = effXlsx(qe.effFrom, qe.effTo), an = document.createElement('a');
+          an.href = URL.createObjectURL(blob); an.download = '折盒效率_' + qe.effFrom + '_' + qe.effTo + '.xlsx';
+          document.body.appendChild(an); an.click(); an.remove();
+          setTimeout(function () { URL.revokeObjectURL(an.href); }, 5000);
+          X.toast('已匯出 Excel');
+        } catch (e) { X.toast('匯出失敗：' + e.message); }
+      }
       else if (act === 'ng-clear') {
         qe.ngDept = ''; qe.ngMat = '';
         refreshNgFilters(el); updateNg(el);
@@ -914,6 +1072,7 @@
       else if (t.dataset.qe === 'dept') { if (t.value === '__new__') addDeptDialog(el); else setDept(el, t.value); }
       else if (t.dataset.qe === 'tStart' || t.dataset.qe === 'tEnd') refreshWorkers(el);
       else if (t.dataset.qe === 'ngdept' || t.dataset.qe === 'ngmat') { qe[t.dataset.qe === 'ngdept' ? 'ngDept' : 'ngMat'] = t.value; updateNg(el); }
+      else if (t.dataset.qe === 'efffrom' || t.dataset.qe === 'effto') { if (dateOk(t.value)) { qe[t.dataset.qe === 'efffrom' ? 'effFrom' : 'effTo'] = t.value; updateEff(el); } }
       else if (t.dataset.qe === 'ngfrom' || t.dataset.qe === 'ngto') { if (dateOk(t.value)) { qe[t.dataset.qe === 'ngfrom' ? 'ngFrom' : 'ngTo'] = t.value; updateNg(el); } }
       else if (t.dataset.qe === 'from' || t.dataset.qe === 'to') { if (dateOk(t.value)) { qe[t.dataset.qe] = t.value; updateQeRange(el); } }
       else if (t.dataset.mv) { keepQeCell(t); applyLiveLinks(el, t); updateQeCount(el); }
@@ -947,6 +1106,7 @@
     updateQeRange(el);
     refreshNgFilters(el);
     updateNg(el);
+    updateEff(el);
     refreshDeptSelect(el);
     refreshWorkers(el);
     var hn = q$(el, '[data-box="qe-hidden-note"]'); if (hn) hn.innerHTML = hiddenNoteHtml();
