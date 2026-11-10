@@ -155,6 +155,82 @@
     if (typeof window.renderSfChangeLog === 'function') window.renderSfChangeLog();
   };
 
+  // ---------- 預估統計：依規格（5 入、8 入、蛋捲 10 入、單條）篩選，看各項金額、總額、盒數／條數 ----------
+  // 金額＝預估量 × 售價 × 該部門折扣成數（和上面「預估業績總額」同一個算法）；預估量是這個品項 5 週所有日期的合計；禮盒是「盒」，單條是「條」
+  var SPEC_LABEL = { box5: '5入費雪', box8: '8入費雪', egg10: '蛋捲10入', other: '其他禮盒', single: '單條（單賣）' };
+  var SPEC_ORDER = ['box5', 'box8', 'egg10', 'other', 'single'];
+  var specSt = { spec: 'all', metric: 'amt' }; // metric：amt 金額｜qty 盒數／條數｜both 兩個都看
+  function specOf(p) { return String((p && p.category) || '').trim() === '單條' ? 'single' : ((X.giftGroupKey && X.giftGroupKey(p)) || 'other'); }
+  function money(n) { return X.fmt(Math.round(n)); }
+  var specTimer = 0;
+  window.sfSpecSoon = function () { clearTimeout(specTimer); specTimer = setTimeout(function () { try { window.renderSfSpecSummary(); } catch (e) { console.warn('預估統計', e); } }, 150); };
+  window.renderSfSpecSummary = function () {
+    var box = document.getElementById('sf-spec-summary'), d = fdb();
+    if (!box) return;
+    if (!d || typeof getForecastProducts !== 'function' || typeof sfUnitPrice !== 'function' || typeof sfDiscountFactor !== 'function') { box.innerHTML = ''; return; }
+    var items = getForecastProducts().map(function (p) {
+      var code = String(p.code || p.id || ''), r = d.rows && d.rows[code], est = {}, tot = 0, amt = {}, at = 0, price = X.num(sfUnitPrice(p));
+      SF_LOCATIONS.forEach(function (k) {
+        var q = 0;
+        if (r && r.lines) Object.keys(r.lines).forEach(function (n) { q += X.num(r.lines[n] && r.lines[n][k] && r.lines[n][k].est); });
+        est[k] = q; tot += q; amt[k] = q * price * sfDiscountFactor(p, k); at += amt[k];
+      });
+      return { p: p, code: code, spec: specOf(p), est: est, tot: tot, price: price, amt: amt, at: at, unit: specOf(p) === 'single' ? '條' : '盒' };
+    }).filter(function (x) { return x.tot > 0; });
+    var present = SPEC_ORDER.filter(function (k) { return items.some(function (x) { return x.spec === k; }); });
+    if (specSt.spec !== 'all' && present.indexOf(specSt.spec) < 0) specSt.spec = 'all';
+    var chip = function (attr, v, text, on) { return '<button type="button" class="btn ' + (on ? 'primary' : 'gray') + '" ' + attr + '="' + v + '" aria-pressed="' + on + '" style="min-height:30px;padding:3px 11px;font-size:15px">' + esc(text) + '</button>'; };
+    var lbl = 'class="small" style="min-width:64px;font-weight:700"';
+    var html = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px"><span ' + lbl + '>規格</span>' + chip('data-sfspec', 'all', '全部', specSt.spec === 'all') +
+      present.map(function (k) { return chip('data-sfspec', k, SPEC_LABEL[k], specSt.spec === k); }).join('') + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px"><span ' + lbl + '>顯示</span>' +
+      chip('data-sfmetric', 'amt', '金額', specSt.metric === 'amt') + chip('data-sfmetric', 'qty', '盒數／條數', specSt.metric === 'qty') + chip('data-sfmetric', 'both', '金額＋盒數／條數', specSt.metric === 'both') + '</div>';
+    if (!items.length) {
+      box.innerHTML = X.ui.card('預估統計（依規格看金額與盒數、條數）', html + X.ui.empty('業績預估還沒有填預估量。'));
+      box.onclick = specClick;
+      return;
+    }
+    // 各規格的金額與盒數／條數（卡片永遠兩個都列）
+    var kp = present.map(function (k) {
+      var l = items.filter(function (x) { return x.spec === k; }), a = l.reduce(function (t, x) { return t + x.at; }, 0), q = l.reduce(function (t, x) { return t + x.tot; }, 0);
+      return { label: SPEC_LABEL[k], value: money(a) + ' 元', tone: specSt.spec === k ? 'ok' : 'muted', sub: X.fmt(q) + (k === 'single' ? ' 條' : ' 盒') + '（' + l.length + ' 個品項）' };
+    });
+    html += X.ui.kpis(kp);
+    var rows = items.filter(function (x) { return specSt.spec === 'all' || x.spec === specSt.spec; });
+    var cellOf = function (amount, qty, unit) {
+      if (specSt.metric === 'amt') return amount ? money(amount) : '—';
+      if (specSt.metric === 'qty') return qty ? X.fmt(qty) : '—';
+      return amount || qty ? '<div>' + money(amount) + '</div>' + (unit ? '<div class="small" style="margin:0">' + X.fmt(qty) + ' ' + unit + '</div>' : '') : '—';
+    };
+    var cols = [
+      { label: '品項', render: function (x) { return '<span style="display:inline-block;min-width:150px;white-space:normal"><b>' + esc((x.p.code ? x.p.code + ' ' : '') + (x.p.name || '')) + '</b> <span class="small">' + esc(SPEC_LABEL[x.spec]) + '</span></span>'; } },
+      { label: '售價', num: true, render: function (x) { return money(x.price); } }
+    ].concat(SF_LOCATIONS.map(function (k) { return { label: SF_LABELS[k], num: true, render: function (x) { return cellOf(x.amt[k], x.est[k], x.unit); } }; }))
+      .concat([{ label: '總計', num: true, render: function (x) { return '<b>' + cellOf(x.at, x.tot, x.unit) + '</b>'; } }]);
+    var totRow = function (list, title, unit) {
+      var o = { _tot: title, amt: {}, est: {}, at: 0, tot: 0, unit: unit };
+      SF_LOCATIONS.forEach(function (k) { o.amt[k] = list.reduce(function (t, x) { return t + x.amt[k]; }, 0); o.est[k] = list.reduce(function (t, x) { return t + x.est[k]; }, 0); });
+      o.at = list.reduce(function (t, x) { return t + x.at; }, 0); o.tot = list.reduce(function (t, x) { return t + x.tot; }, 0);
+      return o;
+    };
+    var data = rows.slice(), mixed = rows.some(function (x) { return x.spec === 'single'; }) && rows.some(function (x) { return x.spec !== 'single'; });
+    // 合計：金額可以全部加；盒數和條數單位不同，混在一起時分開列（禮盒合計盒、單條合計條）
+    if (specSt.metric === 'amt' || !mixed) data.push(totRow(rows, specSt.spec === 'all' ? '全部合計' : SPEC_LABEL[specSt.spec] + ' 合計', rows[0] ? rows[0].unit : ''));
+    else { data.push(totRow(rows.filter(function (x) { return x.spec !== 'single'; }), '禮盒合計（盒）', '盒')); data.push(totRow(rows.filter(function (x) { return x.spec === 'single'; }), '單條合計（條）', '條')); if (specSt.metric === 'both') data.push(totRow(rows, '金額總額', '')); }
+    var render = cols.map(function (c) { return { label: c.label, num: c.num, render: function (x) { if (x._tot) { if (c.label === '品項') return '<b>' + esc(x._tot) + '</b>'; if (c.label === '售價') return ''; return '<b>' + cellOf(c.label === '總計' ? x.at : x.amt[SF_LOCATIONS.find(function (k) { return SF_LABELS[k] === c.label; })], c.label === '總計' ? x.tot : x.est[SF_LOCATIONS.find(function (k) { return SF_LABELS[k] === c.label; })], x.unit) + '</b>'; } return c.render(x); } }; });
+    html += X.ui.table(render, data, {}) +
+      '<p class="small" style="margin:8px 0 0">金額＝預估量 × 售價 × 該部門折扣成數（和上面「預估業績總額」同一個算法）；預估量是這個品項 5 週的合計，禮盒算「盒」、單條算「條」。「規格」按鈕只看那一種規格，下面列出每個品項各部門的數字，最後一列是合計。' + (mixed && specSt.metric !== 'amt' ? '全部規格一起看盒數／條數時，禮盒（盒）和單條（條）單位不同，所以分開合計。' : '') + '</p>';
+    box.innerHTML = X.ui.card('預估統計（依規格看金額與盒數、條數）', html);
+    box.onclick = specClick;
+  };
+  function specClick(e) {
+    var b = e.target.closest ? e.target.closest('[data-sfspec],[data-sfmetric]') : null;
+    if (!b) return;
+    if (b.dataset.sfspec) specSt.spec = b.dataset.sfspec;
+    if (b.dataset.sfmetric) specSt.metric = b.dataset.sfmetric;
+    window.renderSfSpecSummary();
+  }
+
   function legacyPanel() { return document.querySelector('[data-home-panel="salesForecast"]'); }
 
   X.registerPage({
