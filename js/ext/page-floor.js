@@ -574,18 +574,18 @@
     } else {
       html += '<div class="panel x-card x-qe-panel x-qe-n' + TYPE_KEYS.length + '">' +
         '<div class="x-card-head"><h2>' + esc(cfg.title) + '</h2></div>' +
-        '<div class="x-qe-top">' +
-        '<div class="x-field"><span>登記日期（只能登記今天）</span>' +
+        '<div class="x-qe-top"' + (cfg.dept ? ' style="display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end"' : '') + '>' +
+        '<div class="x-field"' + (cfg.dept ? ' style="margin:0;flex:0 0 160px"' : '') + '><span>' + (cfg.dept ? '登記日期（只能今天）' : '登記日期（只能登記今天）') + '</span>' +
         '<input type="text" readonly data-qe="today" aria-label="登記日期" value="' + esc(slashDate(d)) + '（今天）" style="background:var(--surface-2)"></div>' +
-        '<div class="x-field"><span>備註（選填，會套用到這次送出的每一筆）</span>' +
+        '<div class="x-field"' + (cfg.dept ? ' style="margin:0;flex:1 1 180px" title="備註會套用到這次送出的每一筆"' : '') + '><span>' + (cfg.dept ? '備註（選填）' : '備註（選填，會套用到這次送出的每一筆）') + '</span>' +
         '<input type="text" data-qe="note" maxlength="100" placeholder="例：早班、A 倉" aria-label="備註" value="' + esc(qe.note) + '"></div>' +
-        (cfg.dept ? '<div class="x-field"><span>折盒部門（這次是哪個部門折的，會套用到這次送出的每一筆）' + (X.isAdmin() ? ' <button type="button" class="btn gray" data-act="dept-edit" style="min-height:26px;padding:1px 8px;font-size:13px">管理部門清單</button>' : '') + '</span>' +
-          '<select data-qe="dept" aria-label="折盒部門">' + deptOptionsHtml() + '</select></div>' : '') +
-        (cfg.dept ? '<div class="x-field"><span>折盒人員（誰折的，之後算效率用）</span><input type="text" data-qe="worker" list="x-fold-workers" maxlength="20" placeholder="例：王小明" aria-label="折盒人員" value="' + esc(qe.worker) + '"><datalist id="x-fold-workers"></datalist></div>' +
-          '<div class="x-field"><span>起訖時間（這次折盒從幾點做到幾點，之後算效率用）</span><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
-          '<input type="time" data-qe="tStart" aria-label="開始時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><button type="button" class="btn gray" data-act="now-start" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
-          '<span>～</span><input type="time" data-qe="tEnd" aria-label="結束時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><button type="button" class="btn gray" data-act="now-end" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
-          '<span class="small" data-box="qe-dur"></span></div></div>' : '') +
+        (cfg.dept ? '<div class="x-field" style="margin:0;flex:0 0 auto" title="這次是哪個部門折的，會套用到這次送出的每一筆"><span>折盒部門</span><div style="display:flex;gap:6px;align-items:center">' +
+          '<select data-qe="dept" aria-label="折盒部門">' + deptOptionsHtml() + '</select>' + (X.isAdmin() ? '<button type="button" class="btn gray" data-act="dept-edit" title="管理部門清單" style="min-height:30px;padding:2px 8px;font-size:13px">管理</button>' : '') + '</div></div>' : '') +
+        (cfg.dept ? '<div class="x-field" style="margin:0;flex:0 1 150px" title="誰折的，之後算效率用"><span>折盒人員</span><input type="text" data-qe="worker" list="x-fold-workers" maxlength="20" placeholder="例：王小明" aria-label="折盒人員" value="' + esc(qe.worker) + '"><datalist id="x-fold-workers"></datalist></div>' +
+          '<div class="x-field" style="margin:0;flex:0 0 auto" title="這次折盒從幾點做到幾點，之後算效率用"><span>起訖時間</span><div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center">' +
+          '<input type="time" data-qe="tStart" aria-label="開始時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;width:118px"><button type="button" class="btn gray" data-act="now-start" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
+          '<span>～</span><input type="time" data-qe="tEnd" aria-label="結束時間" style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit;width:118px"><button type="button" class="btn gray" data-act="now-end" style="min-height:30px;padding:2px 8px;font-size:13px">現在</button>' +
+          '<span class="small" data-box="qe-dur" style="white-space:nowrap"></span></div></div>' : '') +
         '</div>' +
         '<div class="x-qe-legend">' + TYPE_KEYS.map(function (k) { return '<span><b>' + esc(TYPES[k].label) + '</b> ' + esc(TYPE_HINTS[k]) + '</span>'; }).join('') + '</div>' +
         '<div class="x-qe-grid" data-box="qe-grid">' +
@@ -671,8 +671,8 @@
       { label: '今年預估盒數', num: true, render: function (r) { return r.total ? '<b>' + esc(fmt(r.boxes, 2)) + '</b>' : esc(fmt(r.boxes, 2)); } }
     ];
     giftRows.sort(function (a, b) { return b.boxes - a.boxes; });
-    var gtable = withNeed ? '<p style="margin:0 0 4px"><b>今年預估（各禮盒品項）</b></p>' + X.ui.table(gcols, giftRows.length ? giftRows.concat([{ total: true, boxes: giftBoxes }]) : [], { empty: '業績預估還沒有填預估量。' }) : '';
-    top.innerHTML = gtable + '<p style="margin:' + (withNeed ? '14px' : '0') + ' 0 4px"><b>' + (withNeed ? '各包材品項：預估需要與累計' : '各包材品項：累計') + '</b></p>' + X.ui.table(tcols, trows, { empty: '還沒有登記，也沒有預估需要的包材。' }) +
+    var gtable = ''; // 「今年預估（各禮盒品項）」那張表不顯示了，只留下面各包材明細
+    top.innerHTML = gtable + '<p style="margin:0 0 4px"><b>' + (withNeed ? '各包材品項：預估需要與累計' : '各包材品項：累計') + '</b></p>' + X.ui.table(tcols, trows, { empty: '還沒有登記，也沒有預估需要的包材。' }) +
       '<p class="small" style="margin:6px 0 12px">這一區是固定的合計，不受下面的日期區間影響。' + (withNeed ? '今年預估需要＝業績預估裡每個禮盒所有日期、所有部門的預估盒數 × 配方裡這個包材的用量，全部禮盒加總（目前檔期，和首頁「銷售預估」同一個數字）；累計是所有登記合計。' : '累計是所有登記合計。') + '已撤銷的不算。</p>';
     // ---- 下：日期區間，逐日看 ----
     var from = qe.from, to = qe.to;
