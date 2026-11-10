@@ -443,7 +443,8 @@
     if (!p || isSingle(p)) return '';
     var name = String(p.name || ''), m = /(\d+)\s*入/.exec(name), n = m ? Number(m[1]) : 0;
     if (/蛋捲/.test(name) && (n === 10 || /5\+\S*5/.test(name))) return 'egg10';
-    if (/費/.test(name) && !/蛋捲/.test(name)) { if (n === 5) return 'box5'; if (n === 8) return 'box8'; }
+    // 5 入、8 入費雪：名稱有「費」，或是綜合款（名稱有「+」，例如「鳳+新口味8入」、「鳳+草+乳酪+巧8入」，名稱沒寫「費」也算）；蛋捲、咖啡不算
+    if (!/蛋捲|咖啡/.test(name) && (/費/.test(name) || /\+/.test(name))) { if (n === 5) return 'box5'; if (n === 8) return 'box8'; }
     return '';
   }
   function inGroup(p, group) { var g = giftGroup(p); return !!g && (group === 'all3' || group === g); }
