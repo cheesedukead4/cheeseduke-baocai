@@ -645,8 +645,8 @@ function sfUnitPrice(product){
 const SF_DISCOUNT_FIELD={dongqiao:'discount',a11:'discount',jingzhan:'discount',web:'discountWeb',ceo:'discountCeo',channel:'discountChannel'};
 function sfDiscountFactor(product,loc){const f=SF_DISCOUNT_FIELD[loc];if(!f)return 1;const d=Number(product&&product[f]);return d>0&&d<=10?d/10:1;}
 function sfForecastPrice(product,loc){return sfUnitPrice(product)*sfDiscountFactor(product,loc);}
-// 「預估業績總額」那一列：規格篩選（all｜box5｜box8｜egg10｜other｜single）與顯示方式（amt 金額｜qty 盒數／條數｜both 兩個都列）；篩選鈕在表的上方（js/ext/page-legacy-forecast.js）
-let sfSummarySpec='all',sfSummaryMetric='amt';
+// 「預估業績總額」那一列：規格篩選（all｜box5｜box8｜egg10｜other｜single），格子顯示「金額（盒數）」，單條算條；篩選鈕在表的上方（js/ext/page-legacy-forecast.js）
+let sfSummarySpec='all';
 function sfSpecKey(p){return String((p&&p.category)||'').trim()==='單條'?'single':((window.CMSX&&CMSX.giftGroupKey&&CMSX.giftGroupKey(p))||'other');}
 function recalcSalesForecast(){
  ensureSalesForecast();const summary={};SF_LOCATIONS.forEach(k=>summary[k]=0);
@@ -676,10 +676,10 @@ function recalcSalesForecast(){
   if(gq)gq.textContent=grandQty?grandQty.toLocaleString():'';if(ga)ga.textContent=grandAmount?grandAmount.toLocaleString():'';
   if(gqa)gqa.textContent=grandActQty?grandActQty.toLocaleString():'';if(gaa)gaa.textContent=grandActAmount?grandActAmount.toLocaleString():'';
  });
- {const cellHtml=(a,b,c)=>{const q=[b?b.toLocaleString()+'盒':'',c?c.toLocaleString()+'條':''].filter(Boolean).join('＋');if(sfSummaryMetric==='amt')return a?a.toLocaleString():'';if(sfSummaryMetric==='qty')return q;return (a||q)?'<div>'+(a?a.toLocaleString():'')+'</div><div style="font-size:.95em;font-weight:400;color:#555">'+q+'</div>':'';};
- let tA=0,tB=0,tC=0;SF_LOCATIONS.forEach(k=>{tA+=fS.amt[k];tB+=fS.box[k];tC+=fS.pcs[k];const e=document.getElementById(`sf-summary-${k}`);if(e)e.innerHTML=cellHtml(fS.amt[k],fS.box[k],fS.pcs[k]);});
- const st=document.getElementById('sf-summary-total');if(st)st.innerHTML=cellHtml(tA,tB,tC);
- const lb=document.getElementById('sf-summary-label');if(lb){const sp={box5:'5入費雪',box8:'8入費雪',egg10:'蛋捲10入',other:'其他禮盒',single:'單條'}[sfSummarySpec]||'';lb.textContent=(sfSummaryMetric==='qty'?'預估盒數／條數':'預估業績總額')+(sp?'（'+sp+'）':'');}}
+ {const cellHtml=(a,b,c)=>{const q=[b?b.toLocaleString()+'盒':'',c?c.toLocaleString()+'條':''].filter(Boolean).join('＋');if(!a&&!q)return '';return (a?a.toLocaleString():'0')+(q?'（'+q+'）':'');};
+ let tA=0,tB=0,tC=0;SF_LOCATIONS.forEach(k=>{tA+=fS.amt[k];tB+=fS.box[k];tC+=fS.pcs[k];const e=document.getElementById(`sf-summary-${k}`);if(e)e.textContent=cellHtml(fS.amt[k],fS.box[k],fS.pcs[k]);});
+ const st=document.getElementById('sf-summary-total');if(st)st.textContent=cellHtml(tA,tB,tC);
+ const lb=document.getElementById('sf-summary-label');if(lb){const sp={box5:'5入費雪',box8:'8入費雪',egg10:'蛋捲10入',other:'其他禮盒',single:'單條'}[sfSummarySpec]||'';lb.textContent='預估業績總額'+(sp?'（'+sp+'）':'');}}
  // 「實際」怎麼算出來的（先判別日期、再判別品號）明細，保留展開狀態
  try{const bx=document.getElementById('sf-actual-detail');if(bx&&window.CMSX&&CMSX.forecastActualDetailHtml){const was=bx.querySelector('details');const open=was&&was.open;bx.innerHTML=CMSX.forecastActualDetailHtml();const nd=bx.querySelector('details');if(nd&&open)nd.open=true;}}catch(e){console.warn('實際明細顯示失敗',e);}
  let ly=0;SF_LOCATIONS.forEach(k=>ly+=Number(db.salesForecastV5.lastYear[k])||0);

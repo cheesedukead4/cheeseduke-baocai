@@ -155,8 +155,8 @@
     if (typeof window.renderSfChangeLog === 'function') window.renderSfChangeLog();
   };
 
-  // ---------- 「預估業績總額」那一列的篩選：規格（5 入、8 入、蛋捲 10 入、單條）＋顯示（金額／盒數、條數）----------
-  // 直接做在原本的總額表上：選了規格，「預估業績總額」那一列（各部門、總計）只算那個規格；選「盒數／條數」就改顯示盒數（單條是條數）。去年業績那一列不受影響。
+  // ---------- 「預估業績總額」那一列的篩選：規格（5 入、8 入、蛋捲 10 入、單條），格子顯示「金額（盒數）」----------
+  // 直接做在原本的總額表上：選了規格，「預估業績總額」那一列（各部門、總計）只算那個規格；格子顯示「金額（盒數）」，單條是條數。去年業績那一列不受影響。
   var SPEC_LABEL = { box5: '5入費雪', box8: '8入費雪', egg10: '蛋捲10入', other: '其他禮盒', single: '單條（單賣）' };
   var SPEC_ORDER = ['box5', 'box8', 'egg10', 'other', 'single'];
   window.renderSfSummaryCtl = function () {
@@ -171,14 +171,12 @@
     box.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:0 0 8px">' +
       '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center"><span ' + lbl + '>規格</span>' + chip('data-sfsum-spec', 'all', '全部', sfSummarySpec === 'all') +
       order.map(function (k) { return chip('data-sfsum-spec', k, SPEC_LABEL[k], sfSummarySpec === k); }).join('') + '</span>' +
-      '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center"><span ' + lbl + '>顯示</span>' +
-      chip('data-sfsum-metric', 'amt', '金額', sfSummaryMetric === 'amt') + chip('data-sfsum-metric', 'qty', '盒數／條數', sfSummaryMetric === 'qty') + chip('data-sfsum-metric', 'both', '金額＋盒數／條數', sfSummaryMetric === 'both') + '</span></div>' +
-      (sfSummarySpec !== 'all' || sfSummaryMetric !== 'amt' ? '<p class="small" style="margin:0 0 8px">下面「' + esc(document.getElementById('sf-summary-label') ? document.getElementById('sf-summary-label').textContent : '預估業績總額') + '」那一列依上面選的規格與顯示方式；去年業績那一列不分規格，照原本。禮盒算「盒」、單條算「條」。</p>' : '');
+      '</div>' +
+      '<p class="small" style="margin:0 0 8px">格子顯示「金額（盒數）」：禮盒算盒，單條算條' + (sfSummarySpec !== 'all' ? '；「預估業績總額」那一列只算「' + esc(SPEC_LABEL[sfSummarySpec]) + '」，去年業績不分規格，照原本' : '') + '。</p>';
     box.onclick = function (e) {
-      var b = e.target.closest ? e.target.closest('[data-sfsum-spec],[data-sfsum-metric]') : null;
+      var b = e.target.closest ? e.target.closest('[data-sfsum-spec]') : null;
       if (!b) return;
       if (b.dataset.sfsumSpec) sfSummarySpec = b.dataset.sfsumSpec;
-      if (b.dataset.sfsumMetric) sfSummaryMetric = b.dataset.sfsumMetric;
       if (typeof recalcSalesForecast === 'function') recalcSalesForecast();
       window.renderSfSummaryCtl();
     };
