@@ -86,7 +86,7 @@
     var pre = el && el.dataset ? { code: el.dataset.sfCode, n: Number(el.dataset.sfDate), loc: el.dataset.sfLoc } : {};
     var code0 = pre.code || String(prods[0].code || prods[0].id || ''), n0 = pre.n >= 0 ? pre.n : 0, loc0 = pre.loc || SF_LOCATIONS[0];
     var cur = function (code, n, loc) { var r = sfRow(code); return Number(r.lines[n][loc].est) || 0; };
-    var weekOpts = function (code) { var r = sfRow(code); return [0, 1, 2, 3, 4, 5].map(function (n) { return { value: String(n), label: '第 ' + (n + 1) + ' 週　' + rangeText(r, n) }; }); };
+    var weekOpts = function (code) { var r = sfRow(code); return [0, 1, 2, 3, 4, 5, 6, 7].map(function (n) { return { value: String(n), label: '第 ' + (n + 1) + ' 週　' + rangeText(r, n) }; }); };
     var mask = X.ui.dialog('業績異動', [
       { name: 'code', label: '品項', type: 'select', options: prods.map(function (p) { var c = String(p.code || p.id || ''); return { value: c, label: (c ? c + ' ' : '') + (p.name || '') }; }), value: code0 },
       { name: 'week', label: '週別', type: 'select', options: weekOpts(code0), value: String(n0) },

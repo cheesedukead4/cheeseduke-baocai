@@ -960,13 +960,13 @@
       var r = fo.rows[code], p = ctx.byCode[normCode(code)] || ctx.byId[String(code)] || null;
       if (!r || !p) return;
       var ranges = [];
-      for (var n = 0; n < 6; n++) {
+      for (var n = 0; n < 8; n++) {
         var st = r.dates && r.dates[n] ? dateMs(r.dates[n]) : null, en = r.ends && r.ends[n] ? dateMs(r.ends[n]) + DAY : (st != null ? st + 7 * DAY : null); // 「迄」含當天，所以內部算到迄的隔天零點
         ranges.push(st != null && en != null ? [st, en] : null);
         if (st != null && en != null) { if (st < lo) lo = st; if (en > hi) hi = en; }
       }
-      det.sums[code] = [0, 0, 0, 0, 0, 0];
-      det.rows[code] = { p: p, weeks: [[], [], [], [], [], []] };
+      det.sums[code] = [0, 0, 0, 0, 0, 0, 0, 0];
+      det.rows[code] = { p: p, weeks: [[], [], [], [], [], [], [], []] };
       (byPid[String(p.id)] = byPid[String(p.id)] || []).push({ code: code, ranges: ranges });
     });
     det.lo = lo === Infinity ? null : lo; det.hi = hi === -Infinity ? null : hi;
@@ -985,7 +985,7 @@
       }
       var hit = false;
       tg.forEach(function (g) {
-        for (var n = 0; n < 6; n++) {
+        for (var n = 0; n < 8; n++) {
           var rg = g.ranges[n];
           if (rg && t >= rg[0] && t < rg[1]) { det.sums[g.code][n] += o.q; det.rows[g.code].weeks[n].push({ date: o.date, no: o.no, qty: o.q, code: o.code }); hit = true; }
         }
@@ -994,7 +994,7 @@
     });
     return det;
   }
-  // 業績預估頁小計「實際」用：{ 品號（列的 key）: [第 1～6 週的數量] }
+  // 業績預估頁小計「實際」用：{ 品號（列的 key）: [第 1～8 週的數量] }
   X.forecastActuals = function () { return faCompute().sums; };
   // 業績預估頁的「實際判別明細」：先判別日期、再判別品號的過程與沒算進去的訂單
   X.forecastActualDetailHtml = function () {
@@ -1004,7 +1004,7 @@
     var rowsTbl = codes.map(function (c) { var r = d.rows[c], tot = d.sums[c].reduce(function (a, v) { return a + v; }, 0); return { c: c, p: r.p, w: d.sums[c], tot: tot }; })
       .filter(function (r) { return r.tot > 0; });
     var un = Object.keys(d.unmatched).map(function (k) { return d.unmatched[k]; }).sort(function (a, b) { return b.qty - a.qty; });
-    var heads = [0, 1, 2, 3, 4, 5].map(function (n) { return '第 ' + (n + 1) + ' 週'; });
+    var heads = [0, 1, 2, 3, 4, 5, 6, 7].map(function (n) { return '第 ' + (n + 1) + ' 週'; });
     var cols = [{ label: '品號', render: function (r) { return esc(r.p.code || r.c); } }, { label: '品名', render: function (r) { return esc(r.p.name || ''); } }]
       .concat(heads.map(function (h, n) { return { label: h, num: true, render: function (r) { return r.w[n] ? X.fmt(r.w[n]) : '<span class="small">—</span>'; } }; }))
       .concat([{ label: '實際合計', num: true, render: function (r) { return '<b>' + X.fmt(r.tot) + '</b>'; } }]);

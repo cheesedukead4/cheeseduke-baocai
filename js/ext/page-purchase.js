@@ -298,7 +298,7 @@
         var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
         if (!fr) return;
         var ps = c.cv.parts(r.p) || [];
-        for (var n = 0; n < 6; n++) {
+        for (var n = 0; n < 8; n++) {
           var start = fr.dates && fr.dates[n];
           if (!start) continue;
           if (c.weekFiltering && c.sel.indexOf(start) < 0) continue;
@@ -413,7 +413,7 @@
       var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
       if (!fr) return;
       var ps = c.cv.parts(r.p) || [];
-      for (var n = 0; n < 6; n++) {
+      for (var n = 0; n < 8; n++) {
         var start = fr.dates && fr.dates[n];
         if (!start) continue;
         if (c.weekFiltering && c.sel.indexOf(start) < 0) continue;
@@ -754,7 +754,7 @@
         var code = String(r.p.code || r.p.id), fr = fo0.rows[code];
         if (!fr) return;
         var ps = c.cv.parts(r.p) || [];
-        for (var n = 0; n < 6; n++) {
+        for (var n = 0; n < 8; n++) {
           var start = fr.dates && fr.dates[n];
           if (!start) continue;
           var arr = arrivalOf(start);
