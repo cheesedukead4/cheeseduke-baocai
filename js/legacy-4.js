@@ -653,6 +653,8 @@ function sfSpecKey(p){return String((p&&p.category)||'').trim()==='單條'?'sing
 function recalcSalesForecast(){
  ensureSalesForecast();const summary={};SF_LOCATIONS.forEach(k=>summary[k]=0);
  const fS={amt:{},box:{},pcs:{}};SF_LOCATIONS.forEach(k=>{fS.amt[k]=0;fS.box[k]=0;fS.pcs[k]=0;});
+ // 費雪／蛋捲分開的預估業績（名稱有「蛋捲」的禮盒、單條算蛋捲，其餘算費雪；不受規格篩選影響）
+ const fT={fee:{amt:{},box:{},pcs:{}},egg:{amt:{},box:{},pcs:{}}};['fee','egg'].forEach(g=>SF_LOCATIONS.forEach(k=>{fT[g].amt[k]=0;fT[g].box[k]=0;fT[g].pcs[k]=0;}));
  // 小計的「實際」：訂單裡品號相同、日期落在每一週區間的數量（整個公司，不分門市）；算不出來時退回各部門填的實際
  let fa=null;try{fa=(window.CMSX&&CMSX.forecastActuals)?CMSX.forecastActuals():null;}catch(e){console.warn('實際訂單數量計算失敗',e);}
  getForecastProducts().forEach(p=>{
@@ -664,6 +666,7 @@ function recalcSalesForecast(){
    const kp=price*sfDiscountFactor(p,k),amount=te*kp,actualAmount=ta*kp;
    summary[k]+=amount;grandQty+=te;grandAmount+=amount;grandActQty+=ta;grandActAmount+=actualAmount;
     if(sfSummarySpec==='all'||sfSpecKey(p)===sfSummarySpec){fS.amt[k]+=amount;if(sfSpecKey(p)==='single')fS.pcs[k]+=te;else fS.box[k]+=te;}
+    {const g=(window.CMSX&&CMSX.isEggGift&&CMSX.isEggGift(p))?'egg':'fee';fT[g].amt[k]+=amount;if(sfSpecKey(p)==='single')fT[g].pcs[k]+=te;else fT[g].box[k]+=te;}
    const ids=[[`sf-${key}-${k}-est-total`,te],[`sf-${key}-${k}-act-total`,ta],[`sf-${key}-${k}-est-amount`,amount],[`sf-${key}-${k}-act-amount`,actualAmount]];
    ids.forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.textContent=v? v.toLocaleString():'';});
   });
@@ -681,6 +684,7 @@ function recalcSalesForecast(){
  {const cellHtml=(a,b,c)=>{const q=[b?b.toLocaleString()+'盒':'',c?c.toLocaleString()+'條':''].filter(Boolean).join('＋');if(!a&&!q)return '';return (a?a.toLocaleString():'0')+(q?'（'+q+'）':'');};
  let tA=0,tB=0,tC=0;SF_LOCATIONS.forEach(k=>{tA+=fS.amt[k];tB+=fS.box[k];tC+=fS.pcs[k];const e=document.getElementById(`sf-summary-${k}`);if(e)e.textContent=cellHtml(fS.amt[k],fS.box[k],fS.pcs[k]);});
  const st=document.getElementById('sf-summary-total');if(st)st.textContent=cellHtml(tA,tB,tC);
+ ['fee','egg'].forEach(g=>{let a=0,b=0,c=0;SF_LOCATIONS.forEach(k=>{a+=fT[g].amt[k];b+=fT[g].box[k];c+=fT[g].pcs[k];const e=document.getElementById(`sf-summary-${g}-${k}`);if(e)e.textContent=cellHtml(fT[g].amt[k],fT[g].box[k],fT[g].pcs[k]);});const e=document.getElementById(`sf-summary-${g}-total`);if(e)e.textContent=cellHtml(a,b,c);});
  const lb=document.getElementById('sf-summary-label');if(lb){const sp={box5:'5入費雪',box8:'8入費雪',egg10:'蛋捲10入',other:'其他禮盒',single:'單條'}[sfSummarySpec]||'';lb.textContent='預估業績總額'+(sp?'（'+sp+'）':'');}}
  // 「實際」怎麼算出來的（先判別日期、再判別品號）明細，保留展開狀態
  try{const bx=document.getElementById('sf-actual-detail');if(bx&&window.CMSX&&CMSX.forecastActualDetailHtml){const was=bx.querySelector('details');const open=was&&was.open;bx.innerHTML=CMSX.forecastActualDetailHtml();const nd=bx.querySelector('details');if(nd&&open)nd.open=true;}}catch(e){console.warn('實際明細顯示失敗',e);}
