@@ -297,6 +297,8 @@
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) { alert('檔案格式錯誤'); el.value = ''; return; }
       // 保護：「匯入 JSON」會整份取代資料。不是完整備份的檔案（交易明細匯入檔、過去訂單的備份或匯出檔）一律擋下，避免把檔期、業績預估、品項等全部洗掉
       var hasCore = ['materials', 'products', 'seasons', 'salesForecastV5', 'recipes'].some(function (k) { return incoming[k] != null && (Array.isArray(incoming[k]) ? incoming[k].length : typeof incoming[k] === 'object'); });
+      var foreign = Object.keys(incoming).some(function (k) { return /^(opening|moves)_\d+/.test(k); }) || (Array.isArray(incoming.products) && incoming.products.some(function (p) { return p && p.shelfDays != null; })); // 「每日生產出貨庫存效期管理」那個系統的備份
+      if (foreign) { alert('這個檔案是別的系統（每日生產出貨庫存效期管理）的備份，不是這個「檔期管理系統」的備份，沒有匯入。\n\n請到這個系統自己的雲端資料夾找「每日備份」。'); el.value = ''; return; }
       if (incoming.format === 'cms-orders-v1' || Array.isArray(incoming.orders) || !hasCore) {
         alert('這個檔案不是完整的系統備份（裡面沒有包材、禮盒、檔期、業績預估等資料），沒有匯入。\n\n' +
           '• 交易明細匯入檔、過去訂單的備份／匯出檔：請到下面「用交易明細匯入檔取代過去訂單」那一區選檔（有「合併」「只補進去」「取代全部」）。\n' +
