@@ -862,6 +862,16 @@ function applyDefaultGiftDiscountsOnce(){
  db.giftDiscountSeed=version;
  try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('初始折扣儲存失敗',e);}
 }
+// 匯出目前 App 裡的全部過去訂單（db.orderHistory）：格式同匯入用的 cms-orders-v1，另外附欄位清單與各月份筆數／金額，方便和原始檔比對
+function exportOrderHistoryJson(){
+ const rows=Array.isArray(db.orderHistory)?db.orderHistory:[];
+ if(!rows.length){alert('目前 App 裡沒有過去訂單。');return;}
+ const cols={},months={};
+ rows.forEach(r=>{Object.keys(r).forEach(k=>{cols[k]=(cols[k]||0)+1;});const m=String(r.date||'').slice(0,7)||'（沒有日期）';const g=months[m]||(months[m]={n:0,qty:0,amount:0});g.n++;g.qty+=Number(r.qty)||0;g.amount+=Number(r.amount)||0;});
+ const out={format:'cms-orders-v1',source:'App 目前的過去訂單（匯出）',exportedAt:new Date().toISOString(),count:rows.length,columns:cols,months:months,orders:rows};
+ const blob=new Blob([JSON.stringify(out)],{type:'application/json'}),a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);a.download='過去訂單_目前匯出_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
 // 過去訂單紀錄：「接單部門」空白的訂單，把「部門」的名字填進接單部門，再把「部門」改成「現銷」（2026/11/05 使用者指定）。
 // 改之前的值留在這筆訂單的 deptFixBefore；接單部門已經有字的、部門也是空白（沒有名字可填）的都不動；改過的不會再被改（接單部門已經有字了）
 function fixBlankOrderDepartments(manual){

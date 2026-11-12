@@ -448,6 +448,7 @@
   <div class="panel">
     <h2>過去訂單紀錄</h2>
     <div class="muted">管理員可保存已結束的檔期／訂單紀錄，供日後查詢。此處資料不會影響目前庫存計算。</div>
+    <div style="margin:8px 0"><button type="button" class="btn gray" onclick="exportOrderHistoryJson()" title="把目前 App 裡的全部過去訂單存成檔案（欄位、月份統計也一起放在檔案裡），可以拿來和原始檔比對">匯出目前的過去訂單（JSON）</button></div>
     <div class="order-search-panel" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 14px">
       <select id="histFilterDate" onchange="renderOrderHistory()"><option value="">全部日期</option></select>
       <select id="histFilterOrderNo" onchange="renderOrderHistory()"><option value="">全部訂單／檔期編號</option></select>
