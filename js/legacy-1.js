@@ -1090,22 +1090,26 @@ function renderDashboard(){
     <td>${demand}</td><td class="manual-cell">—</td><td class="manual-cell">—</td>${etaCell(p.id)}</tr>`;
  }).join(''):'<tr><td colspan="11" class="empty">'+(singleAll.length?'沒有單條勾選「本期上架」，請到「單條資料」勾選':'尚無單條資料')+'</td></tr>';
 
+ let soldMap=null;try{if(window.CMSX&&CMSX.giftSoldMap)soldMap=CMSX.giftSoldMap();}catch(e){}
  giftHome.innerHTML=gifts.length?gifts.map((p,i)=>{
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
    if(window.CMSStock){
      // 包裝需求＝現貨＋待進貨－預購單－銷售預估（見 js/stock-calc.js）；負數＝還要再裝這麼多盒
      const grs=giftRanges()||{pre:null,fc:null},gr=grs.pre;
      const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id,grs.fc), need=CMSStock.giftPackNeed(p.id,grs), preo=CMSStock.giftPreorder(p.id,grs.pre);
+     const adj=(!grs.fc&&CMSStock.giftAdjustOf)?CMSStock.giftAdjustOf(p.id):null, soldQ=(!grs.fc&&soldMap)?(soldMap[String(p.id)]||0):0;
+     const fcCell=`<td${adj?' title="已調整：業績預估原本是 '+CMSStock.giftForecastBase(p.id)+'（在底下「銷售預估調整」改）"':''}>${adj?'✎ ':''}${fc}${(!grs.fc&&soldQ>0)?'<div class="small" style="white-space:nowrap" title="已販售＝檔期開始到今天的訂單量">已售 '+soldQ+'｜剩 '+Math.max(0,Math.round((fc-soldQ)*100)/100)+'</div>':''}</td>`;
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td class="${preo==null?'manual-cell':''}" title="${preo==null?'還沒同步入口網站訂單，沒辦法依時間區間算':(gr?'入口網站訂單，預訂交貨日在選的區間內':'')}">${preo==null?'—':preo}</td>
-    <td>${fc}</td><td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
+    ${fcCell}<td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
    }
    return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td>
     <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td><td class="manual-cell">—</td></tr>`;
  }).join(''):'<tr><td colspan="9" class="empty">尚無禮盒資料</td></tr>';
+ try{if(typeof window.renderGiftAdjust==='function')window.renderGiftAdjust();}catch(e){console.warn('銷售預估調整顯示失敗',e);}
 
  renderFoldingRecords();
  bindHomeDrag();

@@ -1394,6 +1394,97 @@
     };
   }
 
+
+  // ================= 首頁禮盒「銷售預估調整」的資料（2026-11-12）=================
+  // 每個本期上架的禮盒：今年預估（業績預估合計）、今年已販售（檔期開始～今天）、去年同期（依檔期節日對齊：今天距節日幾天，去年就看距去年節日幾天的那一天）已販售與全期，
+  // 用去年的「賣到這天的比例」推今年全期（建議預估＝今年已售 ÷ 去年同期已賣比例），並判斷今年比去年成長或衰退。
+  // 今年新品（例如袋裝）去年沒有同品號的銷售：依序改用「去掉『袋』字的同名品項」、再不行用「同規格群組」去年的銷售節奏來推，畫面上標明用哪一種比對。
+  // 已販售＝訂單日期（入口網站的訂單用預訂交貨日）在檔期開始～今天的數量，不含單條；沒有「不計算」的部門。
+  var GA_MIN = 10; // 去年全期至少賣這麼多，才拿來當比對基準
+  function gaOrders() {
+    var key = [X.orders().length, X.get('portalOrders').length, (X.get('hqStock') || {}).salesAt || 0, X.get('codeMap').length, X.get('deptMap').length, X.products().length].join('|');
+    if (FA_CACHE.key !== key || !FA_CACHE.list) {
+      FA_CACHE.list = classifyOrders(typeof X.salesOrders === 'function' ? X.salesOrders() : X.orders(), salesCtx()).list;
+      FA_CACHE.key = key;
+    }
+    return FA_CACHE.list;
+  }
+  function gaBaseName(p) { return String((p && p.name) || '').replace(/[（(]?\s*袋裝?\s*[)）]?/g, '').replace(/袋/g, '').replace(/\s+/g, '').toLowerCase(); }
+  function gaWindow() { // { ok, reason, kind, year, H, w0, cut, shift, w0L, cutL, endL, label }
+    var act = X.activeSeason(), res = { ok: false, reason: '' };
+    if (!act || (act.kind !== 'newyear' && act.kind !== 'midautumn')) { res.reason = '目前沒有進行中的過年或中秋檔期。'; return res; }
+    var y = seasonYearOf(act);
+    if (!y) { res.reason = '進行中的檔期還沒有填節日日期（到「檔期設定」填）。'; return res; }
+    var H = dateMs(act.holidayDate), W = seasonWindowDays(), today = dateMs(X.today());
+    var cs = compareSeasonOf(act, act.kind, y), H0 = cs && DATE_RE.test(cs.holidayDate || '') ? dateMs(cs.holidayDate) : null;
+    var shift = H0 != null ? H - H0 : 364 * DAY;
+    var cut = Math.min(today, H), w0 = H - (W - 1) * DAY;
+    return { ok: true, season: act, kind: act.kind, year: y, H: H, w0: w0, cut: cut, shift: shift, w0L: w0 - shift, cutL: cut - shift, endL: H - shift, aligned: H0 != null,
+      label: H0 != null ? '去年同檔期（' + (cs.name || '') + '，節日 ' + cs.holidayDate + '）' : '去年同一週（找不到去年同檔期的節日日期，往前挪 52 週）' };
+  }
+  // 今年已販售（每個禮盒）：{ 禮盒 id: 數量 }，首頁禮盒表「已售／剩」用
+  X.giftSoldMap = function () {
+    var g = gaWindow(), out = Object.create(null);
+    if (!g.ok) return out;
+    gaOrders().forEach(function (o) {
+      if (!o.p || o.dk === 'none' || isSingle(o.p)) return;
+      var t = dateMs(o.date);
+      if (t != null && t >= g.w0 && t <= g.cut) out[String(o.p.id)] = (out[String(o.p.id)] || 0) + o.q;
+    });
+    return out;
+  };
+  X.giftAdjustData = function () {
+    SW_CACHE = null;
+    var g = gaWindow(), res = { ok: g.ok, reason: g.reason, win: g, rows: [], total: null };
+    if (!g.ok) return res;
+    var sold = Object.create(null), lastTo = Object.create(null), lastFull = Object.create(null), orders = gaOrders();
+    orders.forEach(function (o) {
+      if (!o.p || o.dk === 'none' || isSingle(o.p)) return;
+      var t = dateMs(o.date), id = String(o.p.id);
+      if (t == null) return;
+      if (t >= g.w0 && t <= g.cut) sold[id] = (sold[id] || 0) + o.q;
+      if (t >= g.w0L && t <= g.endL) { lastFull[id] = (lastFull[id] || 0) + o.q; if (t <= g.cutL) lastTo[id] = (lastTo[id] || 0) + o.q; }
+    });
+    var gifts = X.products().filter(function (p) { return p && !isSingle(p); });
+    var sum = function (list, m) { return list.reduce(function (t, p) { return t + (m[String(p.id)] || 0); }, 0); };
+    var listed = gifts.filter(function (p) { return p.isListedCurrent === true; });
+    var rows = listed.map(function (p) {
+      var id = String(p.id), est = window.CMSStock ? CMSStock.giftForecastBase(p.id) : 0, C = sold[id] || 0;
+      var own = lastFull[id] || 0, isNew = !(own > 0), basis = '', set = [p], A = 0, B = 0;
+      if (own >= GA_MIN) { basis = 'same'; A = lastTo[id] || 0; B = own; }
+      else {
+        var bn = gaBaseName(p), byName = gifts.filter(function (q) { return gaBaseName(q) === bn; }), bB = sum(byName, lastFull);
+        if (bB >= GA_MIN) { basis = 'name'; set = byName; A = sum(byName, lastTo); B = bB; }
+        else {
+          var gk = giftGroup(p), byGrp = gk ? gifts.filter(function (q) { return giftGroup(q) === gk; }) : [], gB = sum(byGrp, lastFull);
+          if (gB >= GA_MIN) { basis = 'group'; set = byGrp; A = sum(byGrp, lastTo); B = gB; }
+        }
+      }
+      var f = B > 0 ? A / B : null, setSold = basis === 'same' ? C : sum(set, sold);
+      var growth = A > 0 ? setSold / A - 1 : null;
+      var sug = (f != null && f > 0 && C > 0) ? Math.max(C, Math.round(C / f)) : null;
+      var conf = f == null ? '' : ((A >= 30 && f >= 0.3) ? '高' : (A >= 10 && f >= 0.15 ? '中' : '低'));
+      var trend = growth == null ? '無法比較' : (growth >= 0.1 ? '成長' : (growth <= -0.1 ? '衰退' : '持平'));
+      var act = '';
+      if (sug != null && est > 0) { var rt = sug / est; act = rt > 1.1 ? '建議上調' : (rt < 0.9 ? '建議下修' : '預估合理'); }
+      else if (sug != null) act = '預估是 0，建議填預估';
+      var why = '';
+      if (basis) {
+        var bt = { same: '同品號', name: '同名品項（去掉「袋」字）', group: '同規格群組' }[basis];
+        why = bt + '去年同期已賣 ' + X.fmt(A) + '、全期 ' + X.fmt(B) + '（賣到這天約 ' + Math.round(f * 100) + '%）；今年' + (basis === 'same' ? '' : '同類合計') + '同期 ' + X.fmt(setSold) + (growth != null ? '（' + (growth >= 0 ? '+' : '') + Math.round(growth * 1000) / 10 + '%）' : '') +
+          (sug != null ? '；照這個節奏全期約 ' + X.fmt(sug) + (est > 0 ? '，預估 ' + X.fmt(est) : '') : '；今年還沒有銷售，推不出全期');
+      } else why = '去年沒有可比的銷售（今年新品，或去年全期不到 ' + GA_MIN + '），沒辦法判斷。';
+      return { p: p, est: est, sold: C, remain: est - C, A: A, B: B, f: f, basis: basis, isNew: isNew, setSold: setSold, growth: growth, sug: sug, conf: conf, trend: trend, act: act, why: why, lastFull: own, lastTo: lastTo[id] || 0 };
+    });
+    rows.sort(function (a, b) { return (b.est - a.est) || byCode(a.p, b.p); });
+    // 整體：只看「同品號」可比的禮盒，今年同期合計 vs 去年同期合計
+    var cmp = rows.filter(function (r) { return r.basis === 'same'; }), cs = cmp.reduce(function (t, r) { return t + r.sold; }, 0), cl = cmp.reduce(function (t, r) { return t + r.A; }, 0);
+    res.rows = rows;
+    res.total = { est: rows.reduce(function (t, r) { return t + r.est; }, 0), sold: rows.reduce(function (t, r) { return t + r.sold; }, 0), cmpSold: cs, cmpLast: cl, cmpN: cmp.length, newN: rows.filter(function (r) { return r.isNew; }).length,
+      growth: cl > 0 ? cs / cl - 1 : null, up: rows.filter(function (r) { return r.act === '建議上調'; }).length, down: rows.filter(function (r) { return r.act === '建議下修'; }).length };
+    return res;
+  };
+
   X.salesTools = { classifyOrders: classifyOrders, salesCtx: salesCtx, inPeriod: inPeriod };
   X.registerPage({
     id: 'xSalesDash', group: 'season', order: 30, hidden: true, title: '業績儀表板', sub: '今年和去年同檔期的訂單數量比較（全公司）', stage: 'ready',

@@ -15,7 +15,7 @@
  *   現貨：入口網站「總表」的剩餘庫存現貨，用品號對應（「現貨同步」頁一鍵帶入）；還沒同步或總表沒有這個品號時當 0、畫面顯示「—」
  *   待進貨：先當 0
  *   預購單：入口網站「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0，品號對應，「現貨同步」頁一鍵帶入）；還沒同步過時暫用舊的「檔期需求」盒數
- *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
+ *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計；如果在首頁禮盒表底下的「銷售預估調整」填了調整後預估（db.giftAdjust），沒選時間區間時改用調整後的數字
  *   時間區間（首頁禮盒表頭「預購單」「銷售預估」下面各自選，2026-11-12 起，只影響首頁禮盒表，不影響包材「待裝盒」）：選了區間（起、迄可只填一邊）時——
  *     預購單＝入口網站訂單（portalOrders）裡預訂交貨日落在區間內的數量（品號對應，含已出貨的；還沒同步過訂單時顯示「—」）
  *     銷售預估＝業績預估裡「週區間和選的區間有重疊」的那幾週（整週都算）所有部門的預估盒數；沒填日期的週不算
@@ -112,7 +112,18 @@
   }
   // 銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
   // 找資料的方式和業績預估頁相同：品號，沒有品號用禮盒 id
+  // 「銷售預估調整」（首頁禮盒表底下，db.giftAdjust）：這個檔期這個禮盒有填調整後預估時，沒選時間區間的銷售預估改用調整後的數字（業績預估頁本身不動）
+  function giftAdjustOf(pid) {
+    var d = getDb(), sid = '';
+    try { var a = window.CMSX && CMSX.activeSeason && CMSX.activeSeason(); sid = a ? String(a.id || '') : ''; } catch (e) {}
+    var f = arr(d, 'giftAdjust').filter(function (x) { return x && same(x.productId, pid) && String(x.seasonId || '') === sid && x.qty != null && x.qty !== '' && Number.isFinite(Number(x.qty)); });
+    return f.length ? f[f.length - 1] : null;
+  }
   function giftForecast(pid, range) {
+    if (!hasRange(range)) { var adj = giftAdjustOf(pid); if (adj) return round2(Math.max(0, num(adj.qty))); }
+    return giftForecastBase(pid, range);
+  }
+  function giftForecastBase(pid, range) {
     var d = getDb(), p = productById(d, pid), ranged = hasRange(range);
     var rows = d && d.salesForecastV5 && d.salesForecastV5.rows;
     if (!rows || !p) return 0;
@@ -184,7 +195,7 @@
 
   root.CMSStock = {
     material: material,
-    stockByCode: stockByCode, preorderByCode: preorderByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast,
+    stockByCode: stockByCode, preorderByCode: preorderByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast, giftForecastBase: giftForecastBase, giftAdjustOf: giftAdjustOf,
     giftPackNeed: giftPackNeed, materialPacked: materialPacked, singlePacked: singlePacked, materialToPack: materialToPack
   };
 })(window);
