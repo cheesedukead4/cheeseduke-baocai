@@ -294,6 +294,7 @@ th{font-size:16.5px!important}
   table.home-t-mat th:nth-child(1),table.home-t-single th:nth-child(1),table.home-t-gift th:nth-child(1){width:48px!important}
   table.home-t-mat th:nth-child(2),table.home-t-single th:nth-child(2),table.home-t-gift th:nth-child(2){width:96px!important}
   table.home-t-mat th:nth-child(n+3),table.home-t-single th:nth-child(n+3),table.home-t-gift th:nth-child(n+3){width:auto!important}
+  table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{width:150px!important;min-width:150px}
   table.home-t-mat input,table.home-t-single input,table.home-t-gift input{width:100%;max-width:100%;box-sizing:border-box;text-align:right}
   table.home-t-mat td.name-cell,table.home-t-single td.name-cell,table.home-t-gift td.name-cell,
   table.home-t-mat th.name-col,table.home-t-single th.name-col,table.home-t-gift th.name-col{width:auto;white-space:normal!important}
@@ -377,3 +378,6 @@ th{font-size:16.5px!important}
 .x-cx-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
 .forecast-product-block.x-collapsed > table{display:table!important}
 .forecast-product-block.x-collapsed tbody,.forecast-product-block.x-collapsed thead tr + tr{display:none}
+
+/* 首頁禮盒表：預購單、銷售預估表頭裡有日期選擇，欄位至少要放得下 */
+table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{min-width:140px}

@@ -16,7 +16,7 @@
  *   待進貨：先當 0
  *   預購單：入口網站「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0，品號對應，「現貨同步」頁一鍵帶入）；還沒同步過時暫用舊的「檔期需求」盒數
  *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
- *   時間區間（首頁禮盒表上方可選，2026-11-12 起，只影響首頁禮盒表，不影響包材「待裝盒」）：選了區間（起、迄可只填一邊）時——
+ *   時間區間（首頁禮盒表頭「預購單」「銷售預估」下面各自選，2026-11-12 起，只影響首頁禮盒表，不影響包材「待裝盒」）：選了區間（起、迄可只填一邊）時——
  *     預購單＝入口網站訂單（portalOrders）裡預訂交貨日落在區間內的數量（品號對應，含已出貨的；還沒同步過訂單時顯示「—」）
  *     銷售預估＝業績預估裡「週區間和選的區間有重疊」的那幾週（整週都算）所有部門的預估盒數；沒填日期的週不算
  *     包裝需求＝現貨＋待進貨－這個區間的預購單－這個區間的銷售預估
@@ -134,8 +134,10 @@
     return round2(total);
   }
   // 包裝需求＝現貨＋待進貨－預購單－銷售預估（負數＝還不夠，要再裝這麼多盒）
-  function giftPackNeed(pid, range) {
-    return round2(num(giftStock(pid)) + giftIncoming(pid) - num(giftPreorder(pid, range)) - giftForecast(pid, range));
+  // ranges＝{ pre, fc }（預購單、銷售預估各自的區間 { from, to }，可省略）
+  function giftPackNeed(pid, ranges) {
+    var r = ranges || {};
+    return round2(num(giftStock(pid)) + giftIncoming(pid) - num(giftPreorder(pid, r.pre)) - giftForecast(pid, r.fc));
   }
   // 包材已裝盒＝各禮盒現貨 × 配方用量；沒有任何禮盒有現貨資料時回傳 null
   function materialPacked(mid) {

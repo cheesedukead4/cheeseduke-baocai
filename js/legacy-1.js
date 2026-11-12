@@ -1012,22 +1012,26 @@ function refreshMaterialInventoryCells(materialId){
    });
  });
 }
-// 首頁禮盒表的「時間區間」（預購單、銷售預估、包裝需求依這個區間算；都不填＝照原本的算法）；存在這台裝置
-function giftRange(){try{const o=JSON.parse(localStorage.getItem('cms_gift_range')||'null');if(o&&(o.from||o.to))return {from:o.from||'',to:o.to||''};}catch(e){}return null;}
-function setGiftRange(from,to){try{if(from||to)localStorage.setItem('cms_gift_range',JSON.stringify({from:from||'',to:to||''}));else localStorage.removeItem('cms_gift_range');}catch(e){}renderDashboard();}
+// 首頁禮盒表的「時間區間」：預購單、銷售預估兩欄各自在表頭裡選（都不填＝照原本的算法；包裝需求跟著這兩欄算）；存在這台裝置
+// cms_gift_range＝{ pre:{from,to}, fc:{from,to} }（舊版是共用一個 {from,to}，讀到就當兩欄都用它）
+function giftRanges(){try{const o=JSON.parse(localStorage.getItem('cms_gift_range')||'null');if(!o)return null;const mk=x=>x&&(x.from||x.to)?{from:x.from||'',to:x.to||''}:null;const r=(o.pre||o.fc)?{pre:mk(o.pre),fc:mk(o.fc)}:{pre:mk(o),fc:mk(o)};return (r.pre||r.fc)?r:null;}catch(e){}return null;}
+function setGiftRange(which,from,to){const r=giftRanges()||{pre:null,fc:null};r[which]=(from||to)?{from:from||'',to:to||''}:null;try{if(r.pre||r.fc)localStorage.setItem('cms_gift_range',JSON.stringify(r));else localStorage.removeItem('cms_gift_range');}catch(e){}renderDashboard();}
 function renderGiftRangeCtl(){
- // 日期選擇放在表頭「預購單、銷售預估」兩欄的正上方（#gift-range-th）；說明文字放在表的上方（#home-gift-range）
- const box=document.getElementById('home-gift-range'),th=document.getElementById('gift-range-th');if(!box||!th)return;
- const g=giftRange()||{from:'',to:''};
- const inp='style="padding:3px;border:1px solid var(--line-strong);border-radius:6px;font:inherit;font-size:13px;max-width:132px"';
- th.innerHTML='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><b class="small" style="white-space:nowrap">時間區間（預購單、銷售預估）</b>'
-  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap">起 <input type="date" id="gift-range-from" aria-label="預購單、銷售預估的區間起" value="'+g.from+'" '+inp+'></label>'
-  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap">迄 <input type="date" id="gift-range-to" aria-label="預購單、銷售預估的區間迄" value="'+g.to+'" '+inp+'></label>'
-  +'<button type="button" class="btn gray" id="gift-range-clear" style="min-height:26px;padding:1px 8px;font-size:13px"'+((g.from||g.to)?'':' disabled')+'>清除</button></div>';
- box.innerHTML='<p class="small" style="margin:0 0 8px">'+((g.from||g.to)?'目前只算 <b>'+(g.from||'最早')+' ～ '+(g.to||'最晚')+'</b>：預購單＝入口網站訂單預訂交貨日在這段的數量（含已出貨）；銷售預估＝業績預估裡週區間和這段有重疊的週（整週都算）；包裝需求跟著這兩個數字算。':'沒選區間：預購單＝排單4週累計訂單量－今天實際揀貨，銷售預估＝業績預估全部日期。選了區間就只算那一段。')+'</p>';
- const f=document.getElementById('gift-range-from'),t=document.getElementById('gift-range-to'),c=document.getElementById('gift-range-clear');
- const apply=()=>{if(f.value&&t.value&&f.value>t.value){alert('「起」不能晚於「迄」。');t.value=f.value;}setGiftRange(f.value,t.value);};
- f.onchange=apply;t.onchange=apply;c.onclick=()=>setGiftRange('','');
+ // 日期選擇直接做在表頭「預購單」「銷售預估」兩格裡（#gift-th-pre、#gift-th-fc）；說明文字放在表的上方（#home-gift-range）
+ const box=document.getElementById('home-gift-range');if(!box)return;
+ const R=giftRanges()||{pre:null,fc:null};
+ const inp='style="padding:2px;border:1px solid #fff;border-radius:6px;font:inherit;font-size:12px;width:118px;max-width:100%;color:#222;background:#fff"';
+ [['pre','gift-th-pre','預購單'],['fc','gift-th-fc','銷售預估']].forEach(([w,id,name])=>{
+  const th=document.getElementById(id);if(!th)return;const g=R[w]||{from:'',to:''};
+  th.innerHTML='<div style="font-weight:700">'+name+'</div><div style="display:flex;flex-direction:column;gap:3px;align-items:center;margin-top:4px;font-weight:400;font-size:12px">'
+   +'<label style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap">起<input type="date" data-gr="'+w+'" data-k="from" aria-label="'+name+'的區間起" value="'+g.from+'" '+inp+'></label>'
+   +'<label style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap">迄<input type="date" data-gr="'+w+'" data-k="to" aria-label="'+name+'的區間迄" value="'+g.to+'" '+inp+'></label>'
+   +((g.from||g.to)?'<button type="button" data-gr-clear="'+w+'" style="border:0;background:rgba(255,255,255,.25);color:#fff;border-radius:6px;font:inherit;font-size:12px;padding:1px 8px;cursor:pointer">清除</button>':'')+'</div>';
+  th.querySelectorAll('input[data-gr]').forEach(i=>i.onchange=()=>{const f=th.querySelector('[data-k="from"]'),t=th.querySelector('[data-k="to"]');if(f.value&&t.value&&f.value>t.value){alert('「起」不能晚於「迄」。');t.value=f.value;}setGiftRange(w,f.value,t.value);});
+  const c=th.querySelector('[data-gr-clear]');if(c)c.onclick=()=>setGiftRange(w,'','');
+ });
+ const tx=g=>g?(g.from||'最早')+' ～ '+(g.to||'最晚'):'全部';
+ box.innerHTML='<p class="small" style="margin:0 0 8px">'+((R.pre||R.fc)?'時間區間（在表頭「預購單」「銷售預估」下面選）：預購單 <b>'+tx(R.pre)+'</b>、銷售預估 <b>'+tx(R.fc)+'</b>。預購單＝入口網站訂單預訂交貨日在這段的數量（含已出貨）；銷售預估＝業績預估裡週區間和這段有重疊的週（整週都算）；包裝需求跟著這兩個數字算。':'時間區間：在表頭「預購單」「銷售預估」下面各選起、迄日期。沒選＝預購單是排單4週累計訂單量－今天實際揀貨，銷售預估是業績預估全部日期。')+'</p>';
 }
 function renderDashboard(){
  ensureHomeOrder();
@@ -1090,8 +1094,8 @@ function renderDashboard(){
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
    if(window.CMSStock){
      // 包裝需求＝現貨＋待進貨－預購單－銷售預估（見 js/stock-calc.js）；負數＝還要再裝這麼多盒
-     const gr=(typeof giftRange==='function')?giftRange():null;
-     const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id,gr), need=CMSStock.giftPackNeed(p.id,gr), preo=CMSStock.giftPreorder(p.id,gr);
+     const grs=giftRanges()||{pre:null,fc:null},gr=grs.pre;
+     const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id,grs.fc), need=CMSStock.giftPackNeed(p.id,grs), preo=CMSStock.giftPreorder(p.id,grs.pre);
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td class="${preo==null?'manual-cell':''}" title="${preo==null?'還沒同步入口網站訂單，沒辦法依時間區間算':(gr?'入口網站訂單，預訂交貨日在選的區間內':'')}">${preo==null?'—':preo}</td>
