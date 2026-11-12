@@ -295,6 +295,14 @@
       var incoming;
       try { incoming = JSON.parse(reader.result); } catch (e) { alert('檔案格式錯誤'); el.value = ''; return; }
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) { alert('檔案格式錯誤'); el.value = ''; return; }
+      // 保護：「匯入 JSON」會整份取代資料。不是完整備份的檔案（交易明細匯入檔、過去訂單的備份或匯出檔）一律擋下，避免把檔期、業績預估、品項等全部洗掉
+      var hasCore = ['materials', 'products', 'seasons', 'salesForecastV5', 'recipes'].some(function (k) { return incoming[k] != null && (Array.isArray(incoming[k]) ? incoming[k].length : typeof incoming[k] === 'object'); });
+      if (incoming.format === 'cms-orders-v1' || Array.isArray(incoming.orders) || !hasCore) {
+        alert('這個檔案不是完整的系統備份（裡面沒有包材、禮盒、檔期、業績預估等資料），沒有匯入。\n\n' +
+          '• 交易明細匯入檔、過去訂單的備份／匯出檔：請到下面「用交易明細匯入檔取代過去訂單」那一區選檔（有「合併」「只補進去」「取代全部」）。\n' +
+          '• 要還原整個系統：請選「備份_日期.json」那種完整備份檔。');
+        el.value = ''; return;
+      }
       var current = db;
       var curList = Array.isArray(current.orderHistory) ? current.orderHistory : [];
       var note = '';
