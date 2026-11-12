@@ -621,7 +621,7 @@ function fillLastYearFromOrders(manual){
  const d=db.salesForecastV5,has=SF_LOCATIONS.some(k=>(Number(d.lastYear[k])||0)>0);
  if(manual&&has&&!confirm('要用過去訂單算出的去年業績（'+r.label+'），取代「去年業績」目前填的數字嗎？'))return false;
  SF_LOCATIONS.forEach(k=>{d.lastYear[k]=r.amounts[k]||0;});
- d.lastYearNote='去年業績＝過去訂單紀錄裡「'+r.label+'」的訂單，依接單部門歸到各部門；共 '+r.ordersN+' 筆訂單明細：'+r.actualN+' 筆用訂單上的實際金額'+(r.estN?'，'+r.estN+' 筆訂單沒有金額欄位，退回用「數量 × 目前售價 × 該部門折扣成數」估算':'')+(r.unmatchedN?'，另有 '+r.unmatchedN+' 筆（數量 '+r.unmatchedQty+'）分不到部門或品號對不到，沒有算進去（到「對照設定」補對照）：'+sfUnmatchedText(r):'')+'。';
+ d.lastYearNote='去年業績＝過去訂單紀錄裡「'+r.label+'」的訂單，依接單部門歸到各部門；共 '+r.ordersN+' 筆訂單明細：'+r.actualN+' 筆用訂單上的實際金額'+(r.estN?'，'+r.estN+' 筆訂單沒有金額欄位，退回用「數量 × 目前售價 × 該部門折扣成數」估算':'')+(r.guessedN?'，其中 '+r.guessedN+' 筆（金額 '+Math.round(r.guessedAmt).toLocaleString()+'）「對照設定」沒設到，依名稱猜的部門（接單部門／通路／訂單的「部門」欄有官網、電商、東橋、永康、A11、京站、公關、執行長字樣，或接單部門是「通路」）':'')+(r.unmatchedN?'，另有 '+r.unmatchedN+' 筆（數量 '+r.unmatchedQty+'）分不到部門或品號對不到，沒有算進去（到「對照設定」補對照）：'+sfUnmatchedText(r):'')+'。';
  scheduleSalesForecastSave();
  document.querySelectorAll('.sf-lastyear').forEach(e=>e.value=sfFmtMoney(d.lastYear[e.dataset.sfLast]));
  recalcSalesForecast();

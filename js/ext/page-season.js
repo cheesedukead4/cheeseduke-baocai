@@ -334,7 +334,7 @@
       var raw = '';
       if (!deptOk[dk]) { dk = 'unmatched'; raw = ch || od || '（空白）'; }
       list.push({
-        kind: kind, sy: sy, y: y, date: date.slice(0, 10), p: p, q: X.num(r.qty), price: price, amt: actualAmount(r), dk: dk, raw: raw,
+        kind: kind, sy: sy, y: y, date: date.slice(0, 10), p: p, q: X.num(r.qty), price: price, amt: actualAmount(r), dk: dk, raw: raw, od: od, chn: ch, dep: String(r.department || '').trim(),
         code: p ? (p.code || '') : String(r.productCode || '').trim(), name: p ? (p.name || '') : String(r.name || '').trim(),
         no: String(r.orderNo || r.sourceOrderNo || '').trim() || ('#' + i)
       });
@@ -1037,9 +1037,25 @@
     if (act.kind === 'newyear') fixedW = [Date.UTC(Number(ly) - 1, 11, 1), Date.UTC(Number(ly), 2, 0)];
     res.label = fixedW ? ((ls ? ls.name : ly + KIND[act.kind]) + '（' + new Date(fixedW[0]).toISOString().slice(0, 10) + '～' + new Date(fixedW[1]).toISOString().slice(0, 10) + '）')
       : (ls ? ls.name : ly + KIND[act.kind]) + (w ? '（' + new Date(w[0]).toISOString().slice(0, 10) + '～' + new Date(w[1]).toISOString().slice(0, 10) + '）' : '（依檔期月份規則）');
-    res.unmatchedList = {};
+    res.unmatchedList = {}; res.guessedN = 0; res.guessedAmt = 0; res.guessedBy = {};
+    // 「對照設定」沒對到時，依名稱猜部門：先看接單部門、再看通路、最後看訂單的「部門」欄（接單部門與通路都空白的訂單，店名常寫在這欄）；猜得出來才算，猜不出來的列在「分不到部門」清單
+    var guessDept = function (o) {
+      var one = function (t, isOd) {
+        t = String(t || '').trim();
+        if (!t) return '';
+        if (/官網|電商/.test(t)) return 'web';
+        if (/東橋|永康/.test(t)) return 'dongqiao';
+        if (/a11/i.test(t)) return 'a11';
+        if (/京站/.test(t)) return 'jingzhan';
+        if (/公關/.test(t)) return 'pr';
+        if (/執行長/.test(t)) return 'ceo';
+        if (t === '通路') return 'channel';
+        return '';
+      };
+      return one(o.od) || one(o.chn) || one(o.dep) || '';
+    };
     var noDept = function (o, why) { // 分不到部門的訂單，依接單部門／通路文字彙整（名稱、筆數、數量、金額）
-      var nm = o.dk === 'unmatched' ? o.raw : (why || '（沒有對照到部門）'), u = res.unmatchedList[nm] || (res.unmatchedList[nm] = { name: nm, n: 0, qty: 0, amt: 0 });
+      var nm = o.dk === 'unmatched' ? ([o.od, o.chn, o.dep].filter(Boolean).join('／') || '（接單部門、通路、部門欄都空白）') : (why || '（沒有對照到部門）'), u = res.unmatchedList[nm] || (res.unmatchedList[nm] = { name: nm, n: 0, qty: 0, amt: 0 });
       u.n++; u.qty += o.q; u.amt += (o.amt != null ? o.amt : 0);
     };
     list.forEach(function (o) {
@@ -1047,6 +1063,10 @@
       if (fixedW) { var tt = dateMs(o.date); if (tt == null || tt < fixedW[0] || tt > fixedW[1]) return; } else if (!inPeriod(o, act.kind, ly)) return;
       res.ordersN++;
       var d = o.dk === 'grandduchy' ? 'channel' : o.dk;
+      if (depts.indexOf(d) < 0 && o.dk === 'unmatched') { // 對照設定沒設到：依名稱猜
+        var gd = guessDept(o);
+        if (gd) { d = gd; res.guessedN++; res.guessedAmt += (o.amt != null ? o.amt : 0); res.guessedBy[o.od + '／' + o.chn + (o.dep ? '／' + o.dep : '')] = gd; }
+      }
       if (depts.indexOf(d) < 0) { res.unmatchedN++; res.unmatchedQty += o.q; noDept(o); return; } // 接單部門對不到
       if (o.amt != null) { res.amounts[d] += o.amt; res.qty[d] += o.q; res.actualN++; return; } // 訂單上有實際金額
       if (!o.p) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 沒有金額、品號又對不到品項，沒辦法估
