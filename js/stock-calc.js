@@ -16,6 +16,10 @@
  *   待進貨：先當 0
  *   預購單：入口網站「排單」的 4 週累計訂單量 － 總表「今天實際揀貨」（最少 0，品號對應，「現貨同步」頁一鍵帶入）；還沒同步過時暫用舊的「檔期需求」盒數
  *   銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
+ *   時間區間（首頁禮盒表上方可選，2026-11-12 起，只影響首頁禮盒表，不影響包材「待裝盒」）：選了區間（起、迄可只填一邊）時——
+ *     預購單＝入口網站訂單（portalOrders）裡預訂交貨日落在區間內的數量（品號對應，含已出貨的；還沒同步過訂單時顯示「—」）
+ *     銷售預估＝業績預估裡「週區間和選的區間有重疊」的那幾週（整週都算）所有部門的預估盒數；沒填日期的週不算
+ *     包裝需求＝現貨＋待進貨－這個區間的預購單－這個區間的銷售預估
  * 包材「已裝盒」＝各禮盒現貨 × 配方用量的合計（沒有任何禮盒有現貨資料時顯示「—」）
  * 單條「已裝盒」＝各禮盒現貨 × 配方裡這個單條的用量（單條內容物）的合計（沒有任何含這個單條的禮盒有現貨資料時顯示「—」）
  * 包材「待裝盒」＝各禮盒還要再裝的盒數（包裝需求為負數時的絕對值）× 配方用量的合計（2026-10-15 起，取代原本的檔期需求 × 配方）
@@ -91,16 +95,25 @@
     return round2(Math.max(0, orders - pick));
   }
   // 禮盒預購單：同步過入口網站資料就用上面的算法；還沒同步過時暫時用「檔期需求」的盒數合計（檔期需求頁已移除，只剩舊資料）
-  function giftPreorder(pid) {
-    var d = getDb(), p = productById(d, pid), fromPortal = p ? preorderByCode(p.code) : null;
+  // range＝{ from, to }（YYYY-MM-DD，可只填一邊）：只算入口網站訂單預訂交貨日在區間內的量；還沒同步過訂單回傳 null
+  function inRange(date, range) { var t = String(date || '').slice(0, 10); return !!t && (!range.from || t >= range.from) && (!range.to || t <= range.to); }
+  function hasRange(range) { return !!(range && (range.from || range.to)); }
+  function giftPreorder(pid, range) {
+    var d = getDb(), p = productById(d, pid);
+    if (hasRange(range)) {
+      var po = arr(d, 'portalOrders'), c = p ? String(p.code == null ? '' : p.code).trim() : '';
+      if (!po.length || !c) return po.length ? 0 : null;
+      return round2(po.filter(function (o) { return o && String(o.c == null ? '' : o.c).trim() === c && inRange(o.d, range); }).reduce(function (t, o) { return t + num(o.q); }, 0));
+    }
+    var fromPortal = p ? preorderByCode(p.code) : null;
     if (fromPortal != null) return fromPortal;
     return round2(arr(d, 'campaigns').filter(function (c) { return c && same(c.productId, pid); })
       .reduce(function (s, c) { return s + num(c.qty); }, 0));
   }
   // 銷售預估：「業績預估」頁這個禮盒所有日期、所有部門的預估盒數合計
   // 找資料的方式和業績預估頁相同：品號，沒有品號用禮盒 id
-  function giftForecast(pid) {
-    var d = getDb(), p = productById(d, pid);
+  function giftForecast(pid, range) {
+    var d = getDb(), p = productById(d, pid), ranged = hasRange(range);
     var rows = d && d.salesForecastV5 && d.salesForecastV5.rows;
     if (!rows || !p) return 0;
     var key = String(p.code || p.id || ''), code = String(p.code || '').trim();
@@ -108,14 +121,21 @@
     if (!row || !row.lines) return 0;
     var total = 0;
     Object.keys(row.lines).forEach(function (i) {
+      if (ranged) { // 這一週的區間（起～迄，迄含當天）和選的區間有重疊才算；沒填日期的週不算
+        var s0 = row.dates && row.dates[i] ? String(row.dates[i]).slice(0, 10) : '';
+        if (!s0) return;
+        var e0 = row.ends && row.ends[i] ? String(row.ends[i]).slice(0, 10) : s0;
+        if (e0 < s0) e0 = s0;
+        if ((range.to && s0 > range.to) || (range.from && e0 < range.from)) return;
+      }
       var line = row.lines[i] || {};
       Object.keys(line).forEach(function (dept) { total += num(line[dept] && line[dept].est); });
     });
     return round2(total);
   }
   // 包裝需求＝現貨＋待進貨－預購單－銷售預估（負數＝還不夠，要再裝這麼多盒）
-  function giftPackNeed(pid) {
-    return round2(num(giftStock(pid)) + giftIncoming(pid) - giftPreorder(pid) - giftForecast(pid));
+  function giftPackNeed(pid, range) {
+    return round2(num(giftStock(pid)) + giftIncoming(pid) - num(giftPreorder(pid, range)) - giftForecast(pid, range));
   }
   // 包材已裝盒＝各禮盒現貨 × 配方用量；沒有任何禮盒有現貨資料時回傳 null
   function materialPacked(mid) {

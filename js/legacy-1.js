@@ -1012,8 +1012,24 @@ function refreshMaterialInventoryCells(materialId){
    });
  });
 }
+// 首頁禮盒表的「時間區間」（預購單、銷售預估、包裝需求依這個區間算；都不填＝照原本的算法）；存在這台裝置
+function giftRange(){try{const o=JSON.parse(localStorage.getItem('cms_gift_range')||'null');if(o&&(o.from||o.to))return {from:o.from||'',to:o.to||''};}catch(e){}return null;}
+function setGiftRange(from,to){try{if(from||to)localStorage.setItem('cms_gift_range',JSON.stringify({from:from||'',to:to||''}));else localStorage.removeItem('cms_gift_range');}catch(e){}renderDashboard();}
+function renderGiftRangeCtl(){
+ const box=document.getElementById('home-gift-range');if(!box)return;
+ const g=giftRange()||{from:'',to:''};
+ box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 8px"><b class="small">時間區間（預購單、銷售預估）</b>'
+  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center">起 <input type="date" id="gift-range-from" value="'+g.from+'" style="padding:4px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"></label>'
+  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center">迄 <input type="date" id="gift-range-to" value="'+g.to+'" style="padding:4px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"></label>'
+  +'<button type="button" class="btn gray" id="gift-range-clear" style="min-height:30px;padding:2px 10px"'+((g.from||g.to)?'':' disabled')+'>清除（看全部）</button></div>'
+  +'<p class="small" style="margin:0 0 8px">'+((g.from||g.to)?'目前只算 <b>'+(g.from||'最早')+' ～ '+(g.to||'最晚')+'</b>：預購單＝入口網站訂單預訂交貨日在這段的數量（含已出貨）；銷售預估＝業績預估裡週區間和這段有重疊的週（整週都算）；包裝需求跟著這兩個數字算。':'沒選區間：預購單＝排單4週累計訂單量－今天實際揀貨，銷售預估＝業績預估全部日期。選了區間就只算那一段。')+'</p>';
+ const f=document.getElementById('gift-range-from'),t=document.getElementById('gift-range-to'),c=document.getElementById('gift-range-clear');
+ const apply=()=>{if(f.value&&t.value&&f.value>t.value){alert('「起」不能晚於「迄」。');t.value=f.value;}setGiftRange(f.value,t.value);};
+ f.onchange=apply;t.onchange=apply;c.onclick=()=>setGiftRange('','');
+}
 function renderDashboard(){
  ensureHomeOrder();
+ try{renderGiftRangeCtl();}catch(e){console.warn('禮盒時間區間顯示失敗',e);}
  const matBody=document.getElementById('homeMaterialBody');
  const singleHome=document.getElementById('homeSingleBody');
  const giftHome=document.getElementById('homeGiftBody');
@@ -1072,10 +1088,11 @@ function renderDashboard(){
    const preorder=(db.campaigns||[]).filter(c=>String(c.productId)===String(p.id)).reduce((s,c)=>s+(Number(c.qty)||0),0);
    if(window.CMSStock){
      // 包裝需求＝現貨＋待進貨－預購單－銷售預估（見 js/stock-calc.js）；負數＝還要再裝這麼多盒
-     const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id), need=CMSStock.giftPackNeed(p.id);
+     const gr=(typeof giftRange==='function')?giftRange():null;
+     const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id,gr), need=CMSStock.giftPackNeed(p.id,gr), preo=CMSStock.giftPreorder(p.id,gr);
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
-    <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td>${CMSStock.giftPreorder(p.id)}</td>
+    <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td class="${preo==null?'manual-cell':''}" title="${preo==null?'還沒同步入口網站訂單，沒辦法依時間區間算':(gr?'入口網站訂單，預訂交貨日在選的區間內':'')}">${preo==null?'—':preo}</td>
     <td>${fc}</td><td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
    }
    return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
