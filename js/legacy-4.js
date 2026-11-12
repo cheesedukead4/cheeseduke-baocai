@@ -852,7 +852,18 @@ function backfillGiftPricesOnce(){
 
 // 第一次升級時，把所有禮盒的折扣統一改成初始折扣（門市 9、官網 8.5、執行長 8.5、通路 7.5，2026/11/04 使用者指定）。
 // 只跑這一次（db.giftDiscountSeed 記下版本）；之後使用者在禮盒資料怎麼改都不會再被蓋掉
+// 單條也有折扣成數（2026-11-12）：和禮盒用同一組初始折扣，只補「還沒填」的欄位，只跑一次；之後在「單條資料」自己改
+function applyDefaultSingleDiscountsOnce(){
+ if(db.singleDiscountSeed==='v1')return;
+ (db.products||[]).forEach(p=>{
+   if(String(p.category||'').trim()!=='單條')return;
+   Object.keys(GIFT_DISCOUNT_DEFAULTS).forEach(k=>{if(p[k]==null||p[k]==='')p[k]=GIFT_DISCOUNT_DEFAULTS[k];});
+ });
+ db.singleDiscountSeed='v1';
+ try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){console.warn('單條初始折扣儲存失敗',e);}
+}
 function applyDefaultGiftDiscountsOnce(){
+ try{applyDefaultSingleDiscountsOnce();}catch(e){console.warn(e);}
  const version='v2';
  if(db.giftDiscountSeed===version)return;
  (db.products||[]).forEach(p=>{
