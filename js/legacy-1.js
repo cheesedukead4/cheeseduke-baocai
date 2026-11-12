@@ -1016,13 +1016,15 @@ function refreshMaterialInventoryCells(materialId){
 function giftRange(){try{const o=JSON.parse(localStorage.getItem('cms_gift_range')||'null');if(o&&(o.from||o.to))return {from:o.from||'',to:o.to||''};}catch(e){}return null;}
 function setGiftRange(from,to){try{if(from||to)localStorage.setItem('cms_gift_range',JSON.stringify({from:from||'',to:to||''}));else localStorage.removeItem('cms_gift_range');}catch(e){}renderDashboard();}
 function renderGiftRangeCtl(){
- const box=document.getElementById('home-gift-range');if(!box)return;
+ // 日期選擇放在表頭「預購單、銷售預估」兩欄的正上方（#gift-range-th）；說明文字放在表的上方（#home-gift-range）
+ const box=document.getElementById('home-gift-range'),th=document.getElementById('gift-range-th');if(!box||!th)return;
  const g=giftRange()||{from:'',to:''};
- box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 8px"><b class="small">時間區間（預購單、銷售預估）</b>'
-  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center">起 <input type="date" id="gift-range-from" value="'+g.from+'" style="padding:4px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"></label>'
-  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center">迄 <input type="date" id="gift-range-to" value="'+g.to+'" style="padding:4px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"></label>'
-  +'<button type="button" class="btn gray" id="gift-range-clear" style="min-height:30px;padding:2px 10px"'+((g.from||g.to)?'':' disabled')+'>清除（看全部）</button></div>'
-  +'<p class="small" style="margin:0 0 8px">'+((g.from||g.to)?'目前只算 <b>'+(g.from||'最早')+' ～ '+(g.to||'最晚')+'</b>：預購單＝入口網站訂單預訂交貨日在這段的數量（含已出貨）；銷售預估＝業績預估裡週區間和這段有重疊的週（整週都算）；包裝需求跟著這兩個數字算。':'沒選區間：預購單＝排單4週累計訂單量－今天實際揀貨，銷售預估＝業績預估全部日期。選了區間就只算那一段。')+'</p>';
+ const inp='style="padding:3px;border:1px solid var(--line-strong);border-radius:6px;font:inherit;font-size:13px;max-width:132px"';
+ th.innerHTML='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><b class="small" style="white-space:nowrap">時間區間（預購單、銷售預估）</b>'
+  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap">起 <input type="date" id="gift-range-from" aria-label="預購單、銷售預估的區間起" value="'+g.from+'" '+inp+'></label>'
+  +'<label class="small" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap">迄 <input type="date" id="gift-range-to" aria-label="預購單、銷售預估的區間迄" value="'+g.to+'" '+inp+'></label>'
+  +'<button type="button" class="btn gray" id="gift-range-clear" style="min-height:26px;padding:1px 8px;font-size:13px"'+((g.from||g.to)?'':' disabled')+'>清除</button></div>';
+ box.innerHTML='<p class="small" style="margin:0 0 8px">'+((g.from||g.to)?'目前只算 <b>'+(g.from||'最早')+' ～ '+(g.to||'最晚')+'</b>：預購單＝入口網站訂單預訂交貨日在這段的數量（含已出貨）；銷售預估＝業績預估裡週區間和這段有重疊的週（整週都算）；包裝需求跟著這兩個數字算。':'沒選區間：預購單＝排單4週累計訂單量－今天實際揀貨，銷售預估＝業績預估全部日期。選了區間就只算那一段。')+'</p>';
  const f=document.getElementById('gift-range-from'),t=document.getElementById('gift-range-to'),c=document.getElementById('gift-range-clear');
  const apply=()=>{if(f.value&&t.value&&f.value>t.value){alert('「起」不能晚於「迄」。');t.value=f.value;}setGiftRange(f.value,t.value);};
  f.onchange=apply;t.onchange=apply;c.onclick=()=>setGiftRange('','');
