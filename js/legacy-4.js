@@ -612,6 +612,8 @@ function updateSalesForecastCell(el){if(el.dataset.sfKind==='est'&&sfLocked()){c
  const r=sfRow(el.dataset.sfCode),n=Number(el.dataset.sfDate);r.lines[n][el.dataset.sfLoc][el.dataset.sfKind]=Number(el.value)||0;recalcSalesForecast();scheduleSalesForecastSave();}
 // 把過去訂單算出來的去年業績（依接單部門）填進「去年業績」那一列；manual＝按按鈕（有填過的數字會先問要不要取代）；自動（頁面第一次打開、整列都是空的）才會自己填
 var sfLastYearAuto=false;
+// 分不到部門的訂單清單文字（依金額由大到小）：名稱（接單部門或通路的文字）、筆數、金額
+function sfUnmatchedText(r,lines){const l=Object.keys(r.unmatchedList||{}).map(k=>r.unmatchedList[k]).sort((a,b)=>b.amt-a.amt||b.n-a.n);const t=l.slice(0,lines?20:8).map(u=>u.name+'（'+u.n+' 筆，金額 '+Math.round(u.amt).toLocaleString()+'）');const sep=lines?'\n':'、';return t.join(sep)+(l.length>t.length?sep+'…還有 '+(l.length-t.length)+' 種':'');}
 function fillLastYearFromOrders(manual){
  ensureSalesForecast();
  let r;try{r=(window.CMSX&&CMSX.lastYearByDept)?CMSX.lastYearByDept():null;}catch(e){console.warn('去年業績計算失敗',e);r=null;}
@@ -619,12 +621,12 @@ function fillLastYearFromOrders(manual){
  const d=db.salesForecastV5,has=SF_LOCATIONS.some(k=>(Number(d.lastYear[k])||0)>0);
  if(manual&&has&&!confirm('要用過去訂單算出的去年業績（'+r.label+'），取代「去年業績」目前填的數字嗎？'))return false;
  SF_LOCATIONS.forEach(k=>{d.lastYear[k]=r.amounts[k]||0;});
- d.lastYearNote='去年業績＝過去訂單紀錄裡「'+r.label+'」的訂單，依接單部門歸到各部門；共 '+r.ordersN+' 筆訂單明細：'+r.actualN+' 筆用訂單上的實際金額'+(r.estN?'，'+r.estN+' 筆訂單沒有金額欄位，退回用「數量 × 目前售價 × 該部門折扣成數」估算':'')+(r.unmatchedN?'，另有 '+r.unmatchedN+' 筆（數量 '+r.unmatchedQty+'）接單部門或品號對不到、沒有金額可用，沒有算進去（到「對照設定」補對照）':'')+'。';
+ d.lastYearNote='去年業績＝過去訂單紀錄裡「'+r.label+'」的訂單，依接單部門歸到各部門；共 '+r.ordersN+' 筆訂單明細：'+r.actualN+' 筆用訂單上的實際金額'+(r.estN?'，'+r.estN+' 筆訂單沒有金額欄位，退回用「數量 × 目前售價 × 該部門折扣成數」估算':'')+(r.unmatchedN?'，另有 '+r.unmatchedN+' 筆（數量 '+r.unmatchedQty+'）分不到部門或品號對不到，沒有算進去（到「對照設定」補對照）：'+sfUnmatchedText(r):'')+'。';
  scheduleSalesForecastSave();
  document.querySelectorAll('.sf-lastyear').forEach(e=>e.value=sfFmtMoney(d.lastYear[e.dataset.sfLast]));
  recalcSalesForecast();
  const nb=document.getElementById('sf-lastyear-note');if(nb)nb.textContent=d.lastYearNote;
- if(manual&&window.cmsToast)window.cmsToast('已帶入去年業績（依過去訂單的接單部門）');
+ if(manual){if(window.cmsToast)window.cmsToast('已帶入去年業績（依過去訂單的接單部門）');if(r.unmatchedN)setTimeout(()=>alert('已帶入去年業績（'+r.label+'）。\n\n以下訂單分不到部門，沒有算進任何一欄（到「對照設定」補對照後再按一次）：\n'+sfUnmatchedText(r,true)),50);}
  return true;
 }
 // 金額欄位顯示千分位（輸入時可以直接打數字，離開欄位後自動加逗號；打了逗號也算得出來）

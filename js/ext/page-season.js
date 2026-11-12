@@ -1032,13 +1032,22 @@
     var y = seasonYearOf(act);
     if (!y) { res.reason = '進行中的檔期還沒有填節日日期，算不出去年同檔期。'; return res; }
     var ly = String(Number(y) - 1), ctx = salesCtx(), list = classifyOrders(X.orders(), ctx).list;
-    var w = seasonWindow(act.kind, ly), ls = findSeason(act.kind, ly);
-    res.label = (ls ? ls.name : ly + KIND[act.kind]) + (w ? '（' + new Date(w[0]).toISOString().slice(0, 10) + '～' + new Date(w[1]).toISOString().slice(0, 10) + '）' : '（依檔期月份規則）');
+    var w = seasonWindow(act.kind, ly), ls = findSeason(act.kind, ly), fixedW = null;
+    // 過年檔期（2026-11-12 起）：去年業績固定算「前年 12 月 1 日～去年 2 月底」的訂單（整個過年檔期），不再用節日前 60 天
+    if (act.kind === 'newyear') fixedW = [Date.UTC(Number(ly) - 1, 11, 1), Date.UTC(Number(ly), 2, 0)];
+    res.label = fixedW ? ((ls ? ls.name : ly + KIND[act.kind]) + '（' + new Date(fixedW[0]).toISOString().slice(0, 10) + '～' + new Date(fixedW[1]).toISOString().slice(0, 10) + '）')
+      : (ls ? ls.name : ly + KIND[act.kind]) + (w ? '（' + new Date(w[0]).toISOString().slice(0, 10) + '～' + new Date(w[1]).toISOString().slice(0, 10) + '）' : '（依檔期月份規則）');
+    res.unmatchedList = {};
+    var noDept = function (o, why) { // 分不到部門的訂單，依接單部門／通路文字彙整（名稱、筆數、數量、金額）
+      var nm = o.dk === 'unmatched' ? o.raw : (why || '（沒有對照到部門）'), u = res.unmatchedList[nm] || (res.unmatchedList[nm] = { name: nm, n: 0, qty: 0, amt: 0 });
+      u.n++; u.qty += o.q; u.amt += (o.amt != null ? o.amt : 0);
+    };
     list.forEach(function (o) {
-      if (o.dk === 'none' || !inPeriod(o, act.kind, ly)) return;
+      if (o.dk === 'none') return;
+      if (fixedW) { var tt = dateMs(o.date); if (tt == null || tt < fixedW[0] || tt > fixedW[1]) return; } else if (!inPeriod(o, act.kind, ly)) return;
       res.ordersN++;
       var d = o.dk === 'grandduchy' ? 'channel' : o.dk;
-      if (depts.indexOf(d) < 0) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 接單部門對不到
+      if (depts.indexOf(d) < 0) { res.unmatchedN++; res.unmatchedQty += o.q; noDept(o); return; } // 接單部門對不到
       if (o.amt != null) { res.amounts[d] += o.amt; res.qty[d] += o.q; res.actualN++; return; } // 訂單上有實際金額
       if (!o.p) { res.unmatchedN++; res.unmatchedQty += o.q; return; } // 沒有金額、品號又對不到品項，沒辦法估
       res.estN++;
