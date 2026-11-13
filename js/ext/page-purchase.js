@@ -28,6 +28,7 @@
   'use strict';
   if (!X) return;
   var esc = X.esc;
+  var poSug = {}; // 叫貨表單自動帶入：'YYYY-MM-DD（到貨日）|單條 id' → { qty, est, actual }
   var st = { week: '', logPid: '', item: '', basis: 'target', dWeek: '', dItem: '', dDept: '', dOpen: false }; // basis：採購交貨表顯示哪一種數量（target 目標叫貨｜u100｜u70） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
@@ -173,6 +174,23 @@
     var p = X.productById(t.id); return { type: '單條', name: label(p) };
   }
   function poList() { return X.get('purchaseOrders').filter(function (o) { return o && o.po; }); }
+  // 選品項／選到貨日時：列出這個單條在交貨表上的到貨日與數量（點一下帶入），到貨日對得上就自動帶入叫貨量（叫貨量是空的或上次是自動帶入的才會換，自己填的不會被蓋掉）
+  function poSync(el, from) {
+    var itemEl = el.querySelector('#xpPoItem'), etaEl = el.querySelector('#xpPoEta'), qtyEl = el.querySelector('#xpPoQty'), hint = el.querySelector('#xpPoHint');
+    if (!itemEl || !hint) return;
+    var v = String(itemEl.value || ''), sid = v.charAt(0) === 's' ? v.slice(2) : '';
+    if (!v) { hint.textContent = '選單條品項後，會列出交貨表上的到貨日與數量，點一下就帶入到貨日和叫貨量；也可以自己選到貨日，叫貨量會自動帶入。'; return; }
+    if (!sid) { hint.textContent = '包材沒有交貨表的預估量，叫貨量請自己填。'; return; }
+    var list = Object.keys(poSug).filter(function (k) { return k.split('|')[1] === sid; }).map(function (k) { return { date: k.split('|')[0], s: poSug[k] }; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var cur = etaEl ? etaEl.value : '', hit = list.find(function (x) { return x.date === cur; });
+    if (hit && qtyEl && (String(qtyEl.value) === '' || qtyEl.dataset.auto === '1')) { qtyEl.value = hit.s.qty; qtyEl.dataset.auto = '1'; }
+    var chips = list.map(function (x) {
+      return '<button type="button" class="btn ' + (x.date === cur ? 'primary' : 'gray') + '" data-act="po-pick" data-eta="' + esc(x.date) + '" data-qty="' + esc(x.s.qty) + '" style="min-height:28px;padding:1px 9px;font-size:13px;margin:0 4px 4px 0">' + esc(md(x.date)) + '（' + X.fmt(x.s.qty) + (x.s.actual ? '，實際下定量' : '') + '）</button>';
+    }).join('');
+    hint.innerHTML = list.length
+      ? '交貨表上這個品項的到貨日（點一下帶入）：' + chips + (cur && !hit ? '<div style="color:var(--warn)">你選的 ' + esc(md(cur)) + ' 不是交貨表上的到貨日，叫貨量請自己填。</div>' : (hit ? '<div>已帶入 ' + esc(md(cur)) + ' 的' + (hit.s.actual ? '實際下定量' : '預估量') + ' ' + X.fmt(hit.s.qty) + ' 條，可以再改。</div>' : ''))
+      : '交貨表上沒有這個品項的預估量（業績預估還沒填），叫貨量請自己填。';
+  }
   function poCard() {
     var singles = X.products().filter(function (p) { return p && isSingle(p); }).sort(function (a, b) { return (b.isListedCurrent === true) - (a.isListedCurrent === true) || String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
     var mats = X.materials().filter(function (m) { return m && X.materialActive(m); }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
@@ -185,7 +203,8 @@
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">叫貨量<input id="xpPoQty" type="number" min="1" step="1" inputmode="numeric" placeholder="數量" ' + inp + ' style="width:100px;text-align:right"></label>' +
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">預計到貨日<input id="xpPoEta" type="date" ' + inp + '></label>' +
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">備註（選填）<input id="xpPoNote" type="text" maxlength="60" placeholder="例：廠商、單號" ' + inp + ' style="width:170px"></label>' +
-      '<button type="button" class="btn primary" data-act="po-add" style="min-height:34px">新增叫貨</button></div>';
+      '<button type="button" class="btn primary" data-act="po-add" style="min-height:34px">新增叫貨</button></div>' +
+      '<div id="xpPoHint" class="small" style="margin:-6px 0 12px;min-height:18px">選單條品項後，會列出交貨表上的到貨日與數量，點一下就帶入到貨日和叫貨量；也可以自己選到貨日，叫貨量會自動帶入。</div>';
     var today = X.today(), all = poList();
     var open = all.filter(function (o) { return o.status !== 'received'; }).sort(function (a, b) { return String(a.eta || '9999').localeCompare(String(b.eta || '9999')); });
     var done = all.filter(function (o) { return o.status === 'received'; }).sort(function (a, b) { return X.num(b.at) - X.num(a.at); }).slice(0, 15);
@@ -342,16 +361,17 @@
       if (orig) { var key = code + '|' + n + '|' + k; if (key in origOf) return origOf[key]; }
       return X.num(fr && fr.lines && fr.lines[n] && fr.lines[n][k] && fr.lines[n][k].est);
     };
-    var buildPiv = function (orig) {
+    var buildPiv = function (orig, cc) {
+      cc = cc || c;
       var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } }, eggTotals = {}, entries = [];
-      c.rows.forEach(function (r) {
+      cc.rows.forEach(function (r) {
         var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
         if (!fr) return;
-        var ps = c.cv.parts(r.p) || [];
+        var ps = cc.cv.parts(r.p) || [];
         for (var n = 0; n < 8; n++) {
           var start = fr.dates && fr.dates[n];
           if (!start) continue;
-          if (c.weekFiltering && c.sel.indexOf(start) < 0) continue;
+          if (cc.weekFiltering && cc.sel.indexOf(start) < 0) continue;
           var est = 0;
           sdepts.forEach(function (k) { est += deptEst(code, n, k, orig); });
           if (!(est > 0)) continue;
@@ -503,6 +523,20 @@
       X.ui.table(dcols, drows, { empty: '沒有符合的預估量。' }) +
       '<p class="small" style="margin:8px 0 0">每一列是「這個品項、這一週、這個單位」的預估量（業績預估頁填的數字），可以用上面的選單篩選（這裡的篩選只影響這張明細）。<b>不同品項、不同單位不加總。</b>目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）要整個品項這一週合起來才進位，不能按單位拆，所以看上面的交貨表。</p></details>';
     var redLegend = (pivDiff || detailDiff) ? X.ui.banner('warn', '<b style="color:#c00000">紅字</b>＝這裡連動的「業績預估」量有改過（鎖定日期之後的業績異動）。<b>大的紅字是現在（預計要交）的量，下面小字「原」是改之前的量。</b>') : '';
+    poSug = {}; // 用「全部、不篩選」的交貨表算：有填實際下定量就用實際的，沒填用預估量（目前選的數量基準）
+    try {
+      var allPiv = buildPiv(false, all).piv;
+      ['fee', 'egg'].forEach(function (g0) {
+        var P0 = allPiv[g0];
+        Object.keys(P0.rows).forEach(function (start0) {
+          var arr0 = arrivalOf(start0);
+          Object.keys(P0.rows[start0].v).forEach(function (sid0) {
+            var k0 = g0 + '|' + start0 + '|' + sid0, has0 = k0 in actualMap, e0 = P0.rows[start0].v[sid0];
+            poSug[arr0 + '|' + sid0] = { qty: has0 ? actualMap[k0] : e0, est: e0, actual: has0 };
+          });
+        });
+      });
+    } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
       '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
@@ -579,9 +613,10 @@
     el.innerHTML = html;
     var dtl = el.querySelector('details[data-xp-detail]');
     if (dtl) dtl.addEventListener('toggle', function () { st.dOpen = dtl.open; });
-    el.oninput = null;
+    el.oninput = function (e) { if (e.target && e.target.id === 'xpPoQty') e.target.dataset.auto = ''; };
     el.onchange = function (e) {
       var id = e.target && e.target.id;
+      if (id === 'xpPoItem' || id === 'xpPoEta') { poSync(el, id); return; }
       if (id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
       else if (id === 'xpItem') { st.item = e.target.value; render(el); }
       else if (id === 'xpdWeek' || id === 'xpdArr') { st.dWeek = e.target.value; render(el); }
@@ -776,6 +811,12 @@
     else if (a === 'detail-clear') { st.dWeek = ''; st.dItem = ''; st.dDept = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
+    else if (a === 'po-pick') {
+      var eI = el.querySelector('#xpPoEta'), qI = el.querySelector('#xpPoQty');
+      if (eI) eI.value = b.dataset.eta;
+      if (qI) { qI.value = b.dataset.qty; qI.dataset.auto = '1'; }
+      poSync(el, 'xpPoEta');
+    }
     else if (a === 'po-add') {
       var iv = String((el.querySelector('#xpPoItem') || {}).value || ''), qv = Number((el.querySelector('#xpPoQty') || {}).value), ev = String((el.querySelector('#xpPoEta') || {}).value || ''), nv = String((el.querySelector('#xpPoNote') || {}).value || '').trim();
       if (!iv) { X.toast('請選品項'); return; }
