@@ -163,6 +163,55 @@
       noComp: gifts.filter(function (r) { return r.noComp; }) };
   }
 
+  // ---------- 叫貨（精簡版，2026-11-13）：記錄「叫了什麼、叫多少、預計哪天到」----------
+  // 品項：單條（條）或包材（個）。紀錄存在 db.purchaseOrders：{ id, seasonId, po: true, date（叫貨日）, eta（預計到貨日）, productId（單條）｜materialId（包材）, qty, unit, note, status（'ordered'｜'received'）, receivedDate, by, at }
+  // 首頁「單條內容物」「包材庫存」的「預計進貨」就是取這裡還沒到貨的紀錄（見檔案最後 window.cmsPurchaseEta）。
+  function poTarget(o) { return o.materialId != null && o.materialId !== '' ? { kind: 'm', id: String(o.materialId) } : { kind: 's', id: recProduct(o) }; }
+  function poLabel(o) {
+    var t = poTarget(o);
+    if (t.kind === 'm') { var m = X.materialById(t.id); return { type: '包材', name: m ? ((m.code ? m.code + ' ' : '') + m.name) : '（已刪除）' }; }
+    var p = X.productById(t.id); return { type: '單條', name: label(p) };
+  }
+  function poList() { return X.get('purchaseOrders').filter(function (o) { return o && o.po; }); }
+  function poCard() {
+    var singles = X.products().filter(function (p) { return p && isSingle(p); }).sort(function (a, b) { return (b.isListedCurrent === true) - (a.isListedCurrent === true) || String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+    var mats = X.materials().filter(function (m) { return m && X.materialActive(m); }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+    var opt = function (v, t) { return '<option value="' + esc(v) + '">' + esc(t) + '</option>'; };
+    var inp = 'style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"';
+    var form = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:0 0 12px">' +
+      '<label class="small" style="display:flex;flex-direction:column;gap:3px">品項<select id="xpPoItem" ' + inp + ' style="max-width:300px"><option value="">選品項</option>' +
+      '<optgroup label="單條（條）">' + singles.map(function (p) { return opt('s:' + p.id, label(p) + (p.isListedCurrent === true ? '' : '（未上架）')); }).join('') + '</optgroup>' +
+      '<optgroup label="包材（個）">' + mats.map(function (m) { return opt('m:' + m.id, (m.code ? m.code + ' ' : '') + m.name); }).join('') + '</optgroup></select></label>' +
+      '<label class="small" style="display:flex;flex-direction:column;gap:3px">叫貨量<input id="xpPoQty" type="number" min="1" step="1" inputmode="numeric" placeholder="數量" ' + inp + ' style="width:100px;text-align:right"></label>' +
+      '<label class="small" style="display:flex;flex-direction:column;gap:3px">預計到貨日<input id="xpPoEta" type="date" ' + inp + '></label>' +
+      '<label class="small" style="display:flex;flex-direction:column;gap:3px">備註（選填）<input id="xpPoNote" type="text" maxlength="60" placeholder="例：廠商、單號" ' + inp + ' style="width:170px"></label>' +
+      '<button type="button" class="btn primary" data-act="po-add" style="min-height:34px">新增叫貨</button></div>';
+    var today = X.today(), all = poList();
+    var open = all.filter(function (o) { return o.status !== 'received'; }).sort(function (a, b) { return String(a.eta || '9999').localeCompare(String(b.eta || '9999')); });
+    var done = all.filter(function (o) { return o.status === 'received'; }).sort(function (a, b) { return X.num(b.at) - X.num(a.at); }).slice(0, 15);
+    var cols = [
+      { label: '品項', render: function (o) { var l = poLabel(o); return '<span style="white-space:normal;display:inline-block;min-width:150px"><b>' + esc(l.name) + '</b> <span class="small">' + l.type + '</span></span>'; } },
+      { label: '叫貨量', num: true, render: function (o) { return X.fmt(o.qty) + ' ' + esc(o.unit || ''); } },
+      { label: '叫貨日', render: function (o) { return esc(md(o.date)); } },
+      { label: '預計到貨日', render: function (o) {
+        if (o.status === 'received') return esc(md(o.eta)) + (o.receivedDate ? ' <span class="small">（' + esc(md(o.receivedDate)) + ' 到）</span>' : '');
+        var late = o.eta && o.eta < today;
+        return '<input type="date" data-poeta="' + esc(o.id) + '" value="' + esc(o.eta || '') + '" aria-label="預計到貨日" style="padding:3px;border:1px solid var(--line-strong);border-radius:6px;font:inherit;font-size:13px">' + (late ? ' ' + X.ui.tag('逾期', 'bad') : '');
+      } },
+      { label: '備註', render: function (o) { return '<span class="small">' + esc(o.note || '') + '</span>'; } },
+      { label: '', render: function (o) {
+        return o.status === 'received'
+          ? '<div class="x-row-actions">' + rowBtn('po-undo', o.id, '改回未到貨') + rowBtn('po-del', o.id, '刪除', 'red') + '</div>'
+          : '<div class="x-row-actions">' + rowBtn('po-recv', o.id, '已到貨', 'primary') + rowBtn('po-del', o.id, '刪除', 'red') + '</div>';
+      } }
+    ];
+    var body = form +
+      (open.length ? '<p style="margin:0 0 4px"><b>還沒到貨（' + open.length + ' 筆）</b></p>' + X.ui.table(cols, open, {}) : '<p class="small" style="margin:0 0 6px">目前沒有還沒到貨的叫貨。</p>') +
+      (done.length ? '<p style="margin:12px 0 4px"><b>已到貨（最近 ' + done.length + ' 筆）</b></p>' + X.ui.table(cols, done, {}) : '') +
+      '<p class="small" style="margin:10px 0 0">這裡記錄實際叫貨：叫了什麼、叫多少、預計哪天到。<b>首頁「單條內容物」「包材庫存」的「預計進貨」就是取這裡還沒到貨的紀錄</b>（最近的預計到貨日與數量）；貨到了按「已到貨」，就不會再顯示。同一品項同一天到的會加總。這頁只記錄，不會送出任何訂單給廠商。</p>';
+    return X.ui.card('叫貨（叫了什麼、預計哪天到）', body);
+  }
+
   // ---------- 畫面 ----------
   var chip = function (act, id, text, on) {
     return '<button type="button" class="btn ' + (on ? 'primary' : 'gray') + '" data-act="' + act + '" data-v="' + esc(id) + '" aria-pressed="' + (on ? 'true' : 'false') + '" style="min-height:30px;padding:3px 11px;font-size:15px">' + esc(text) + '</button>';
@@ -229,6 +278,7 @@
       var o = sum(list, 'ordered'), a = sum(list, 'aim');
       return { label: name + '：叫貨量', value: X.fmt(o) + ' 條', tone: o === 0 && a > 0 ? 'bad' : (o < a ? 'warn' : 'ok'), sub: '目標 ' + X.fmt(a) + (o > 0 && !filtered ? '、差異 ' + (o - a === 0 ? '0' : signed(o - a)) : '') + '；100% ' + X.fmt(sum(list, 'u100')) + '、' + fee + '% ' + X.fmt(sum(list, 'u70')) };
     };
+    html += poCard();
     html += X.ui.kpis([
       kp('費雪禮盒', feeG), kp('蛋捲禮盒', eggG), kp('單條（單賣）', c.singles),
       { label: '叫貨量異動', value: adjN + ' 次', tone: adjN ? 'warn' : 'muted', sub: lastLog ? '最近 ' + tm(lastLog.at) + ' ' + (lastLog.by || '') : '目前沒有異動紀錄' }
@@ -538,6 +588,10 @@
       else if (id === 'xpdItem') { st.dItem = e.target.value; render(el); }
       else if (id === 'xpdDept') { st.dDept = e.target.value; render(el); }
       else if (id === 'xpWeek' || id === 'xpArr') { st.week = e.target.value; render(el); }
+      else if (e.target && e.target.dataset && e.target.dataset.poeta) {
+        var pe = X.get('purchaseOrders').find(function (x) { return x && x.id === e.target.dataset.poeta; });
+        if (pe && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { pe.eta = e.target.value; pe.by = X.userName(); pe.at = Date.now(); X.save({ silent: true }); render(el); }
+      }
       else if (e.target && e.target.dataset && e.target.dataset.dact) {
         var d = e.target.dataset, raw = String(e.target.value || '').trim(), arrA = X.ensure('deliveryActuals'), sidA = seasonId();
         var recA = arrA.find(function (x) { return x && x.group === d.dact && x.week === d.week && String(x.singleId) === String(d.single) && (x.seasonId || '') === sidA; });
@@ -722,6 +776,28 @@
     else if (a === 'detail-clear') { st.dWeek = ''; st.dItem = ''; st.dDept = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
+    else if (a === 'po-add') {
+      var iv = String((el.querySelector('#xpPoItem') || {}).value || ''), qv = Number((el.querySelector('#xpPoQty') || {}).value), ev = String((el.querySelector('#xpPoEta') || {}).value || ''), nv = String((el.querySelector('#xpPoNote') || {}).value || '').trim();
+      if (!iv) { X.toast('請選品項'); return; }
+      if (!(qv > 0)) { X.toast('請填叫貨量（大於 0）'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ev)) { X.toast('請選預計到貨日'); return; }
+      var isM = iv.charAt(0) === 'm', tid = iv.slice(2), rec = { id: X.uid('po'), seasonId: seasonId(), po: true, date: X.today(), eta: ev, qty: Math.round(qv), unit: isM ? '個' : '條', note: nv, status: 'ordered', by: X.userName(), at: Date.now() };
+      if (isM) rec.materialId = tid; else rec.productId = tid;
+      X.ensure('purchaseOrders').push(rec); X.save(); X.toast('已記錄叫貨'); render(el);
+    }
+    else if (a === 'po-recv' || a === 'po-undo') {
+      var po = X.get('purchaseOrders').find(function (x) { return x && x.id === id; });
+      if (!po) return;
+      po.status = a === 'po-recv' ? 'received' : 'ordered'; po.receivedDate = a === 'po-recv' ? X.today() : ''; po.by = X.userName(); po.at = Date.now();
+      X.save(); render(el);
+    }
+    else if (a === 'po-del') {
+      var pl = X.ensure('purchaseOrders'), pj = pl.findIndex(function (x) { return x && x.id === id; });
+      if (pj < 0) return;
+      var pn = poLabel(pl[pj]).name;
+      if (!confirm('確定刪除這筆叫貨嗎？\n' + pn + '　' + pl[pj].qty + ' ' + (pl[pj].unit || ''))) return;
+      pl.splice(pj, 1); X.save(); X.toast('已刪除'); render(el);
+    }
     else if (a === 'copy') copyList(c);
     else if (a === 'snew') supplierDialog(null);
     else if (a === 'sedit') { var s = supplierById(id); if (s) supplierDialog(s); }
@@ -741,45 +817,25 @@
     render: render,
     _fn: { compute: compute }
   });
-  // ---------- 首頁「預計進貨」：每個單條（口味）最近一個還沒到的到貨日（採購交貨表的到貨日）與數量 ----------
-  // 數量＝那個到貨日、那個口味的「實際下定量」（有填才用），沒填就用預估量（目標叫貨：費雪／蛋捲各自的進貨比例）。
-  // 到貨日 ≥ 今天才算（已過的到貨日不顯示）。回傳 { 單條 id: { date: 'YYYY-MM-DD', qty, actual: 是否為實際下定量, more: 之後還有幾個到貨日 } }
-  window.cmsPurchaseEtaMap = function () {
-    var out = {};
+  // ---------- 首頁「預計進貨」：取「叫貨」裡還沒到貨的紀錄 ----------
+  // 每個單條、每個包材：最近的預計到貨日與當天的叫貨量（同一天的加總）；已過期還沒到的也列（標逾期）。回傳 { product: { 單條 id: info }, material: { 包材 id: info } }
+  // info＝{ date, qty, more（之後還有幾個到貨日）, overdue }
+  window.cmsPurchaseEta = function () {
+    var out = { product: {}, material: {} };
     try {
-      var c = compute({ all: true }), fo0 = X.db() && X.db().salesForecastV5, sdepts = typeof SF_LOCATIONS !== 'undefined' ? SF_LOCATIONS : [];
-      if (!fo0 || !fo0.rows) return out;
-      var actId = seasonId(), today = X.today(), byKey = {}; // arrival|single id → { date, week, group, qty }
-      c.rows.forEach(function (r) {
-        var code = String(r.p.code || r.p.id), fr = fo0.rows[code];
-        if (!fr) return;
-        var ps = c.cv.parts(r.p) || [];
-        for (var n = 0; n < 8; n++) {
-          var start = fr.dates && fr.dates[n];
-          if (!start) continue;
-          var arr = arrivalOf(start);
-          if (!arr || arr < today) continue;
-          var est = 0;
-          sdepts.forEach(function (k) { est += X.num(fr.lines && fr.lines[n] && fr.lines[n][k] && fr.lines[n][k].est); });
-          if (!(est > 0)) continue;
-          var boxes = X.buyBoxes(r.p, est);
-          ps.forEach(function (pt) {
-            var sid = String(pt.single.id), group = X.isEggGift(pt.single) ? 'egg' : 'fee', k = arr + '|' + sid;
-            var e = byKey[k] || (byKey[k] = { date: arr, week: start, group: group, sid: sid, qty: 0 });
-            e.qty += boxes * pt.qty;
-          });
-        }
+      var today = X.today(), g = { product: {}, material: {} };
+      X.get('purchaseOrders').forEach(function (o) {
+        if (!o || o.status === 'received' || !o.eta || !(X.num(o.qty) > 0)) return;
+        var t = poTarget(o), box = g[t.kind === 'm' ? 'material' : 'product'];
+        if (!t.id) return;
+        var d = box[t.id] || (box[t.id] = {});
+        d[o.eta] = (d[o.eta] || 0) + X.num(o.qty);
       });
-      var act = {};
-      X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === actId) act[a.group + '|' + a.week + '|' + a.singleId] = X.num(a.qty); });
-      var list = {};
-      Object.keys(byKey).forEach(function (k) {
-        var e = byKey[k], ak = e.group + '|' + e.week + '|' + e.sid, has = ak in act;
-        (list[e.sid] = list[e.sid] || []).push({ date: e.date, qty: has ? act[ak] : e.qty, actual: has });
-      });
-      Object.keys(list).forEach(function (sid) {
-        var l = list[sid].sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
-        out[sid] = { date: l[0].date, qty: l[0].qty, actual: l[0].actual, more: l.length - 1 };
+      ['product', 'material'].forEach(function (k) {
+        Object.keys(g[k]).forEach(function (id) {
+          var ds = Object.keys(g[k][id]).sort();
+          out[k][id] = { date: ds[0], qty: g[k][id][ds[0]], more: ds.length - 1, overdue: ds[0] < today };
+        });
       });
     } catch (e) { console.warn('預計進貨計算失敗', e); }
     return out;
