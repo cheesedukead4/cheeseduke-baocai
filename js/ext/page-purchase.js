@@ -209,7 +209,8 @@
       (open.length ? '<p style="margin:0 0 4px"><b>還沒到貨（' + open.length + ' 筆）</b></p>' + X.ui.table(cols, open, {}) : '<p class="small" style="margin:0 0 6px">目前沒有還沒到貨的叫貨。</p>') +
       (done.length ? '<p style="margin:12px 0 4px"><b>已到貨（最近 ' + done.length + ' 筆）</b></p>' + X.ui.table(cols, done, {}) : '') +
       '<p class="small" style="margin:10px 0 0">這裡記錄實際叫貨：叫了什麼、叫多少、預計哪天到。<b>首頁「單條內容物」「包材庫存」的「預計進貨」就是取這裡還沒到貨的紀錄</b>（最近的預計到貨日與數量）；貨到了按「已到貨」，就不會再顯示。同一品項同一天到的會加總。這頁只記錄，不會送出任何訂單給廠商。</p>';
-    return X.ui.card('叫貨（叫了什麼、預計哪天到）', body);
+    // 不另開卡片：放在「採購交貨」卡片裡最上面（見 render 的採購交貨 card）
+    return '<div style="padding:0 0 14px;margin:0 0 14px;border-bottom:1px solid var(--line)"><p style="margin:0 0 8px;font-size:1.05em"><b>叫貨（叫了什麼、預計哪天到）</b></p>' + body + '</div>';
   }
 
   // ---------- 畫面 ----------
@@ -278,7 +279,6 @@
       var o = sum(list, 'ordered'), a = sum(list, 'aim');
       return { label: name + '：叫貨量', value: X.fmt(o) + ' 條', tone: o === 0 && a > 0 ? 'bad' : (o < a ? 'warn' : 'ok'), sub: '目標 ' + X.fmt(a) + (o > 0 && !filtered ? '、差異 ' + (o - a === 0 ? '0' : signed(o - a)) : '') + '；100% ' + X.fmt(sum(list, 'u100')) + '、' + fee + '% ' + X.fmt(sum(list, 'u70')) };
     };
-    html += poCard();
     html += X.ui.kpis([
       kp('費雪禮盒', feeG), kp('蛋捲禮盒', eggG), kp('單條（單賣）', c.singles),
       { label: '叫貨量異動', value: adjN + ' 次', tone: adjN ? 'warn' : 'muted', sub: lastLog ? '最近 ' + tm(lastLog.at) + ' ' + (lastLog.by || '') : '目前沒有異動紀錄' }
@@ -503,7 +503,7 @@
       X.ui.table(dcols, drows, { empty: '沒有符合的預估量。' }) +
       '<p class="small" style="margin:8px 0 0">每一列是「這個品項、這一週、這個單位」的預估量（業績預估頁填的數字），可以用上面的選單篩選（這裡的篩選只影響這張明細）。<b>不同品項、不同單位不加總。</b>目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）要整個品項這一週合起來才進位，不能按單位拆，所以看上面的交貨表。</p></details>';
     var redLegend = (pivDiff || detailDiff) ? X.ui.banner('warn', '<b style="color:#c00000">紅字</b>＝這裡連動的「業績預估」量有改過（鎖定日期之後的業績異動）。<b>大的紅字是現在（預計要交）的量，下面小字「原」是改之前的量。</b>') : '';
-    html += X.ui.card('採購交貨（依到貨日、口味，單位：條）', filterHtml + filterBanner + redLegend + basisChips +
+    html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
       '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>備註</b>可以直接填（例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
 
