@@ -192,13 +192,13 @@
       : '交貨表上沒有這個品項的預估量（業績預估還沒填），叫貨量請自己填。';
   }
   function poCard() {
-    var singles = X.products().filter(function (p) { return p && isSingle(p); }).sort(function (a, b) { return (b.isListedCurrent === true) - (a.isListedCurrent === true) || String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
+    var singles = X.products().filter(function (p) { return p && isSingle(p) && p.isListedCurrent === true; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); }); // 只列本期上架的單條；包材只列上架中的（下架、封存的不列）
     var mats = X.materials().filter(function (m) { return m && X.materialActive(m); }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
     var opt = function (v, t) { return '<option value="' + esc(v) + '">' + esc(t) + '</option>'; };
     var inp = 'style="padding:6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"';
     var form = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:0 0 12px">' +
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">品項<select id="xpPoItem" ' + inp + ' style="max-width:300px"><option value="">選品項</option>' +
-      '<optgroup label="單條（條）">' + singles.map(function (p) { return opt('s:' + p.id, label(p) + (p.isListedCurrent === true ? '' : '（未上架）')); }).join('') + '</optgroup>' +
+      '<optgroup label="單條（條）">' + singles.map(function (p) { return opt('s:' + p.id, label(p)); }).join('') + '</optgroup>' +
       '<optgroup label="包材（個）">' + mats.map(function (m) { return opt('m:' + m.id, (m.code ? m.code + ' ' : '') + m.name); }).join('') + '</optgroup></select></label>' +
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">叫貨量<input id="xpPoQty" type="number" min="1" step="1" inputmode="numeric" placeholder="數量" ' + inp + ' style="width:100px;text-align:right"></label>' +
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">預計到貨日<input id="xpPoEta" type="date" ' + inp + '></label>' +
