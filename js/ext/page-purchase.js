@@ -174,6 +174,24 @@
     if (t.kind === 'm') { var m = X.materialById(t.id); return { type: '包材', name: m ? ((m.code ? m.code + ' ' : '') + m.name) : '（已刪除）' }; }
     var p = X.productById(t.id); return { type: '單條', name: label(p) };
   }
+  // 交貨表填了「實際下定量」就自動轉成叫貨（2026-11-17）：每個（類別｜預估區間起｜口味）一筆，預計到貨日＝那一列的到貨日，叫貨量＝實際下定量，紀錄上有 autoKey。
+  // 實際下定量改了就跟著改、清空就刪掉；已經按「已到貨」的不再動。已經填過的，開頁面時也會補轉。
+  function syncActualOrders() {
+    var sid = seasonId(), list = X.ensure('purchaseOrders'), changed = false, want = {}, have = {}, i;
+    X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === sid && X.num(a.qty) > 0 && a.week && a.singleId != null) want[a.group + '|' + a.week + '|' + a.singleId] = a; });
+    list.forEach(function (o) { if (o && o.po && o.autoKey) have[o.autoKey] = o; });
+    Object.keys(want).forEach(function (k) {
+      var a = want[k], o = have[k], eta = arrivalOf(a.week), q = Math.round(X.num(a.qty));
+      if (!o) { list.push({ id: X.uid('po'), seasonId: sid, po: true, autoKey: k, date: X.today(), eta: eta, productId: String(a.singleId), qty: q, unit: '條', note: '', status: 'ordered', by: a.by || X.userName(), at: Date.now() }); changed = true; }
+      else if (o.status !== 'received' && (o.qty !== q || o.eta !== eta)) { o.qty = q; o.eta = eta; o.by = a.by || X.userName(); o.at = Date.now(); changed = true; }
+    });
+    for (i = list.length - 1; i >= 0; i--) {
+      var o2 = list[i];
+      if (o2 && o2.po && o2.autoKey && o2.status !== 'received' && (o2.seasonId || '') === sid && !(o2.autoKey in want)) { list.splice(i, 1); changed = true; }
+    }
+    if (changed) X.save({ silent: true });
+    return changed;
+  }
   function poList() { return X.get('purchaseOrders').filter(function (o) { return o && o.po; }); }
   // 選品項／選到貨日時：列出這個單條在交貨表上的到貨日與數量（點一下帶入），到貨日對得上就自動帶入叫貨量（叫貨量是空的或上次是自動帶入的才會換，自己填的不會被蓋掉）
   function poSync(el, from) {
@@ -254,11 +272,15 @@
       '<label class="small" style="display:flex;flex-direction:column;gap:3px">備註（選填）<input id="xpPoNote" type="text" maxlength="60" placeholder="例：廠商、單號" ' + inp + ' style="width:170px"></label>' +
       '<button type="button" class="btn primary" data-act="po-add" style="min-height:34px">新增叫貨</button></div>' +
       '<div id="xpPoHint" class="small" style="margin:-6px 0 12px;min-height:18px">選單條品項後，會列出交貨表上的到貨日與數量，點一下就帶入到貨日和叫貨量；也可以自己選到貨日，叫貨量會自動帶入。</div>';
+    // 不另開卡片：放在「採購交貨」卡片裡最上面（見 render 的採購交貨 card）
+    return '<div style="padding:0 0 14px;margin:0 0 14px;border-bottom:1px solid var(--line)"><p style="margin:0 0 8px;font-size:1.05em"><b>叫貨（叫了什麼、預計哪天到）</b></p>' + form + '<div id="xpPoList">' + poListHtml() + '</div></div>';
+  }
+  function poListHtml() {
     var today = X.today(), all = poList();
     var open = all.filter(function (o) { return o.status !== 'received'; }).sort(function (a, b) { return String(a.eta || '9999').localeCompare(String(b.eta || '9999')); });
     var done = all.filter(function (o) { return o.status === 'received'; }).sort(function (a, b) { return X.num(b.at) - X.num(a.at); }).slice(0, 15);
     var cols = [
-      { label: '品項', render: function (o) { var l = poLabel(o); return '<span style="white-space:normal;display:inline-block;min-width:150px"><b>' + esc(l.name) + '</b> <span class="small">' + l.type + '</span></span>'; } },
+      { label: '品項', render: function (o) { var l = poLabel(o); return '<span style="white-space:normal;display:inline-block;min-width:150px"><b>' + esc(l.name) + '</b> <span class="small">' + l.type + '</span>' + (o.autoKey ? ' ' + X.ui.tag('交貨表帶入', 'info') : '') + '</span>'; } },
       { label: '叫貨量', num: true, render: function (o) { return X.fmt(o.qty) + ' ' + esc(o.unit || ''); } },
       { label: '叫貨日', render: function (o) { return esc(md(o.date)); } },
       { label: '預計到貨日', render: function (o) {
@@ -273,12 +295,10 @@
           : '<div class="x-row-actions">' + rowBtn('po-recv', o.id, '已到貨', 'primary') + rowBtn('po-del', o.id, '刪除', 'red') + '</div>';
       } }
     ];
-    var body = form +
-      (open.length ? '<p style="margin:0 0 4px"><b>還沒到貨（' + open.length + ' 筆）</b></p>' + X.ui.table(cols, open, {}) : '<p class="small" style="margin:0 0 6px">目前沒有還沒到貨的叫貨。</p>') +
+    var body =       (open.length ? '<p style="margin:0 0 4px"><b>還沒到貨（' + open.length + ' 筆）</b></p>' + X.ui.table(cols, open, {}) : '<p class="small" style="margin:0 0 6px">目前沒有還沒到貨的叫貨。</p>') +
       (done.length ? '<p style="margin:12px 0 4px"><b>已到貨（最近 ' + done.length + ' 筆）</b></p>' + X.ui.table(cols, done, {}) : '') +
       '<p class="small" style="margin:10px 0 0">這裡記錄實際叫貨：叫了什麼、叫多少、預計哪天到。<b>首頁「單條內容物」「包材庫存」的「預計進貨」就是取這裡還沒到貨的紀錄</b>（最近的預計到貨日與數量）；貨到了按「已到貨」，就不會再顯示。同一品項同一天到的會加總。這頁只記錄，不會送出任何訂單給廠商。</p>';
-    // 不另開卡片：放在「採購交貨」卡片裡最上面（見 render 的採購交貨 card）
-    return '<div style="padding:0 0 14px;margin:0 0 14px;border-bottom:1px solid var(--line)"><p style="margin:0 0 8px;font-size:1.05em"><b>叫貨（叫了什麼、預計哪天到）</b></p>' + body + '</div>';
+    return body;
   }
 
   // ---------- 畫面 ----------
@@ -307,6 +327,7 @@
   function kindTag(k) { var t = KIND_TEXT[k] || [k || '', 'muted']; return X.ui.tag(t[0], t[1]); }
 
   function render(el) {
+    try { syncActualOrders(); } catch (e0) { console.warn('實際下定量轉叫貨失敗', e0); }
     var c = compute(), fee = feePct(), egg = eggPct(), filtered = c.weekFiltering, all = compute({ all: true });
     if (st.item && !all.rows.some(function (r) { return String(r.id) === String(st.item); })) st.item = '';
     var html = '<p class="small" style="margin:0 0 12px">叫貨<b>一律以條計算</b>：禮盒依單條內容物換算成條（1 盒鳳費5入＝5 條鳳費），單條單賣直接算條。下面的<b>採購交貨表</b>依到貨日列出每個口味的<b>預估量</b>（目標叫貨：費雪 ' + fee + '%、蛋捲 ' + egg + '%，比例在「計算規則」可改），右邊是<b>實際下定量</b>，可以直接填。這頁只記錄數字，不會送出任何訂單給廠商。</p>';
@@ -692,6 +713,7 @@
           recA.qty = nv; recA.by = X.userName(); recA.at = Date.now();
         }
         X.save({ silent: true });
+        try { if (syncActualOrders()) { var lw = el.querySelector('#xpPoList'); if (lw) lw.innerHTML = poListHtml(); } } catch (e1) { console.warn(e1); }
         var tbl = e.target.closest('table'), colT = {}, gA = 0;
         tbl.querySelectorAll('tbody tr').forEach(function (tr) {
           var sub = 0;
@@ -880,6 +902,7 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(ev)) { X.toast('請選預計到貨日'); return; }
       var isM = iv.charAt(0) === 'm', tid = iv.slice(2), rec = { id: X.uid('po'), seasonId: seasonId(), po: true, date: X.today(), eta: ev, qty: Math.round(qv), unit: isM ? '個' : '條', note: nv, status: 'ordered', by: X.userName(), at: Date.now() };
       if (isM) rec.materialId = tid; else rec.productId = tid;
+      if (!isM && X.get('purchaseOrders').some(function (x) { return x && x.autoKey && x.status !== 'received' && x.eta === ev && recProduct(x) === tid; }) && !confirm('這個品項、這一天已經有交貨表「實際下定量」自動轉來的叫貨了。\n\n還要再新增一筆嗎？（首頁預計進貨會把兩筆加起來）')) return;
       X.ensure('purchaseOrders').push(rec); X.save(); X.toast('已記錄叫貨'); render(el);
     }
     else if (a === 'po-recv' || a === 'po-undo') {
@@ -891,9 +914,11 @@
     else if (a === 'po-del') {
       var pl = X.ensure('purchaseOrders'), pj = pl.findIndex(function (x) { return x && x.id === id; });
       if (pj < 0) return;
-      var pn = poLabel(pl[pj]).name;
-      if (!confirm('確定刪除這筆叫貨嗎？\n' + pn + '　' + pl[pj].qty + ' ' + (pl[pj].unit || ''))) return;
-      pl.splice(pj, 1); X.save(); X.toast('已刪除'); render(el);
+      var pn = poLabel(pl[pj]).name, ak = pl[pj].autoKey;
+      if (!confirm('確定刪除這筆叫貨嗎？\n' + pn + '　' + pl[pj].qty + ' ' + (pl[pj].unit || '') + (ak ? '\n\n這筆是交貨表的「實際下定量」自動轉來的，刪除時會一併清掉交貨表那一格的實際下定量（不然會再轉一次）。' : ''))) return;
+      pl.splice(pj, 1);
+      if (ak) { var ap = ak.split('|'), da = X.ensure('deliveryActuals'), di = da.findIndex(function (x) { return x && x.group === ap[0] && x.week === ap[1] && String(x.singleId) === ap[2] && (x.seasonId || '') === seasonId(); }); if (di >= 0) da.splice(di, 1); }
+      X.save(); X.toast('已刪除'); render(el);
     }
     else if (a === 'copy') copyList(c);
     else if (a === 'snew') supplierDialog(null);
