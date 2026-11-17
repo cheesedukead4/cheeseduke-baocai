@@ -28,6 +28,7 @@
   'use strict';
   if (!X) return;
   var esc = X.esc;
+  var xpExp = {}; // 目前畫面上交貨表（費雪、蛋捲）的內容，匯出 Excel 用
   var poSug = {}; // 叫貨表單自動帶入：'YYYY-MM-DD（到貨日）|單條 id' → { qty, est, actual }
   var st = { week: '', logPid: '', item: '', basis: 'target', dWeek: '', dItem: '', dDept: '', dOpen: false }; // basis：採購交貨表顯示哪一種數量（target 目標叫貨｜u100｜u70） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
@@ -190,6 +191,54 @@
     hint.innerHTML = list.length
       ? '交貨表上這個品項的到貨日（點一下帶入）：' + chips + (cur && !hit ? '<div style="color:var(--warn)">你選的 ' + esc(md(cur)) + ' 不是交貨表上的到貨日，叫貨量請自己填。</div>' : (hit ? '<div>已帶入 ' + esc(md(cur)) + ' 的' + (hit.s.actual ? '實際下定量' : '預估量') + ' ' + X.fmt(hit.s.qty) + ' 條，可以再改。</div>' : ''))
       : '交貨表上沒有這個品項的預估量（業績預估還沒填），叫貨量請自己填。';
+  }
+  // ---------- 匯出 Excel：目前畫面上的交貨表（照目前的篩選與顯示數量），每個表一張工作表；「全部」另外加一張叫貨紀錄 ----------
+  function xlCol(i) { var n = i + 1, o = ''; while (n > 0) { var m = (n - 1) % 26; o = String.fromCharCode(65 + m) + o; n = Math.floor((n - 1) / 26); } return o; }
+  function xpSheet(key) {
+    var d = xpExp[key];
+    if (!d) return null;
+    var nc = d.cols.length, H = function (t) { return { v: t, s: 'h' }; }, num = function (v) { return { v: v, s: 'i' }; };
+    var cEst0 = 2, cSub = 2 + nc, cAct0 = 3 + nc, cSubA = 3 + 2 * nc, cNote = 4 + 2 * nc;
+    var head = [H('到貨日'), H('販售區間')].concat(d.cols.map(function (n) { return H('預估量｜' + n); }), [H('預估量｜每周小計')], d.cols.map(function (n) { return H('實際下定量｜' + n); }), [H('實際下定量｜小計'), H('備註')]);
+    var rows = [head];
+    d.rows.forEach(function (r, i) {
+      var rr = i + 2, se = r.est.reduce(function (t, v) { return t + v; }, 0), sa = r.act.reduce(function (t, v) { return t + (v || 0); }, 0);
+      rows.push([r.day, r.range].concat(r.est.map(num), [{ v: se, f: 'SUM(' + xlCol(cEst0) + rr + ':' + xlCol(cEst0 + nc - 1) + rr + ')', s: 'i' }],
+        r.act.map(function (v) { return v == null ? '' : num(v); }), [{ v: sa, f: 'SUM(' + xlCol(cAct0) + rr + ':' + xlCol(cAct0 + nc - 1) + rr + ')', s: 'i' }, r.note]));
+    });
+    var last = d.rows.length + 1, foot = [{ v: '口味小計', s: 'b' }, ''];
+    for (var c = cEst0; c <= cSubA; c++) {
+      var tot = 0, j = c - cEst0;
+      d.rows.forEach(function (r, i) {
+        var v = c < cSub ? r.est[j] : (c === cSub ? r.est.reduce(function (t, x) { return t + x; }, 0) : (c < cSubA ? (r.act[c - cAct0] || 0) : r.act.reduce(function (t, x) { return t + (x || 0); }, 0)));
+        tot += v || 0;
+      });
+      foot.push({ v: tot, f: 'SUM(' + xlCol(c) + '2:' + xlCol(c) + last + ')', s: 'bi' });
+    }
+    rows.push(foot);
+    var widths = [12, 16].concat(d.cols.map(function () { return 14; }), [14], d.cols.map(function () { return 16; }), [16, 40]);
+    return { name: key === 'fee' ? '費雪交貨表' : '蛋捲交貨表', widths: widths, rows: rows };
+  }
+  function poSheet() {
+    var H = function (t) { return { v: t, s: 'h' }; };
+    var rows = [[H('品項'), H('類型'), H('叫貨量'), H('單位'), H('叫貨日'), H('預計到貨日'), H('狀態'), H('實際到貨日'), H('備註')]];
+    poList().slice().sort(function (a, b) { return String(a.eta || '').localeCompare(String(b.eta || '')); }).forEach(function (o) {
+      var l = poLabel(o);
+      rows.push([l.name, l.type, { v: X.num(o.qty), s: 'i' }, o.unit || '', o.date || '', o.eta || '', o.status === 'received' ? '已到貨' : '還沒到貨', o.receivedDate || '', o.note || '']);
+    });
+    return { name: '叫貨紀錄', widths: [34, 8, 10, 6, 12, 12, 10, 12, 30], rows: rows };
+  }
+  function xpExport(which) {
+    if (typeof X.buildXlsx !== 'function') { X.toast('匯出功能還沒載入，請重新整理後再試'); return; }
+    var sheets = [];
+    (which === 'all' ? ['fee', 'egg'] : [which]).forEach(function (k) { var sh = xpSheet(k); if (sh) sheets.push(sh); });
+    if (which === 'all') sheets.push(poSheet());
+    if (!sheets.length) { X.toast('沒有可以匯出的表格（業績預估還沒填預估量）'); return; }
+    var blob = X.buildXlsx(sheets), a = document.createElement('a'), d = new Date(), pad = function (n) { return String(n).padStart(2, '0'); };
+    a.href = URL.createObjectURL(blob);
+    a.download = '採購交貨_' + (which === 'all' ? '全部' : (which === 'fee' ? '費雪' : '蛋捲')) + '_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
   }
   function poCard() {
     var singles = X.products().filter(function (p) { return p && isSingle(p) && p.isListedCurrent === true; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); }); // 只列本期上架的單條；包材只列上架中的（下架、封存的不列）
@@ -424,6 +473,7 @@
       var rows = Object.keys(starts).sort();
       if (!rows.length) return '';
       var colTot = {}, ocolTot = {}, grand = 0, ogrand = 0, colA = {}, grandA = 0;
+      var xrows = [];
       var body = rows.map(function (st0) {
         var r = P.rows[st0] || { start: st0, end: O.rows[st0].end, v: {}, items: [] }, o = O.rows[st0] || { v: {}, items: [] };
         var sub = 0, osub = 0;
@@ -459,6 +509,9 @@
             if (et > 0 || eo > 0) autoNote += '<br>' + (et === eo ? '<span style="font-weight:700">禮盒總盒數 ' + X.fmt(et) + ' 盒</span>' : '<span style="' + RED + '">禮盒總盒數 現 ' + X.fmt(et) + ' 盒，原 ' + X.fmt(eo) + ' 盒</span>');
           }
         }
+        xrows.push({ day: dayText(arrivalOf(r.start)), range: md(r.start) + '-' + md(r.end), est: cols.map(function (cp) { return r.v[cp.id] || 0; }),
+          act: cols.map(function (cp) { var k2 = key + '|' + r.start + '|' + cp.id; return k2 in actualMap ? actualMap[k2] : null; }),
+          note: [noteOf(key, r.start), autoNote.replace(/<br>/g, '；').replace(/<[^>]+>/g, '')].filter(Boolean).join('　') });
         return '<tr><td style="padding:6px 10px;border:1px solid #cfd8c8;font-weight:700;text-align:center;white-space:nowrap;background:#e2efd9">' + esc(dayText(arrivalOf(r.start))) + '</td>' + tds +
           cell(sub, osub, yel, 'style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"') +
           atds + '<td data-asub="1" style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
@@ -470,12 +523,14 @@
         cols.map(function (cp) { return cell(colTot[cp.id] || 0, ocolTot[cp.id] || 0, yel, yb); }).join('') +
         cell(grand, ogrand, yel, yb) +
         cols.map(function (cp) { return '<td data-afoot="' + esc(cp.id) + '" ' + yb + '>' + X.fmt(colA[cp.id] || 0) + '</td>'; }).join('') + '<td data-agrand="1" ' + yb + '>' + X.fmt(grandA) + '</td><td colspan="2" style="border:1px solid #cfd8c8"></td></tr>';
-      return '<p style="margin:14px 0 6px"><b>' + title + '</b></p><div class="tablewrap" style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%;font-size:inherit"><thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th style="background:#1f4e79;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f" colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">備註</th></tr>' +
+      xpExp[key] = { title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), rows: xrows };
+      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%;font-size:inherit"><thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th style="background:#1f4e79;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f" colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
         cols.map(function (cp) { return '<th style="background:#2e75b6;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f">' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th style="background:#2e75b6;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f">小計</th></tr></thead><tbody>' + body + foot + '</tbody></table></div>';
     };
     var basisChips = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px"><span class="small" style="min-width:64px;font-weight:700">顯示數量</span>' +
-      chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '</div>';
+      chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '<button type="button" class="btn gray" data-act="xp-export" data-v="all" style="min-height:30px;padding:3px 11px;font-size:15px;margin-left:12px">匯出 Excel（費雪＋蛋捲＋叫貨紀錄）</button></div>';
+    xpExp = {};
     var pivots = pivotHtml('fee', '費雪（單位：條）') + pivotHtml('egg', '蛋捲（單位：條）');
     // 每個品項、每一週、每個單位（東橋、A11、京站、官網、通路、公關贈、執行長）的預估量，含禮盒換算成單條：收在下面，裡面有自己的篩選
     var drows = [], detailDiff = false;
@@ -811,6 +866,7 @@
     else if (a === 'detail-clear') { st.dWeek = ''; st.dItem = ''; st.dDept = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
+    else if (a === 'xp-export') xpExport(b.dataset.v);
     else if (a === 'po-pick') {
       var eI = el.querySelector('#xpPoEta'), qI = el.querySelector('#xpPoQty');
       if (eI) eI.value = b.dataset.eta;

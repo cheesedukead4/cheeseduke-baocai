@@ -502,6 +502,8 @@
     return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
 
+  X.buildXlsx = buildXlsx; // 其他頁面（採購叫貨）匯出 Excel 共用
+
   function makeQuick(cfg) {
     var TYPE_KEYS = cfg.types;
   // date：'' 代表今天；note：備註；vals[包材 id][類型]：輸入框裡的原始字串（頁面被整頁重畫時用來還原）
