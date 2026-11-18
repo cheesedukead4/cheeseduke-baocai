@@ -54,7 +54,7 @@
     var modeBar = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px"><b class="small">首頁「銷售預估」用</b>' +
       '<button type="button" class="btn ' + (autoOn ? 'primary' : 'gray') + '" data-ga-mode="auto" aria-pressed="' + autoOn + '" style="min-height:30px;padding:3px 11px;font-size:15px">自動計算（進單量＋預估量＋去年同期）</button>' +
       '<button type="button" class="btn ' + (!autoOn ? 'primary' : 'gray') + '" data-ga-mode="plan" aria-pressed="' + (!autoOn) + '" style="min-height:30px;padding:3px 11px;font-size:15px">業績預估原數字</button></div>' +
-      '<p class="small" style="margin:0 0 10px">自動計算：<b>計算後預估＝max( 已售＋進單未交，w × 照去年節奏推的全期 ＋ (1−w) × 業績預估 )</b>。w 是「去年同期已賣到全期的幾成」（去年資料夠多才採用，不夠就 w＝0，等於用業績預估）；全期至少會有已進單的量。算出來會帶回首頁禮盒表的「銷售預估」（標 ≈），包裝需求跟著算；手動填的「調整後預估」優先。</p>';
+      '<p class="small" style="margin:0 0 10px">自動計算：<b>計算後預估＝max( 已售＋進單未交，w × 照去年節奏推的全期 ＋ (1−w) × 業績預估 )</b>。w 是「去年同期已賣到全期的幾成」（去年資料夠多才採用，不夠就 w＝0，等於用業績預估）；全期至少會有已進單的量。<b>業績預估沒填（0）、但去年這款整檔賣得不少的，改用「去年整檔 × 整體成長倍數」當預估</b>（整體成長倍數＝今年同期 ÷ 去年同期，限 0.5～1.5，還算不出來就是 1），所以漏填的禮盒不會算成 0。算出來會帶回首頁禮盒表的「銷售預估」（標 ≈），包裝需求跟著算；手動填的「調整後預估」優先。</p>';
     var info = '<p class="small" style="margin:0 0 10px">今年已販售＝' + fmtD(w.w0) + ' ～ ' + fmtD(w.cut) + ' 的訂單（不含單條）；去年同期＝' + esc(w.label) + ' 的 ' + fmtD(w.w0L) + ' ～ ' + fmtD(w.cutL) + '（同樣是離節日的天數）；去年全期到 ' + fmtD(w.endL) + '。'
       + '「智慧判斷」是用規則自動算的：建議預估＝今年已販售 ÷ 去年同期賣到這天的比例，結果只是參考，要不要調整由你決定；在最右邊填「調整後預估」就會帶回上面禮盒表的銷售預估（業績預估頁不會動）。</p>';
     var cols = [
@@ -67,7 +67,7 @@
       { label: '去年全期', num: true, render: function (r) { return r.basis ? fmt(r.B) : '—'; } },
       { label: '成長／衰退', render: function (r) { return X.ui.tag(r.trend + (r.growth != null ? ' ' + pctText(r.growth) : ''), TAG[r.trend] || 'muted'); } },
       { label: '建議預估', num: true, render: function (r) { return r.sug == null ? '<span class="small">—</span>' : '<b>' + fmt(r.sug) + '</b>' + (r.conf ? '<div class="small">可信度 ' + r.conf + '</div>' : ''); } },
-      { label: '計算後預估（自動）', num: true, render: function (r) { return '<b>' + fmt(r.calc) + '</b>' + (r.w > 0 ? '<div class="small">節奏權重 ' + Math.round(r.w * 100) + '%</div>' : '<div class="small">' + (r.floor > r.est ? '以進單量為底' : '依預估量') + '</div>'); } },
+      { label: '計算後預估（自動）', num: true, render: function (r) { return '<b>' + fmt(r.calc) + '</b>' + (r.fromLast ? '<div class="small" title="業績預估沒填，用去年這款整檔賣的量 × 整體成長倍數">沒填預估，參考去年</div>' : (r.w > 0 ? '<div class="small">節奏權重 ' + Math.round(r.w * 100) + '%</div>' : '<div class="small">' + (r.floor > r.est ? '以進單量為底' : '依預估量') + '</div>')); } },
       { label: '智慧判斷', render: function (r) { return '<span style="white-space:normal;display:inline-block;min-width:180px">' + (r.act ? X.ui.tag(r.act, ACT[r.act] || 'muted') + '<br>' : '') + '<span class="small">' + esc(r.why) + '</span></span>'; } },
       { label: '調整後預估', num: true, render: function (r) {
         var a = adjOf(r.p.id);

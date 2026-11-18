@@ -1493,14 +1493,21 @@
       var w = (P == null || f == null) ? 0 : (conf === '高' ? Math.min(1, f) : (conf === '中' ? Math.min(1, f) * 0.7 : 0));
       info[id] = { sold: C, booked: Bk, lastTo: lastTo[id] || 0, lastFull: own, isNew: !(own > 0), basis: basis, A: A, B: B, f: f, setSold: setSold, growth: growth, P: P, conf: conf, w: w };
     });
-    var v = { ok: true, win: g, info: info, sold: sold, booked: booked };
+    var sA = 0, sS = 0;
+    Object.keys(info).forEach(function (k) { var x = info[k]; if (x.basis === 'same') { sA += x.A; sS += x.sold; } });
+    var gAll = sA >= 30 ? Math.min(1.5, Math.max(0.5, sS / sA)) : 1; // 整體成長倍數：今年同期 ÷ 去年同期（同品號），夾在 0.5～1.5
+    var v = { ok: true, win: g, info: info, sold: sold, booked: booked, gAll: gAll };
     GA_STATS.key = key; GA_STATS.v = v;
     return v;
   }
   // 計算後預估（盒）：預估量 E 由呼叫端帶入（業績預估的合計）
-  function gaCalc(inf, E) {
-    var floor = inf.sold + inf.booked, calc = Math.max(floor, Math.round(inf.w * (inf.P || 0) + (1 - inf.w) * E));
-    return { calc: calc, floor: floor };
+  // 規則補充（2026-11-18）：業績預估「沒填」（E＝0）、但去年同品號整檔賣了不少（≥ GA_MIN）時，用「去年整檔 × 整體成長倍數 gAll」當預估，避免漏填的禮盒算成 0；
+  // 預估量有填的不受影響；今年新品（去年沒有同品號）沒辦法這樣推，維持以進單量為底。
+  function gaCalc(inf, E, gAll) {
+    var floor = inf.sold + inf.booked, fromLast = false, base = E;
+    if (!(E > 0) && inf.basis === 'same' && inf.B >= GA_MIN) { base = Math.round(inf.B * (gAll || 1)); fromLast = true; }
+    var calc = Math.max(floor, Math.round(inf.w * (inf.P || 0) + (1 - inf.w) * base));
+    return { calc: calc, floor: floor, fromLast: fromLast, base: base };
   }
   // 今年已販售（每個禮盒）：{ 禮盒 id: 數量 }，首頁禮盒表「已售／剩」用
   X.giftSoldMap = function () { var st = gaStats(), out = Object.create(null); if (st.ok) Object.keys(st.sold).forEach(function (k) { out[k] = st.sold[k]; }); return out; };
@@ -1510,7 +1517,7 @@
     if (!st.ok) return null;
     var inf = st.info[String(pid)];
     if (!inf) return null;
-    return gaCalc(inf, E).calc;
+    return gaCalc(inf, E, st.gAll).calc;
   };
   X.giftAdjustData = function () {
     SW_CACHE = null;
@@ -1518,7 +1525,7 @@
     if (!st.ok) return res;
     var listed = X.products().filter(function (p) { return p && !isSingle(p) && p.isListedCurrent === true; });
     var rows = listed.map(function (p) {
-      var id = String(p.id), inf = st.info[id], est = window.CMSStock ? CMSStock.giftForecastBase(p.id) : 0, C = inf.sold, cc = gaCalc(inf, est);
+      var id = String(p.id), inf = st.info[id], est = window.CMSStock ? CMSStock.giftForecastBase(p.id) : 0, C = inf.sold, cc = gaCalc(inf, est, st.gAll);
       var sug = inf.P, trend = inf.growth == null ? '無法比較' : (inf.growth >= 0.1 ? '成長' : (inf.growth <= -0.1 ? '衰退' : '持平')), act = '';
       if (inf.P != null && est > 0) { var rt = inf.P / est; act = rt > 1.1 ? '建議上調' : (rt < 0.9 ? '建議下修' : '預估合理'); }
       else if (inf.P != null) act = '預估是 0，建議填預估';
@@ -1528,7 +1535,7 @@
         why = bt + '去年同期已賣 ' + X.fmt(inf.A) + '、全期 ' + X.fmt(inf.B) + '（賣到這天約 ' + Math.round(inf.f * 100) + '%）；今年' + (inf.basis === 'same' ? '' : '同類合計') + '同期 ' + X.fmt(inf.setSold) + (inf.growth != null ? '（' + (inf.growth >= 0 ? '+' : '') + Math.round(inf.growth * 1000) / 10 + '%）' : '') +
           (inf.P != null ? '；照這個節奏全期約 ' + X.fmt(inf.P) + (est > 0 ? '，預估 ' + X.fmt(est) : '') : '；今年還沒有銷售，推不出全期');
       } else why = '去年沒有可比的銷售（今年新品，或去年全期不到 ' + GA_MIN + '），沒辦法判斷。';
-      return { p: p, est: est, sold: C, booked: inf.booked, remain: est - C, A: inf.A, B: inf.B, f: inf.f, basis: inf.basis, isNew: inf.isNew, setSold: inf.setSold, growth: inf.growth, sug: sug, conf: inf.conf, w: inf.w, calc: cc.calc, floor: cc.floor, trend: trend, act: act, why: why };
+      return { p: p, est: est, sold: C, booked: inf.booked, remain: est - C, A: inf.A, B: inf.B, f: inf.f, basis: inf.basis, isNew: inf.isNew, setSold: inf.setSold, growth: inf.growth, sug: sug, conf: inf.conf, w: inf.w, calc: cc.calc, floor: cc.floor, fromLast: cc.fromLast, base: cc.base, trend: trend, act: act, why: why };
     });
     rows.sort(function (a, b) { return (b.est - a.est) || byCode(a.p, b.p); });
     var cmp = rows.filter(function (r) { return r.basis === 'same'; }), cs = cmp.reduce(function (t, r) { return t + r.sold; }, 0), cl = cmp.reduce(function (t, r) { return t + r.A; }, 0);
