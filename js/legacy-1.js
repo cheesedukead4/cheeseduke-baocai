@@ -52,13 +52,47 @@ function editFieldHTML(key,label,type,value){
  return `<label>${label}${control}</label>`;
 }
 function closeGenericEdit(){genericEditMask.classList.remove('show');currentGenericEdit=null}
+// 改品號（禮盒、單條共用）：品號不能空白、不能和別的禮盒／單條重複；業績預估的資料是用品號存的，所以一併搬到新品號（異動紀錄的品號也跟著改）。
+// 回傳 { ok, msg }。其他以品項 id 存的資料（配方、叫貨、折扣、上架…）不受影響；訂單、入口網站現貨／訂單是用「品號」對的，新品號要和它們一致才對得到。
+function renameProductCode(p, newCode){
+ newCode=String(newCode==null?'':newCode).trim();
+ const old=String(p.code||'').trim();
+ if(newCode===old)return {ok:true,same:true};
+ if(!newCode)return {ok:false,msg:'品號不能空白'};
+ const clash=db.products.find(x=>x!==p&&String(x.code||'').trim().toLowerCase()===newCode.toLowerCase());
+ if(clash)return {ok:false,msg:'品號「'+newCode+'」已經有「'+(clash.name||'')+'」在用了'};
+ const oldKey=String(old||p.id),newKey=newCode,sf=db.salesForecastV5;
+ if(sf&&sf.rows){
+   if(oldKey!==newKey&&sf.rows[newKey])return {ok:false,msg:'業績預估裡已經有品號「'+newKey+'」的資料，不能改成這個品號'};
+   if(sf.rows[oldKey]&&oldKey!==newKey){sf.rows[newKey]=sf.rows[oldKey];delete sf.rows[oldKey];}
+ }
+ if(Array.isArray(db.forecastChanges))db.forecastChanges.forEach(e=>{if(e&&String(e.code)===oldKey)e.code=newKey;});
+ p.code=newCode;
+ return {ok:true,old:old,moved:!!(sf&&sf.rows&&sf.rows[newKey])};
+}
+// 列表上直接改品號
+function updateProductCode(pid, input){
+ const p=db.products.find(x=>x.id===pid);if(!p)return;
+ const old=String(p.code||'').trim(),nv=String(input.value||'').trim();
+ if(nv===old)return;
+ if(!nv){alert('品號不能空白');input.value=old;return;}
+ if(!confirm('要把品號「'+(old||'（無）')+'」改成「'+nv+'」嗎？\n\n• 業績預估這個品項的資料會一起搬到新品號。\n• 過去訂單、入口網站的現貨與訂單是用「品號」對應的，新品號要和它們一致才對得到；已經匯入的過去訂單不會跟著改。')){input.value=old;return;}
+ const r=renameProductCode(p,nv);
+ if(!r.ok){alert(r.msg);input.value=old;return;}
+ persist();
+ try{render();}catch(e){console.warn(e);}
+ try{if(typeof renderSalesForecast==='function')renderSalesForecast();}catch(e){}
+ if(window.cmsToast)window.cmsToast('品號已改成 '+nv);
+}
 function saveGenericEdit(){
  if(!currentGenericEdit)return;
  let vals={};genericEditFields.querySelectorAll('[data-key]').forEach(el=>vals[el.dataset.key]=el.type==='number'?n(el.value):el.value.trim());
  let {kind,recordId}=currentGenericEdit;
  if((kind==='single'||kind==='gift')&&!vals.name)return alert('名稱不可空白');
  if(kind==='single'||kind==='gift'){
-   let x=db.products.find(x=>x.id===recordId);Object.assign(x,{code:vals.code,name:vals.name,category:kind==='single'?'單條':'禮盒'});
+   let x=db.products.find(x=>x.id===recordId);
+   if(String(vals.code||'').trim()!==String(x.code||'').trim()){const rr=renameProductCode(x,vals.code);if(!rr.ok)return alert(rr.msg);}
+   Object.assign(x,{name:vals.name,category:kind==='single'?'單條':'禮盒'});
  }else if(kind==='formulaProduct'){
    let x=db.components.find(x=>x.id===recordId);Object.assign(x,{productId:vals.productId,componentProductId:vals.componentProductId,qty:vals.qty});
  }else if(kind==='formulaMaterial'){
@@ -290,7 +324,7 @@ function renderGiftListTables(){
    let mats=(db.recipes||[]).filter(r=>r.productId===x.id);
    let ctext=comps.length?comps.map(r=>`${prodName(r.componentProductId)} ×${r.qty}`).join('、'):'尚未設定';
    let mtext=mats.length?mats.map(r=>`${matName(r.materialId)} ×${r.qty}`).join('、'):'尚未設定';
-   return `<tr><td>${x.code||''}</td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><div class="gift-disc-grid">${GIFT_DISCOUNTS.map(f=>`<label class="gift-disc-item"><span>${f[1]}</span><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}${f[1]}折扣成數" value="${x[f[0]]==null?'':Number(x[f[0]])}" onchange="updateGiftListDiscount('${x.id}','${f[0]}',this)" placeholder="不打折"></label>`).join('')}</div><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="copyGiftFull('${x.id}')">複製</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="8"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
+   return `<tr><td><input class="gift-inline-price" type="text" style="width:92px;text-align:left" aria-label="${x.name}品號" value="${String(x.code||'').replace(/"/g,'&quot;')}" onchange="updateProductCode('${x.id}',this)" placeholder="品號"></td><td><strong>${x.name}</strong></td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><div class="gift-disc-grid">${GIFT_DISCOUNTS.map(f=>`<label class="gift-disc-item"><span>${f[1]}</span><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}${f[1]}折扣成數" value="${x[f[0]]==null?'':Number(x[f[0]])}" onchange="updateGiftListDiscount('${x.id}','${f[0]}',this)" placeholder="不打折"></label>`).join('')}</div><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td>${ctext}</td><td>${mtext}</td><td><button onclick="toggleInlineGiftRecipe('${x.id}')">配方編輯</button> <button onclick="copyGiftFull('${x.id}')">複製</button> <button onclick="deleteGiftFull('${x.id}')">刪除</button></td></tr><tr class="inline-gift-recipe-row" id="inline-gift-${x.id}" style="display:none"><td colspan="8"><div class="inline-gift-recipe-wrap"></div></td></tr>`;
  };
  const on=all.filter(x=>x.isListedCurrent===true),off=all.filter(x=>x.isListedCurrent!==true);
  body.innerHTML=on.length?on.map(row).join(''):'<tr><td colspan="8" class="empty">目前沒有上架的禮盒（到下方勾選「本期上架」）</td></tr>';
@@ -1135,7 +1169,7 @@ function render(){
  renderGiftListTables();
  let singleProducts=db.products.filter(x=>x.category==='單條');
  // 單條也有售價（業績儀表板算金額用）與本期上架，存法和禮盒一樣（updateGiftListPrice／updateGiftListPublished 依品項 id 存）
- singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td>${x.code||''}</td><td>${x.name}</td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><div class="gift-disc-grid">${GIFT_DISCOUNTS.map(f=>`<label class="gift-disc-item"><span>${f[1]}</span><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}${f[1]}折扣成數" value="${x[f[0]]==null?'':Number(x[f[0]])}" onchange="updateGiftListDiscount('${x.id}','${f[0]}',this)" placeholder="不打折"></label>`).join('')}</div><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=6 class=empty>尚無單條資料</td></tr>';
+ singleBody.innerHTML=singleProducts.length?singleProducts.map(x=>`<tr><td><input class="gift-inline-price" type="text" style="width:92px;text-align:left" aria-label="${x.name}品號" value="${String(x.code||'').replace(/"/g,'&quot;')}" onchange="updateProductCode('${x.id}',this)" placeholder="品號"></td><td>${x.name}</td><td><input class="gift-inline-price" type="number" min="0" step="1" aria-label="${x.name}售價" value="${x.price==null?'':Number(x.price)}" onchange="updateGiftListPrice('${x.id}',this)" placeholder="售價"></td><td><div class="gift-disc-grid">${GIFT_DISCOUNTS.map(f=>`<label class="gift-disc-item"><span>${f[1]}</span><input class="gift-inline-price" type="number" min="0.1" max="10" step="0.1" aria-label="${x.name}${f[1]}折扣成數" value="${x[f[0]]==null?'':Number(x[f[0]])}" onchange="updateGiftListDiscount('${x.id}','${f[0]}',this)" placeholder="不打折"></label>`).join('')}</div><div class="small" data-disc-note="${x.id}">${giftDiscountNote(x)}</div></td><td><label class="gift-inline-listed"><input type="checkbox" ${x.isListedCurrent===true?'checked':''} onchange="updateGiftListPublished('${x.id}',this)"> 本期上架</label></td><td><button onclick="openGenericEdit('single','${x.id}')">編輯</button> <button onclick="deleteSingleItem('${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=6 class=empty>尚無單條資料</td></tr>';
  initGiftFormulaRows();
  opts(cProduct,db.products.filter(x=>x.category!=='單條'),'name');if(window.rMaterial)opts(rMaterial,db.materials.filter(matActive),'name');if(document.getElementById('sMaterial'))updateStockItemOptions();
 (document.getElementById('recipeBody')||{innerHTML:''}).innerHTML=db.recipes.length?db.recipes.map(x=>`<tr><td>${prodName(x.productId)}</td><td>${matName(x.materialId)}</td><td class=num>${x.qty}</td><td><button onclick="del('recipes','${x.id}')">刪除</button></td></tr>`).join(''):'<tr><td colspan=4 class=empty>尚無配方</td></tr>';
