@@ -119,8 +119,15 @@
     var f = arr(d, 'giftAdjust').filter(function (x) { return x && same(x.productId, pid) && String(x.seasonId || '') === sid && x.qty != null && x.qty !== '' && Number.isFinite(Number(x.qty)); });
     return f.length ? f[f.length - 1] : null;
   }
+  // 銷售預估：選了時間區間＝業績預估在區間內的合計；沒選區間＝① 手動填的「調整後預估」→ ② 自動計算（進單量＋預估量＋去年同一區間，db.giftForecastMode 不是 'plan'）→ ③ 業績預估原數字
+  function giftAutoOn() { var d = getDb(); return !(d && d.giftForecastMode === 'plan'); }
   function giftForecast(pid, range) {
-    if (!hasRange(range)) { var adj = giftAdjustOf(pid); if (adj) return round2(Math.max(0, num(adj.qty))); }
+    if (!hasRange(range)) {
+      var adj = giftAdjustOf(pid); if (adj) return round2(Math.max(0, num(adj.qty)));
+      if (giftAutoOn()) {
+        try { var a = window.CMSX && CMSX.giftAutoForecast ? CMSX.giftAutoForecast(pid, giftForecastBase(pid)) : null; if (a != null) return round2(a); } catch (e) {}
+      }
+    }
     return giftForecastBase(pid, range);
   }
   function giftForecastBase(pid, range) {
@@ -195,7 +202,7 @@
 
   root.CMSStock = {
     material: material,
-    stockByCode: stockByCode, preorderByCode: preorderByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast, giftForecastBase: giftForecastBase, giftAdjustOf: giftAdjustOf,
+    stockByCode: stockByCode, preorderByCode: preorderByCode, giftStock: giftStock, giftIncoming: giftIncoming, giftPreorder: giftPreorder, giftForecast: giftForecast, giftForecastBase: giftForecastBase, giftAutoOn: giftAutoOn, giftAdjustOf: giftAdjustOf,
     giftPackNeed: giftPackNeed, materialPacked: materialPacked, singlePacked: singlePacked, materialToPack: materialToPack
   };
 })(window);

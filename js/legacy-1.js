@@ -1098,7 +1098,9 @@ function renderDashboard(){
      const grs=giftRanges()||{pre:null,fc:null},gr=grs.pre;
      const stockG=CMSStock.giftStock(p.id), incoming=CMSStock.giftIncoming(p.id), fc=CMSStock.giftForecast(p.id,grs.fc), need=CMSStock.giftPackNeed(p.id,grs), preo=CMSStock.giftPreorder(p.id,grs.pre);
      const adj=(!grs.fc&&CMSStock.giftAdjustOf)?CMSStock.giftAdjustOf(p.id):null, soldQ=(!grs.fc&&soldMap)?(soldMap[String(p.id)]||0):0;
-     const fcCell=`<td${adj?' title="已調整：業績預估原本是 '+CMSStock.giftForecastBase(p.id)+'（在底下「銷售預估調整」改）"':''}>${adj?'✎ ':''}${fc}${(!grs.fc&&soldQ>0)?'<div class="small" style="white-space:nowrap" title="已販售＝檔期開始到今天的訂單量">已售 '+soldQ+'｜剩 '+Math.max(0,Math.round((fc-soldQ)*100)/100)+'</div>':''}</td>`;
+     const baseFc=CMSStock.giftForecastBase(p.id), isAuto=!grs.fc&&!adj&&CMSStock.giftAutoOn&&CMSStock.giftAutoOn()&&fc!==baseFc;
+     const fcTitle=adj?'已調整：業績預估原本是 '+baseFc+'（在底下「銷售預估調整」改）':(isAuto?'自動計算（進單量＋預估量＋去年同一區間販售成效）：業績預估原本是 '+baseFc+'；算法和各品項明細在底下「銷售預估調整」，也可以改回業績預估原數字':'');
+     const fcCell=`<td${fcTitle?' title="'+fcTitle+'"':''}>${adj?'✎ ':(isAuto?'≈ ':'')}${fc}${(!grs.fc&&soldQ>0)?'<div class="small" style="white-space:nowrap" title="已販售＝檔期開始到今天的訂單量">已售 '+soldQ+'｜剩 '+Math.max(0,Math.round((fc-soldQ)*100)/100)+'</div>':''}</td>`;
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td class="${preo==null?'manual-cell':''}" title="${preo==null?'還沒同步入口網站訂單，沒辦法依時間區間算':(gr?'入口網站訂單，預訂交貨日在選的區間內':'')}">${preo==null?'—':preo}</td>

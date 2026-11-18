@@ -1424,11 +1424,15 @@
   }
 
 
-  // ================= 首頁禮盒「銷售預估調整」的資料（2026-11-12）=================
-  // 每個本期上架的禮盒：今年預估（業績預估合計）、今年已販售（檔期開始～今天）、去年同期（依檔期節日對齊：今天距節日幾天，去年就看距去年節日幾天的那一天）已販售與全期，
-  // 用去年的「賣到這天的比例」推今年全期（建議預估＝今年已售 ÷ 去年同期已賣比例），並判斷今年比去年成長或衰退。
-  // 今年新品（例如袋裝）去年沒有同品號的銷售：依序改用「去掉『袋』字的同名品項」、再不行用「同規格群組」去年的銷售節奏來推，畫面上標明用哪一種比對。
-  // 已販售＝訂單日期（入口網站的訂單用預訂交貨日）在檔期開始～今天的數量，不含單條；沒有「不計算」的部門。
+  // ================= 首頁禮盒「銷售預估」自動計算（2026-11-12 起做調整表，2026-11-18 起自動算進首頁）=================
+  // 每個本期上架的禮盒，搭配三樣東西算出「銷售預估」：
+  //   ① 進單量：今年檔期開始～今天已販售（C），加上已經進單、但交貨日還沒到的（B，進單未交）；全期至少要有 C＋B
+  //   ② 預估量：「業績預估」頁這個禮盒全部日期、部門的預估盒數（E）
+  //   ③ 去年同一區間的販售成效：依檔期節日對齊（距節日同樣天數），去年同期已賣 A、全期 T，賣到這天的比例 f＝A÷T
+  // 算法：按去年的節奏推全期 P＝C÷f；預估量和節奏推算依「去年已賣到幾成」加權：w＝f（可信度高）、f×0.7（中）、0（低，去年資料太少），
+  //   計算後預估＝max( C＋B，w×P ＋ (1−w)×E )。沒有去年可比時＝max( C＋B，E )。
+  // 去年沒有同品號的新品（例如袋裝）：改用去掉「袋」字的同名品項、再不行用同規格群組去年的節奏（f 和可信度）。
+  // 已販售＝訂單日期（入口網站訂單用預訂交貨日）在檔期開始～今天的數量，不含單條；沒有「不計算」的部門。
   var GA_MIN = 10; // 去年全期至少賣這麼多，才拿來當比對基準
   function gaOrders() {
     var key = [X.orders().length, X.get('portalOrders').length, (X.get('hqStock') || {}).salesAt || 0, X.get('codeMap').length, X.get('deptMap').length, X.products().length].join('|');
@@ -1439,7 +1443,7 @@
     return FA_CACHE.list;
   }
   function gaBaseName(p) { return String((p && p.name) || '').replace(/[（(]?\s*袋裝?\s*[)）]?/g, '').replace(/袋/g, '').replace(/\s+/g, '').toLowerCase(); }
-  function gaWindow() { // { ok, reason, kind, year, H, w0, cut, shift, w0L, cutL, endL, label }
+  function gaWindow() { // { ok, reason, season, H, w0, cut, shift, w0L, cutL, endL, aligned, label }
     var act = X.activeSeason(), res = { ok: false, reason: '' };
     if (!act || (act.kind !== 'newyear' && act.kind !== 'midautumn')) { res.reason = '目前沒有進行中的過年或中秋檔期。'; return res; }
     var y = seasonYearOf(act);
@@ -1451,35 +1455,28 @@
     return { ok: true, season: act, kind: act.kind, year: y, H: H, w0: w0, cut: cut, shift: shift, w0L: w0 - shift, cutL: cut - shift, endL: H - shift, aligned: H0 != null,
       label: H0 != null ? '去年同檔期（' + (cs.name || '') + '，節日 ' + cs.holidayDate + '）' : '去年同一週（找不到去年同檔期的節日日期，往前挪 52 週）' };
   }
-  // 今年已販售（每個禮盒）：{ 禮盒 id: 數量 }，首頁禮盒表「已售／剩」用
-  X.giftSoldMap = function () {
-    var g = gaWindow(), out = Object.create(null);
-    if (!g.ok) return out;
-    gaOrders().forEach(function (o) {
-      if (!o.p || o.dk === 'none' || isSingle(o.p)) return;
-      var t = dateMs(o.date);
-      if (t != null && t >= g.w0 && t <= g.cut) out[String(o.p.id)] = (out[String(o.p.id)] || 0) + o.q;
-    });
-    return out;
-  };
-  X.giftAdjustData = function () {
-    SW_CACHE = null;
-    var g = gaWindow(), res = { ok: g.ok, reason: g.reason, win: g, rows: [], total: null };
-    if (!g.ok) return res;
-    var sold = Object.create(null), lastTo = Object.create(null), lastFull = Object.create(null), orders = gaOrders();
+  // 訂單統計（很重的那一段，依訂單資料、日期、檔期快取）：每個禮盒 id → 今年已售 sold、進單未交 booked、去年同期 lastTo、去年全期 lastFull；
+  // 再算出每個禮盒的「節奏」info（基準 basis、去年同期 A、全期 B、比例 f、可信度、權重 w、節奏推算 P）
+  var GA_STATS = { key: '', v: null };
+  function gaStats() {
+    var g = gaWindow();
+    if (!g.ok) return { ok: false, win: g, reason: g.reason };
+    var orders = gaOrders(), key = FA_CACHE.key + '|' + X.today() + '|' + g.season.id + '|' + g.season.holidayDate + '|' + X.products().length;
+    if (GA_STATS.key === key && GA_STATS.v) return GA_STATS.v;
+    var sold = Object.create(null), booked = Object.create(null), lastTo = Object.create(null), lastFull = Object.create(null);
     orders.forEach(function (o) {
       if (!o.p || o.dk === 'none' || isSingle(o.p)) return;
       var t = dateMs(o.date), id = String(o.p.id);
       if (t == null) return;
       if (t >= g.w0 && t <= g.cut) sold[id] = (sold[id] || 0) + o.q;
+      else if (t > g.cut && t <= g.H) booked[id] = (booked[id] || 0) + o.q;
       if (t >= g.w0L && t <= g.endL) { lastFull[id] = (lastFull[id] || 0) + o.q; if (t <= g.cutL) lastTo[id] = (lastTo[id] || 0) + o.q; }
     });
     var gifts = X.products().filter(function (p) { return p && !isSingle(p); });
     var sum = function (list, m) { return list.reduce(function (t, p) { return t + (m[String(p.id)] || 0); }, 0); };
-    var listed = gifts.filter(function (p) { return p.isListedCurrent === true; });
-    var rows = listed.map(function (p) {
-      var id = String(p.id), est = window.CMSStock ? CMSStock.giftForecastBase(p.id) : 0, C = sold[id] || 0;
-      var own = lastFull[id] || 0, isNew = !(own > 0), basis = '', set = [p], A = 0, B = 0;
+    var info = Object.create(null);
+    gifts.forEach(function (p) {
+      var id = String(p.id), C = sold[id] || 0, Bk = booked[id] || 0, own = lastFull[id] || 0, basis = '', set = [p], A = 0, B = 0;
       if (own >= GA_MIN) { basis = 'same'; A = lastTo[id] || 0; B = own; }
       else {
         var bn = gaBaseName(p), byName = gifts.filter(function (q) { return gaBaseName(q) === bn; }), bB = sum(byName, lastFull);
@@ -1491,25 +1488,52 @@
       }
       var f = B > 0 ? A / B : null, setSold = basis === 'same' ? C : sum(set, sold);
       var growth = A > 0 ? setSold / A - 1 : null;
-      var sug = (f != null && f > 0 && C > 0) ? Math.max(C, Math.round(C / f)) : null;
+      var P = (f != null && f > 0 && C > 0) ? Math.max(C, Math.round(C / f)) : null; // 照去年節奏推的全期
       var conf = f == null ? '' : ((A >= 30 && f >= 0.3) ? '高' : (A >= 10 && f >= 0.15 ? '中' : '低'));
-      var trend = growth == null ? '無法比較' : (growth >= 0.1 ? '成長' : (growth <= -0.1 ? '衰退' : '持平'));
-      var act = '';
-      if (sug != null && est > 0) { var rt = sug / est; act = rt > 1.1 ? '建議上調' : (rt < 0.9 ? '建議下修' : '預估合理'); }
-      else if (sug != null) act = '預估是 0，建議填預估';
+      var w = (P == null || f == null) ? 0 : (conf === '高' ? Math.min(1, f) : (conf === '中' ? Math.min(1, f) * 0.7 : 0));
+      info[id] = { sold: C, booked: Bk, lastTo: lastTo[id] || 0, lastFull: own, isNew: !(own > 0), basis: basis, A: A, B: B, f: f, setSold: setSold, growth: growth, P: P, conf: conf, w: w };
+    });
+    var v = { ok: true, win: g, info: info, sold: sold, booked: booked };
+    GA_STATS.key = key; GA_STATS.v = v;
+    return v;
+  }
+  // 計算後預估（盒）：預估量 E 由呼叫端帶入（業績預估的合計）
+  function gaCalc(inf, E) {
+    var floor = inf.sold + inf.booked, calc = Math.max(floor, Math.round(inf.w * (inf.P || 0) + (1 - inf.w) * E));
+    return { calc: calc, floor: floor };
+  }
+  // 今年已販售（每個禮盒）：{ 禮盒 id: 數量 }，首頁禮盒表「已售／剩」用
+  X.giftSoldMap = function () { var st = gaStats(), out = Object.create(null); if (st.ok) Object.keys(st.sold).forEach(function (k) { out[k] = st.sold[k]; }); return out; };
+  // 首頁「銷售預估」自動計算（db.giftForecastMode 不是 'plan' 時才用）；算不出來（沒有進行中檔期等）回傳 null，由呼叫端改用業績預估原數字
+  X.giftAutoForecast = function (pid, E) {
+    var st = gaStats();
+    if (!st.ok) return null;
+    var inf = st.info[String(pid)];
+    if (!inf) return null;
+    return gaCalc(inf, E).calc;
+  };
+  X.giftAdjustData = function () {
+    SW_CACHE = null;
+    var st = gaStats(), g = st.win, res = { ok: st.ok, reason: st.reason, win: g, rows: [], total: null };
+    if (!st.ok) return res;
+    var listed = X.products().filter(function (p) { return p && !isSingle(p) && p.isListedCurrent === true; });
+    var rows = listed.map(function (p) {
+      var id = String(p.id), inf = st.info[id], est = window.CMSStock ? CMSStock.giftForecastBase(p.id) : 0, C = inf.sold, cc = gaCalc(inf, est);
+      var sug = inf.P, trend = inf.growth == null ? '無法比較' : (inf.growth >= 0.1 ? '成長' : (inf.growth <= -0.1 ? '衰退' : '持平')), act = '';
+      if (inf.P != null && est > 0) { var rt = inf.P / est; act = rt > 1.1 ? '建議上調' : (rt < 0.9 ? '建議下修' : '預估合理'); }
+      else if (inf.P != null) act = '預估是 0，建議填預估';
       var why = '';
-      if (basis) {
-        var bt = { same: '同品號', name: '同名品項（去掉「袋」字）', group: '同規格群組' }[basis];
-        why = bt + '去年同期已賣 ' + X.fmt(A) + '、全期 ' + X.fmt(B) + '（賣到這天約 ' + Math.round(f * 100) + '%）；今年' + (basis === 'same' ? '' : '同類合計') + '同期 ' + X.fmt(setSold) + (growth != null ? '（' + (growth >= 0 ? '+' : '') + Math.round(growth * 1000) / 10 + '%）' : '') +
-          (sug != null ? '；照這個節奏全期約 ' + X.fmt(sug) + (est > 0 ? '，預估 ' + X.fmt(est) : '') : '；今年還沒有銷售，推不出全期');
+      if (inf.basis) {
+        var bt = { same: '同品號', name: '同名品項（去掉「袋」字）', group: '同規格群組' }[inf.basis];
+        why = bt + '去年同期已賣 ' + X.fmt(inf.A) + '、全期 ' + X.fmt(inf.B) + '（賣到這天約 ' + Math.round(inf.f * 100) + '%）；今年' + (inf.basis === 'same' ? '' : '同類合計') + '同期 ' + X.fmt(inf.setSold) + (inf.growth != null ? '（' + (inf.growth >= 0 ? '+' : '') + Math.round(inf.growth * 1000) / 10 + '%）' : '') +
+          (inf.P != null ? '；照這個節奏全期約 ' + X.fmt(inf.P) + (est > 0 ? '，預估 ' + X.fmt(est) : '') : '；今年還沒有銷售，推不出全期');
       } else why = '去年沒有可比的銷售（今年新品，或去年全期不到 ' + GA_MIN + '），沒辦法判斷。';
-      return { p: p, est: est, sold: C, remain: est - C, A: A, B: B, f: f, basis: basis, isNew: isNew, setSold: setSold, growth: growth, sug: sug, conf: conf, trend: trend, act: act, why: why, lastFull: own, lastTo: lastTo[id] || 0 };
+      return { p: p, est: est, sold: C, booked: inf.booked, remain: est - C, A: inf.A, B: inf.B, f: inf.f, basis: inf.basis, isNew: inf.isNew, setSold: inf.setSold, growth: inf.growth, sug: sug, conf: inf.conf, w: inf.w, calc: cc.calc, floor: cc.floor, trend: trend, act: act, why: why };
     });
     rows.sort(function (a, b) { return (b.est - a.est) || byCode(a.p, b.p); });
-    // 整體：只看「同品號」可比的禮盒，今年同期合計 vs 去年同期合計
     var cmp = rows.filter(function (r) { return r.basis === 'same'; }), cs = cmp.reduce(function (t, r) { return t + r.sold; }, 0), cl = cmp.reduce(function (t, r) { return t + r.A; }, 0);
     res.rows = rows;
-    res.total = { est: rows.reduce(function (t, r) { return t + r.est; }, 0), sold: rows.reduce(function (t, r) { return t + r.sold; }, 0), cmpSold: cs, cmpLast: cl, cmpN: cmp.length, newN: rows.filter(function (r) { return r.isNew; }).length,
+    res.total = { est: rows.reduce(function (t, r) { return t + r.est; }, 0), calc: rows.reduce(function (t, r) { return t + r.calc; }, 0), sold: rows.reduce(function (t, r) { return t + r.sold; }, 0), booked: rows.reduce(function (t, r) { return t + r.booked; }, 0), cmpSold: cs, cmpLast: cl, cmpN: cmp.length, newN: rows.filter(function (r) { return r.isNew; }).length,
       growth: cl > 0 ? cs / cl - 1 : null, up: rows.filter(function (r) { return r.act === '建議上調'; }).length, down: rows.filter(function (r) { return r.act === '建議下修'; }).length };
     return res;
   };
