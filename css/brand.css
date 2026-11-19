@@ -1,0 +1,108 @@
+/* ============================================================
+ * 起士公爵品牌外觀（只改外觀：顏色、字型、按鈕、卡片、表頭、邊框、間距）
+ * 依《起士公爵品牌規範速查》。最後載入，覆蓋 legacy.css / app.css / ext.css 的顏色；不動任何程式、資料、文字。
+ *
+ * 品牌色（HEX）
+ *   公爵綠 #0F3F25 主色（品牌、標題、主按鈕、品牌條）　公爵金 #C9A050 輔色（accent、點綴）
+ *   工作深綠 #132D1C 深底　中綠 #4A7C59 次標題、次強調　深金 #9B7738 金色文字　淺金 #E8C97A 亮點　米金 #F5EDD8 背景　暖墨黑 #1E160E 文字
+ * 鐵則：主色綠、輔色金；不用紫、藍、粉當主色；文字用 #1E160E，不用純黑。
+ * 狀態色（逾期紅、警告琥珀、成功綠）保留，才看得出差別。
+ * 字型（暫用，非官方）：標題 Noto Serif TC，內文 Noto Sans TC。
+ * ============================================================ */
+:root{
+  --cd-green:#0F3F25; --cd-gold:#C9A050; --cd-green-dark:#132D1C; --cd-green-mid:#4A7C59;
+  --cd-gold-deep:#9B7738; --cd-gold-light:#E8C97A; --cd-bg:#F5EDD8; --cd-text:#1E160E;
+  --cd-surface:#FBF6E8; --cd-line:#E3D7B6; --cd-line-strong:#D3C294; --cd-green-soft:#E4ECDD; --cd-gold-soft:#F6EBCB;
+  --cd-serif:"Noto Serif TC","Songti TC","PMingLiU","Microsoft JhengHei",serif;
+  --cd-sans:"Noto Sans TC","Microsoft JhengHei","PingFang TC","Heiti TC",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+
+  /* 把 app.css 用到的顏色變數換成品牌色 */
+  --bg:var(--cd-bg); --surface:var(--cd-surface); --surface-2:#F2E9D0;
+  --line:var(--cd-line); --line-strong:var(--cd-line-strong);
+  --text:var(--cd-text); --text-2:#5B4C37; --text-3:#8B7B5F;
+  --brand:var(--cd-green); --brand-ink:#FFFDF6; --brand-soft:var(--cd-green-soft);
+  --side:var(--cd-green-dark); --side-2:var(--cd-green); --side-text:#E6DCBF;
+  --font:var(--cd-sans);
+  --shadow:0 1px 2px rgba(30,22,14,.06),0 1px 3px rgba(30,22,14,.08);
+  --shadow-lg:0 20px 50px rgba(30,22,14,.24);
+  /* 狀態色：保留（逾期紅、警告琥珀、成功綠），只把底色換成偏暖，和米金背景搭 */
+  --ok:#2E7D32; --ok-soft:#E3F1DD;
+  --warn:#B7791F; --warn-soft:#FBEFCB;
+  --bad:#C0392B; --bad-soft:#FBE4DF;
+}
+body{background:var(--cd-bg);color:var(--cd-text);font-family:var(--cd-sans)}
+h1,h2,h3,.topbar h1,.page-title,.x-card-head,.x-card h3,.panel h2,.sheet-caption strong,.app-splash strong{font-family:var(--cd-serif);color:var(--cd-green)}
+.app-splash{background:var(--cd-bg)}
+
+/* ---------- 側邊欄：工作深綠，品牌條用公爵金 ---------- */
+.sidebar{background:var(--cd-green-dark);border-right:3px solid var(--cd-gold)}
+#nav .navbtn:hover{background:rgba(232,201,122,.14);color:var(--cd-gold-light)}
+#nav .navbtn.active{background:var(--cd-green);color:var(--cd-gold-light);box-shadow:inset 3px 0 0 var(--cd-gold)}
+.install-card{background:rgba(232,201,122,.12)}
+.install-card button{background:var(--cd-gold);color:var(--cd-text)}
+
+/* ---------- 按鈕 ---------- */
+.btn.primary,nav button.primary{background:var(--cd-green);color:#FFFDF6}
+.btn.primary:hover{background:var(--cd-green-dark)}
+.btn.gray{background:#EADFC2;color:var(--cd-text)}
+.btn.green{background:var(--cd-green-mid);color:#FFFDF6}
+.navbtn.active{background:var(--cd-green);color:#FFFDF6}
+input:focus,select:focus,textarea:focus{border-color:var(--cd-gold);box-shadow:0 0 0 3px rgba(201,160,80,.28)}
+input,select,textarea{border-color:var(--cd-line-strong)}
+
+/* ---------- 分頁鈕（首頁切換、檔期篩選） ---------- */
+.home-switch-btn{border-color:var(--cd-green);color:var(--cd-green);background:var(--cd-surface)}
+.home-switch-btn.active{background:var(--cd-green)!important;color:var(--cd-gold-light)!important;box-shadow:0 1px 2px rgba(15,63,37,.35)}
+.order-season-btn.active,.x-tabs button.active,.xr-months label.on{background:var(--cd-green)!important;border-color:var(--cd-green)!important;color:var(--cd-gold-light)!important}
+
+/* ---------- 卡片、表格 ---------- */
+.x-card,.panel,.sheet-block,.card{background:var(--cd-surface);border-color:var(--cd-line)}
+.sheet-table th,.initial-sheet th{background:var(--cd-green)!important;border-color:var(--cd-green-mid)!important;color:#FFFDF6!important}
+.sheet-table tbody tr:nth-child(even) td{background:#F7F0DC}
+.sheet-table td,.sheet-table tbody td{border-color:var(--cd-line)}
+.x-table th{background:var(--cd-green-soft);color:var(--cd-green)}
+.sort-mini:hover:not(:disabled){background:var(--cd-gold-soft);border-color:var(--cd-gold)}
+.drag-over-row td{border-top-color:var(--cd-gold)!important}
+.drop-before td{border-top-color:var(--cd-gold)!important}
+.drop-after td{border-bottom-color:var(--cd-gold)!important}
+.initial-num:focus,.fold-num:focus{outline-color:var(--cd-gold)!important}
+
+/* ---------- 橫幅、標籤、說明 ---------- */
+.x-banner.x-info,.fold-link-note{background:var(--cd-green-soft);border-color:#C5D5BC;color:var(--cd-green)}
+.x-tag.x-info{background:var(--cd-green-soft);color:var(--cd-green)}
+.x-kpi.x-info strong{color:var(--cd-green)}
+.person-badge,.xr-val,.xr-chip{background:var(--cd-green-soft);color:var(--cd-green);border-color:#C5D5BC}
+.xr-param.xr-changed,.x-pk-row.x-pk-row-on,.x-qe-row.x-qe-row-on{background:var(--cd-gold-soft);border-color:var(--cd-gold-light)}
+.x-qe-cell input.x-qe-on{background:var(--cd-green-soft);border-color:var(--cd-green-mid);color:var(--cd-green)}
+.xr-savebar{border-color:var(--cd-gold-light)}
+.xr-param.xr-flash{box-shadow:0 0 0 3px var(--cd-gold)}
+.sync-chip[data-state="syncing"] .dot,.sync-chip[data-state="pending"] .dot{background:var(--cd-gold)}
+
+/* ---------- 採購叫貨、業績預估等頁的表頭（程式裡用行內顏色，這裡用屬性選擇器換成品牌色） ---------- */
+th[style*="#2f5d1e"],td[style*="#2f5d1e"]{background:var(--cd-green)!important;border-color:var(--cd-green-dark)!important}
+th[style*="#2e75b6"]{background:var(--cd-green-mid)!important;border-color:var(--cd-green-dark)!important}
+td[style*="#eaf3fb"]{background:var(--cd-green-soft)!important}
+td[style*="#e2efd9"]{background:var(--cd-green-soft)!important}
+td[style*="#fff36b"],th[style*="#fff36b"]{background:var(--cd-gold-light)!important}
+.forecast-summary-table th,.forecast-product-table thead th{background:var(--cd-green)!important;color:#FFFDF6!important}
+.forecast-summary-table tbody th{background:var(--cd-green-mid)!important;color:#FFFDF6!important}
+.forecast-product-table .sf-total-row th,.forecast-product-table .sf-total-row td{background:var(--cd-green-dark)!important;color:#FFFDF6!important}
+.forecast-sheet td.sf-amount,.forecast-sheet td.sf-calculated{background:var(--cd-gold-soft)!important}
+.sf-locked-mode .forecast-summary-table thead th,.sf-locked-mode .forecast-product-table thead th{background:#6b6b6b!important}
+.sf-locked-mode .forecast-summary-table tbody th{background:#808080!important}
+.sf-locked-mode .forecast-product-table .sf-total-row th,.sf-locked-mode .forecast-product-table .sf-total-row td{background:#555!important}
+
+/* ---------- 手機：側邊欄頂列也用品牌色 ---------- */
+@media(max-width:900px){
+  .topbar{background:var(--cd-bg);border-bottom:2px solid var(--cd-gold-light)}
+}
+
+/* ---------- 殘留的藍灰：輸入框邊框、折疊箭頭、連結、深色數字 ---------- */
+.gift-inline-price,.initial-num,.fold-num,input[type="number"],input[type="text"],input[type="date"],input[type="time"],select,textarea{border-color:var(--cd-line-strong)}
+.initial-num{color:var(--cd-text)}
+.x-cx-chev{color:var(--cd-gold-deep)!important}
+a{color:var(--cd-green-mid)}
+a:hover{color:var(--cd-gold-deep)}
+.initial-lock-status{color:var(--cd-gold-deep)!important;border-color:var(--cd-gold-light)!important}
+
+.x-tag.x-muted{background:#EDE4CB;color:#5B4C37}
