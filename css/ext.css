@@ -381,3 +381,13 @@ th{font-size:16.5px!important}
 
 /* 首頁禮盒表：預購單、銷售預估表頭裡有日期選擇，欄位至少要放得下 */
 table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{min-width:140px}
+
+/* 採購叫貨的交貨表：欄位縮小、可以換行，整張表放得進一頁，不用左右滑動（手機太窄時才會有橫向捲動） */
+.xp-pivot{width:100%!important;min-width:0!important;font-size:13px!important}
+.xp-pivot th,.xp-pivot td{padding:4px 5px!important;white-space:normal!important;word-break:break-word;line-height:1.35}
+.xp-pivot th{font-size:12.5px}
+.xp-pivot [style*="min-width:200px"]{min-width:0!important}
+.xp-pivot input[data-dact],.xp-pivot input[data-dnote],.xp-pivot input[data-mdate]{width:100%!important;min-width:0!important;box-sizing:border-box;font-size:13px}
+.xp-pivot input[data-dact]{min-width:46px!important;text-align:right}
+.xp-pivot input[data-iact]{width:54px!important}
+.xp-pivot td[data-mest],.xp-pivot td[data-mact],.xp-pivot td[data-msub],.xp-pivot td[data-masub]{white-space:nowrap!important}
