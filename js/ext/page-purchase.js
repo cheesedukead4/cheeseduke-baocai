@@ -552,7 +552,10 @@
         var sumV = cols.map(function (cp) { return g.reduce(function (t, s0) { var rr = P.rows[s0]; return t + ((rr && rr.v[cp.id]) || 0); }, 0); });
         var sumO = cols.map(function (cp) { return g.reduce(function (t, s0) { var oo = O.rows[s0]; return t + ((oo && oo.v[cp.id]) || 0); }, 0); });
         var sumA = cols.map(function (cp) { var any = false, t = 0; g.forEach(function (s0) { var k = key + '|' + s0 + '|' + cp.id; if (k in actualMap) { any = true; t += actualMap[k]; } }); return any ? t : null; });
-        var add = function (a, b) { return a + b; }, sub = sumV.reduce(add, 0), osub = sumO.reduce(add, 0), subA = sumA.reduce(function (t, v) { return t + (v || 0); }, 0);
+        // 合併列的實際下定量可以直接填（db.deliveryActuals，group＝'mact'，week＝合併的第一列，singleId＝'表別|口味 id'；不連動叫貨）；沒填就顯示底下各列已填的加總
+        var g0 = g[0], mOv = cols.map(function (cp) { var k = 'mact|' + g0 + '|' + key + '|' + cp.id; return k in actualMap ? actualMap[k] : null; });
+        var effA = cols.map(function (cp, j) { return mOv[j] != null ? mOv[j] : (sumA[j] || 0); });
+        var add = function (a, b) { return a + b; }, sub = sumV.reduce(add, 0), osub = sumO.reduce(add, 0), subA = effA.reduce(add, 0);
         var days = g.map(function (s0) { return dayText(arrivalOf(s0)); }).join('＋');
         var ranges = g.map(function (s0) { var rr = P.rows[s0] || O.rows[s0]; return md(s0) + '-' + md(rr ? rr.end : ''); }).join('＋');
         var notes = g.map(function (s0) { return noteOf(key, s0); }).filter(Boolean).join('；');
@@ -570,20 +573,22 @@
           itemHtml = ord.map(function (k) { return agg[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || ((b.cur || b.org) - (a.cur || a.org)); }).map(function (a) {
             var unit = a.single ? '條' : '盒', nm = a.single ? a.name + '單支' : a.name;
             if (a.act != null && !a.single) itemActSum += a.act;
-            var act = a.act != null ? ' <b>實際 ' + X.fmt(a.act) + unit + '</b>' : '';
+            var ik = (a.single ? 's:' : 'g:') + a.name, ov = ('mitem|' + g[0] + '|' + key + '|' + ik) in actualMap ? actualMap[('mitem|' + g[0] + '|' + key + '|' + ik)] : null, eff = ov != null ? ov : (a.act != null ? a.act : null);
+            if (eff != null && !a.single) itemActSum += eff;
+            var act = ' <input type="number" min="0" step="any" inputmode="numeric" data-miact="1" data-week="' + esc(g[0]) + '" data-fid="' + esc(key + '|' + ik) + '" data-item="' + esc(ik) + '" value="' + (ov != null ? esc(ov) : '') + '" placeholder="' + (a.act != null ? esc(a.act) : '實際') + '" aria-label="' + esc(nm + ' 合併後實際' + unit + '數') + '" style="width:66px;text-align:right;padding:1px 4px;border:1px solid #cfd8c8;border-radius:5px;background:#eaf3fb;font:inherit;font-size:13px;font-weight:400"> <span class="small" style="font-weight:400">' + unit + '</span>';
             if (a.cur === a.org) return '<div>' + esc(nm) + '（預估 ' + X.fmt(a.cur) + unit + '）' + act + '</div>';
             pivDiff = true;
             return '<div><span style="' + RED + '">' + esc(nm) + '（預估 現 ' + X.fmt(a.cur) + unit + '，原 ' + X.fmt(a.org) + unit + '）</span>' + act + '</div>';
           }).join('');
-          if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '　實際合計 ' + X.fmt(itemActSum) + ' 盒</div>';
+          if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '　實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
         }
         return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal">' + esc(days) + '<div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
-          sumA.map(function (v) { return '<td style="background:#eaf3fb;' + tdb + 'text-align:right;white-space:nowrap">' + (v != null ? X.fmt(v) : '—') + '</td>'; }).join('') +
-          '<td style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
+          cols.map(function (cp, j) { return '<td style="background:#eaf3fb;padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
+          '<td data-masub style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="' + tdb + 'text-align:center">' + esc(ranges) + '</td>' +
-          '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<div class="small">合併顯示；要填實際下定量或備註，請先按「分開」</div></td></tr>';
+          '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<input type="text" data-dnote="m' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('m' + key, g[0])) + '" maxlength="100" placeholder="合併備註" aria-label="合併備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td></tr>';
       };
       var mergeSwap = function (st0, html) { var g = groupOf[st0]; if (!g) return html; return g[0] === st0 ? mergedRowHtml(g) : ''; };
       var body = rows.map(function (st0) {
@@ -813,6 +818,21 @@
         updateMergeRows(el);
       }
       else if (e.target && e.target.dataset && e.target.dataset.mdate) { e.target.dataset.user = '1'; }
+      else if (e.target && e.target.dataset && (e.target.dataset.mact || e.target.dataset.miact)) {
+        var dm = e.target.dataset, isItem = !!dm.miact, gname = isItem ? 'mitem' : 'mact', rawM = String(e.target.value || '').trim(), arrM = X.ensure('deliveryActuals'), sidM = seasonId();
+        var recM = arrM.find(function (x) { return x && x.group === gname && x.week === dm.week && String(x.singleId) === String(dm.fid) && (x.seasonId || '') === sidM; });
+        if (rawM === '') { if (recM) arrM.splice(arrM.indexOf(recM), 1); }
+        else {
+          if (!recM) { recM = { id: X.uid('da'), seasonId: sidM, group: gname, week: dm.week, singleId: String(dm.fid) }; arrM.push(recM); }
+          recM.qty = Math.max(0, Number(rawM) || 0); recM.by = X.userName(); recM.at = Date.now();
+        }
+        X.save({ silent: true });
+        var trM = e.target.closest('tr'), effv = function (i) { return String(i.value).trim() !== '' ? (Number(i.value) || 0) : (Number(i.getAttribute('placeholder')) || 0); };
+        var sM = 0; trM.querySelectorAll('input[data-mact]').forEach(function (i) { sM += effv(i); });
+        var sa = trM.querySelector('[data-masub]'); if (sa) sa.textContent = X.fmt(sM);
+        var gM = 0; trM.querySelectorAll('input[data-miact]').forEach(function (i) { if (String(i.dataset.item).indexOf('g:') === 0) gM += effv(i); });
+        var gs = trM.querySelector('[data-misum]'); if (gs) gs.textContent = X.fmt(gM);
+      }
       else if (e.target && e.target.dataset && e.target.dataset.iact) {
         var di = e.target.dataset, rawI = String(e.target.value || '').trim(), arrI = X.ensure('deliveryActuals'), sidI = seasonId();
         var recI = arrI.find(function (x) { return x && x.group === 'item' && x.week === di.week && String(x.singleId) === String(di.item) && (x.seasonId || '') === sidI; });
@@ -1016,7 +1036,15 @@
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
     else if (a === 'xp-export') xpExport(b.dataset.v);
     else if (a === 'merge-make') mergeMake(el, b.dataset.v);
-    else if (a === 'merge-split') { var ms = b.dataset.v.split('|'); st.merged[ms[0]] = (st.merged[ms[0]] || []).filter(function (g) { return g.indexOf(ms[1]) < 0; }); saveMerged(); render(el); }
+    else if (a === 'merge-split') {
+      var ms = b.dataset.v.split('|'), sidS = seasonId(), da = X.ensure('deliveryActuals'), dn = X.ensure('deliveryNotes');
+      var hit = function (x) { return x && (x.seasonId || '') === sidS && x.week === ms[1] && ((x.group === 'mact' || x.group === 'mitem') && String(x.singleId).indexOf(ms[0] + '|') === 0 || x.group === 'm' + ms[0]); };
+      var has = da.some(hit) || dn.some(function (x) { return hit(x) && String(x.note || '').trim(); });
+      if (has && !confirm('分開後，在合併列填的實際量與合併備註會清掉（各列原本填的不受影響）。要分開嗎？')) return;
+      for (var i1 = da.length - 1; i1 >= 0; i1--) if (hit(da[i1])) da.splice(i1, 1);
+      for (var i2 = dn.length - 1; i2 >= 0; i2--) if (hit(dn[i2])) dn.splice(i2, 1);
+      st.merged[ms[0]] = (st.merged[ms[0]] || []).filter(function (g) { return g.indexOf(ms[1]) < 0; }); saveMerged(); X.save({ silent: true }); render(el);
+    }
     else if (a === 'merge-clear') { st.mergeSel = {}; render(el); }
     else if (a === 'po-unmerge') {
       var pm = X.get('purchaseOrders').find(function (x) { return x && x.id === id; });
