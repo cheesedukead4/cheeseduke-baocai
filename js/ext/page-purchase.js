@@ -556,14 +556,34 @@
         var days = g.map(function (s0) { return dayText(arrivalOf(s0)); }).join('＋');
         var ranges = g.map(function (s0) { var rr = P.rows[s0] || O.rows[s0]; return md(s0) + '-' + md(rr ? rr.end : ''); }).join('＋');
         var notes = g.map(function (s0) { return noteOf(key, s0); }).filter(Boolean).join('；');
-        var egT = key === 'egg' ? g.reduce(function (t, s0) { return t + (nowP.eggTotals[s0] || 0); }, 0) : 0;
+        var egT = key === 'egg' ? g.reduce(function (t, s0) { return t + (nowP.eggTotals[s0] || 0); }, 0) : 0, egO = key === 'egg' ? g.reduce(function (t, s0) { return t + (orgP.eggTotals[s0] || 0); }, 0) : 0;
+        // 蛋捲的備註：每個禮盒、單支品項也跨列加總（預估；有填的實際也加總），一行一個品項
+        var itemHtml = '', itemActSum = 0;
+        if (key === 'egg') {
+          var agg = {}, ord = [];
+          g.forEach(function (s0) {
+            var r0 = P.rows[s0], o0 = O.rows[s0];
+            ((r0 && r0.items) || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.cur += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
+            ((o0 && o0.items) || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.org += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
+            ord.forEach(function (k) { var ak = 'item|' + s0 + '|' + k; if (ak in actualMap) agg[k].act = (agg[k].act || 0) + actualMap[ak]; });
+          });
+          itemHtml = ord.map(function (k) { return agg[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || ((b.cur || b.org) - (a.cur || a.org)); }).map(function (a) {
+            var unit = a.single ? '條' : '盒', nm = a.single ? a.name + '單支' : a.name;
+            if (a.act != null && !a.single) itemActSum += a.act;
+            var act = a.act != null ? ' <b>實際 ' + X.fmt(a.act) + unit + '</b>' : '';
+            if (a.cur === a.org) return '<div>' + esc(nm) + '（預估 ' + X.fmt(a.cur) + unit + '）' + act + '</div>';
+            pivDiff = true;
+            return '<div><span style="' + RED + '">' + esc(nm) + '（預估 現 ' + X.fmt(a.cur) + unit + '，原 ' + X.fmt(a.org) + unit + '）</span>' + act + '</div>';
+          }).join('');
+          if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '　實際合計 ' + X.fmt(itemActSum) + ' 盒</div>';
+        }
         return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal">' + esc(days) + '<div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
           sumA.map(function (v) { return '<td style="background:#eaf3fb;' + tdb + 'text-align:right;white-space:nowrap">' + (v != null ? X.fmt(v) : '—') + '</td>'; }).join('') +
           '<td style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="' + tdb + 'text-align:center">' + esc(ranges) + '</td>' +
-          '<td style="' + tdb + '">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + (egT ? '<div class="small" style="font-weight:700">禮盒預估總盒數 ' + X.fmt(egT) + ' 盒</div>' : '') + '<div class="small">合併顯示；要填實際下定量或備註，請先按「分開」</div></td></tr>';
+          '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<div class="small">合併顯示；要填實際下定量或備註，請先按「分開」</div></td></tr>';
       };
       var mergeSwap = function (st0, html) { var g = groupOf[st0]; if (!g) return html; return g[0] === st0 ? mergedRowHtml(g) : ''; };
       var body = rows.map(function (st0) {
