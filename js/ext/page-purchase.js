@@ -591,7 +591,7 @@
           }).join('');
           if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '　實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
         }
-        return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal">' + esc(days) + '<div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
+        return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal"><input type="date" data-dnote="md' + key + '" data-mday="1" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('md' + key, g[0]) || arrivalOf(g[0])) + '" aria-label="合併後的到貨日期（可以修改）" title="合併後的到貨日期，可以修改（只是這個畫面的日期，不連動叫貨）" style="width:100%;box-sizing:border-box;border:1px solid #cfd8c8;border-radius:5px;padding:1px;font:inherit;font-size:11.5px;font-weight:700;background:#fff"><div class="small" style="font-weight:400">合併：' + esc(days) + '</div><div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
           cols.map(function (cp, j) { return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
@@ -1047,7 +1047,7 @@
     else if (a === 'merge-make') mergeMake(el, b.dataset.v);
     else if (a === 'merge-split') {
       var ms = b.dataset.v.split('|'), sidS = seasonId(), da = X.ensure('deliveryActuals'), dn = X.ensure('deliveryNotes');
-      var hit = function (x) { return x && (x.seasonId || '') === sidS && x.week === ms[1] && ((x.group === 'mact' || x.group === 'mitem') && String(x.singleId).indexOf(ms[0] + '|') === 0 || x.group === 'm' + ms[0]); };
+      var hit = function (x) { return x && (x.seasonId || '') === sidS && x.week === ms[1] && ((x.group === 'mact' || x.group === 'mitem') && String(x.singleId).indexOf(ms[0] + '|') === 0 || x.group === 'm' + ms[0] || x.group === 'md' + ms[0]); };
       var has = da.some(hit) || dn.some(function (x) { return hit(x) && String(x.note || '').trim(); });
       if (has && !confirm('分開後，在合併列填的實際量與合併備註會清掉（各列原本填的不受影響）。要分開嗎？')) return;
       for (var i1 = da.length - 1; i1 >= 0; i1--) if (hit(da[i1])) da.splice(i1, 1);

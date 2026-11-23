@@ -394,3 +394,4 @@ table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{min-width:140px
 
 .xp-pivot{table-layout:fixed!important}
 .xp-pivot td{vertical-align:middle}
+.xp-pivot input[data-mday]{width:100%!important;min-width:0!important;font-size:11.5px!important}
