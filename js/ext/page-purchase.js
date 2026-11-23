@@ -306,6 +306,15 @@
     sel.forEach(function (s0) { delete st.mergeSel[s0.key + '|' + s0.start]; });
     saveMerged(); render(el);
   }
+  // 交貨表的欄寬：預估量與實際下定量的口味欄一樣寬，小計欄稍寬，備註最寬
+  function xpColgroup(n) {
+    var rest = 100 - 11 - 9 - 22, w = rest / (2 * n + 2 * 1.2), f = function (v) { return '<col style="width:' + (Math.round(v * 100) / 100) + '%">'; }, o = '<colgroup>' + f(11), i;
+    for (i = 0; i < n; i++) o += f(w);
+    o += f(w * 1.2);
+    for (i = 0; i < n; i++) o += f(w);
+    o += f(w * 1.2) + f(9) + f(22) + '</colgroup>';
+    return o;
+  }
   function poCard() {
     var singles = X.products().filter(function (p) { return p && isSingle(p) && p.isListedCurrent === true; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); }); // 只列本期上架的單條；包材只列上架中的（下架、封存的不列）
     var mats = X.materials().filter(function (m) { return m && X.materialActive(m); }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
@@ -585,7 +594,7 @@
         return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal">' + esc(days) + '<div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
-          cols.map(function (cp, j) { return '<td style="background:#eaf3fb;padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
+          cols.map(function (cp, j) { return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
           '<td data-masub style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="' + tdb + 'text-align:center">' + esc(ranges) + '</td>' +
           '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<input type="text" data-dnote="m' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('m' + key, g[0])) + '" maxlength="100" placeholder="合併備註" aria-label="合併備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td></tr>';
@@ -605,7 +614,7 @@
         var atds = cols.map(function (cp) {
           var k = key + '|' + r.start + '|' + cp.id, av = k in actualMap ? actualMap[k] : null, est = r.v[cp.id] || 0;
           if (av != null) { subA += av; colA[cp.id] = (colA[cp.id] || 0) + av; }
-          return '<td style="padding:2px 4px;border:1px solid #cfd8c8;background:#eaf3fb"><input type="number" min="0" step="any" inputmode="numeric" data-dact="' + key + '" data-week="' + esc(r.start) + '" data-single="' + esc(cp.id) + '" value="' + (av != null ? esc(av) : '') + '" placeholder="' + esc(est) + '" aria-label="' + esc((cp.name || label(cp)) + ' 實際下定量') + '" style="width:92px;text-align:right;border:0;background:transparent;font:inherit"></td>';
+          return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-dact="' + key + '" data-week="' + esc(r.start) + '" data-single="' + esc(cp.id) + '" value="' + (av != null ? esc(av) : '') + '" placeholder="' + esc(est) + '" aria-label="' + esc((cp.name || label(cp)) + ' 實際下定量') + '" style="width:92px;text-align:right;border:0;background:transparent;font:inherit"></td>';
         }).join('');
         grandA += subA;
         var autoNote = '', plainArr = [], totalPlain = '', actSum = 0;
@@ -657,9 +666,9 @@
         cols.map(function (cp, j) { return '<td data-mact="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-masub ' + mtd + '>—</td>' +
         '<td colspan="2" style="background:#fff3cf;padding:4px 8px;border:1px solid #cfd8c8"><button type="button" class="btn primary" data-act="merge-make" data-v="' + key + '" disabled style="min-height:30px;padding:2px 10px">合併成一列</button> <span class="small">（只合併顯示，不影響叫貨）</span></td></tr>';
       xpExp[key] = { title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
-      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit"><thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th style="background:#1f4e79;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f" colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">備註</th></tr>' +
+      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
-        cols.map(function (cp) { return '<th style="background:#2e75b6;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f">' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th style="background:#2e75b6;color:#fff;text-align:center;padding:8px 10px;white-space:nowrap;border:1px solid #14344f">小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
+        cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
     };
     var basisChips = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px"><span class="small" style="min-width:64px;font-weight:700">顯示數量</span>' +
       chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '<button type="button" class="btn gray" data-act="xp-export" data-v="all" style="min-height:30px;padding:3px 11px;font-size:15px;margin-left:12px">匯出 Excel（費雪＋蛋捲＋叫貨紀錄）</button></div>';

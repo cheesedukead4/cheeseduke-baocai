@@ -388,6 +388,9 @@ table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{min-width:140px
 .xp-pivot th{font-size:12.5px}
 .xp-pivot [style*="min-width:200px"]{min-width:0!important}
 .xp-pivot input[data-dact],.xp-pivot input[data-dnote],.xp-pivot input[data-mdate]{width:100%!important;min-width:0!important;box-sizing:border-box;font-size:13px}
-.xp-pivot input[data-dact]{min-width:46px!important;text-align:right}
+.xp-pivot input[data-dact],.xp-pivot input[data-mact]{min-width:0!important;text-align:right;padding:2px 2px}
 .xp-pivot input[data-iact]{width:54px!important}
 .xp-pivot td[data-mest],.xp-pivot td[data-mact],.xp-pivot td[data-msub],.xp-pivot td[data-masub]{white-space:nowrap!important}
+
+.xp-pivot{table-layout:fixed!important}
+.xp-pivot td{vertical-align:middle}
