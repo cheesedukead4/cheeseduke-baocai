@@ -447,8 +447,8 @@
   // 頁面一：快速輸入（xQuickEntry）
   // =====================================================================
   // ---------- 匯出 Excel（.xlsx）：自己產生，不需要外部程式庫 ----------
-  // sheets: [{ name, widths: [欄寬], rows: [[格子]] }]；格子可以是字串、數字，或 { v, f（公式）, s（樣式：h 表頭｜i 整數｜p 百分比｜d 兩位小數｜b 粗體｜bi｜bp｜bd）}
-  var XL_STYLE = { h: 1, i: 2, p: 3, d: 4, b: 5, bi: 6, bp: 7, bd: 8 };
+  // sheets: [{ name, widths: [欄寬], rows: [[格子]] }]；格子可以是字串、數字，或 { v, f（公式）, s（樣式：h 表頭｜i 整數｜p 百分比｜d 兩位小數｜b 粗體｜bi｜bp｜bd｜w 自動換行靠上）}
+  var XL_STYLE = { h: 1, i: 2, p: 3, d: 4, b: 5, bi: 6, bp: 7, bd: 8, w: 9 };
   var CRC_T = (function () { var t = [], c, n, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
   function crc32(b) { var c = 0xFFFFFFFF, i; for (i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
   function xmlEsc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -484,7 +484,7 @@
     var xf = function (numFmt, font, fill) { return '<xf numFmtId="' + numFmt + '" fontId="' + font + '" fillId="' + fill + '" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>'; };
     var styles = head + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts>' +
       '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF275D16"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
-      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9">' + xf(0, 0, 0) + xf(0, 2, 2) + xf(3, 0, 0) + xf(10, 0, 0) + xf(2, 0, 0) + xf(0, 1, 0) + xf(3, 1, 0) + xf(10, 1, 0) + xf(2, 1, 0) + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10">' + xf(0, 0, 0) + xf(0, 2, 2) + xf(3, 0, 0) + xf(10, 0, 0) + xf(2, 0, 0) + xf(0, 1, 0) + xf(3, 1, 0) + xf(10, 1, 0) + xf(2, 1, 0) + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
     files.push({ name: '[Content_Types].xml', data: enc.encode(ct) }, { name: '_rels/.rels', data: enc.encode(rels) }, { name: 'xl/workbook.xml', data: enc.encode(wb) }, { name: 'xl/_rels/workbook.xml.rels', data: enc.encode(wbRels) }, { name: 'xl/styles.xml', data: enc.encode(styles) });
     sheets.forEach(function (sh, k) { files.push({ name: 'xl/worksheets/sheet' + (k + 1) + '.xml', data: enc.encode(sheetXml(sh)) }); });
     var parts = [], central = [], offset = 0;
