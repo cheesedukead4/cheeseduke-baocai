@@ -760,8 +760,8 @@
       rows.forEach(function (st0) { var g = groupOf[st0]; if (g) { if (g[0] === st0 && mergedExp[st0]) view.push(mergedExp[st0]); } else { var xr = xrows.find(function (r) { return r.start === st0; }); if (xr) view.push(xr); } });
       var partsByItem = {};
       [P, O].forEach(function (PP) { Object.keys(PP.rows).forEach(function (s0) { ((PP.rows[s0] && PP.rows[s0].items) || []).forEach(function (it) { var k0 = kp + (it.single ? 's:' : 'g:') + it.name; if (!partsByItem[k0] && it.parts) partsByItem[k0] = it.parts; }); }); });
-      xpExp[key] = { partsByItem: partsByItem, view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
-      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' rowspan="2">預估量備註</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">實際量備註</th></tr>' +
+      xpExp[key] = { partsByItem: partsByItem, mergedWeeks: Object.keys(mergedExp), view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
+      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button>' + (key === 'egg' ? ' <button type="button" class="btn gray" data-act="xp-decomp" title="把實際量備註裡已經填的禮盒、單支實際量，全部依內容物回算到各口味的實際下定量" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">依實際量備註回算全部</button>' : '') + '</p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' rowspan="2">預估量備註</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">實際量備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
     };
@@ -833,7 +833,7 @@
     } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。<span style="color:var(--muted)">（程式版本 v180）</span>匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。<span style="color:var(--muted)">（程式版本 v181）</span>匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -1172,6 +1172,18 @@
     else if (a === 'detail-clear') { st.dWeek = ''; st.dItem = ''; st.dDept = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
+    else if (a === 'xp-decomp') {
+      var dx = xpExp.egg;
+      if (!dx) return;
+      if (!confirm('把「實際量備註」裡已經填的禮盒、單支實際量，全部依內容物回算到各口味的「實際下定量」？\n（有填品項實際量的那幾列，口味的實際下定量會被蓋掉，包含手動填的；沒填品項的列不動。）')) return;
+      var nOk = 0, nNo = 0;
+      dx.rows.forEach(function (r) { var res = decomposeActuals('egg', 'item', 'egg', r.start, ''); if (res === true) nOk++; else if (res === 'noparts') nNo++; });
+      (dx.mergedWeeks || []).forEach(function (w) { if (decomposeActuals('egg', 'mitem', 'mact', w, 'egg|') === true) nOk++; });
+      X.save({ silent: true });
+      try { syncActualOrders(); } catch (e5) { console.warn(e5); }
+      render(el);
+      X.toast(nOk ? '已回算 ' + nOk + ' 列的口味實際下定量（淡黃底）' + (nNo ? '；另有 ' + nNo + ' 列的品項沒設單條內容物，沒辦法回算' : '') : (nNo ? NOPARTS_MSG : '沒有已填的品項實際量可以回算'));
+    }
     else if (a === 'xp-export') { render(el); xpExport(b.dataset.v); } // 先重畫一次，匯出才會是剛填完的最新內容（填實際量、備註時畫面只局部更新，不重畫整頁）
     else if (a === 'merge-make') mergeMake(el, b.dataset.v);
     else if (a === 'merge-split') {
