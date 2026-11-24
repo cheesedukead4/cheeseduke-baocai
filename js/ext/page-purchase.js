@@ -216,25 +216,39 @@
     var d = xpExp[key];
     if (!d) return null;
     var vrows = d.view || d.rows, nc = d.cols.length, H = function (t) { return { v: t, s: 'h' }; }, num = function (v) { return { v: v, s: 'i' }; };
-    var what = st.xpWhat || 'both', wantE = what !== 'act', wantA = what !== 'est', col = 2, cE = -1, cA = -1;
-    if (wantE) { cE = col; col += nc + 1; }
-    if (wantA) { cA = col; col += nc + 1; }
-    var head = [H('到貨日'), H('販售區間')];
-    if (wantE) head = head.concat(d.cols.map(function (n) { return H('預估量｜' + n); }), [H('預估量｜每周小計')]);
-    if (wantA) head = head.concat(d.cols.map(function (n) { return H('實際下定量｜' + n); }), [H('實際下定量｜小計')]);
-    if (wantE) head.push(H('預估量備註'));
-    if (wantA) head.push(H('實際量備註'));
+    var what = st.xpWhat || 'both', wantE = what !== 'act', wantA = what !== 'est';
+    // 欄位順序同畫面：到貨日｜預估量…每周小計｜預估量備註｜實際下定量…小計｜販售區間｜實際量備註
+    var segs = ['day'];
+    if (wantE) segs.push('est', 'estnote');
+    if (wantA) segs.push('act');
+    segs.push('range');
+    if (wantA) segs.push('actnote');
+    var cE = -1, cA = -1, col = 0;
+    segs.forEach(function (sg) { if (sg === 'est') { cE = col; col += nc + 1; } else if (sg === 'act') { cA = col; col += nc + 1; } else col++; });
     var sumF = function (c0, rr) { return 'SUM(' + xlCol(c0) + rr + ':' + xlCol(c0 + nc - 1) + rr + ')'; };
+    var head = [];
+    segs.forEach(function (sg) {
+      if (sg === 'day') head.push(H('到貨日'));
+      else if (sg === 'est') head = head.concat(d.cols.map(function (n) { return H('預估量｜' + n); }), [H('預估量｜每周小計')]);
+      else if (sg === 'act') head = head.concat(d.cols.map(function (n) { return H('實際下定量｜' + n); }), [H('實際下定量｜小計')]);
+      else if (sg === 'estnote') head.push(H('預估量備註'));
+      else if (sg === 'range') head.push(H('販售區間'));
+      else head.push(H('實際量備註'));
+    });
     var rows = [head];
     vrows.forEach(function (r, i) {
-      var rr = i + 2, se = r.est.reduce(function (t, v) { return t + v; }, 0), sa = r.act.reduce(function (t, v) { return t + (v || 0); }, 0), row = [r.day, r.range];
-      if (wantE) row = row.concat(r.est.map(num), [{ v: se, f: sumF(cE, rr), s: 'i' }]);
-      if (wantA) row = row.concat(r.act.map(function (v) { return v == null ? '' : num(v); }), [{ v: sa, f: sumF(cA, rr), s: 'i' }]);
-      if (wantE) row.push(r.note ? { v: r.note, s: 'w' } : '');
-      if (wantA) row.push(r.noteA ? { v: r.noteA, s: 'w' } : '');
+      var rr = i + 2, se = r.est.reduce(function (t, v) { return t + v; }, 0), sa = r.act.reduce(function (t, v) { return t + (v || 0); }, 0), row = [];
+      segs.forEach(function (sg) {
+        if (sg === 'day') row.push(r.day);
+        else if (sg === 'est') row = row.concat(r.est.map(num), [{ v: se, f: sumF(cE, rr), s: 'i' }]);
+        else if (sg === 'act') row = row.concat(r.act.map(function (v) { return v == null ? '' : num(v); }), [{ v: sa, f: sumF(cA, rr), s: 'i' }]);
+        else if (sg === 'estnote') row.push(r.note ? { v: r.note, s: 'w' } : '');
+        else if (sg === 'range') row.push(r.range);
+        else row.push(r.noteA ? { v: r.noteA, s: 'w' } : '');
+      });
       rows.push(row);
     });
-    var last = vrows.length + 1, foot = [{ v: '口味小計', s: 'b' }, ''];
+    var last = vrows.length + 1, foot = [];
     var footBlock = function (c0, pick) {
       for (var j = 0; j <= nc; j++) {
         var tot = 0;
@@ -242,14 +256,22 @@
         foot.push({ v: tot, f: 'SUM(' + xlCol(c0 + j) + '2:' + xlCol(c0 + j) + last + ')', s: 'bi' });
       }
     };
-    if (wantE) footBlock(cE, function (r, j) { return j < nc ? r.est[j] : r.est.reduce(function (t, x) { return t + x; }, 0); });
-    if (wantA) footBlock(cA, function (r, j) { return j < nc ? r.act[j] : r.act.reduce(function (t, x) { return t + (x || 0); }, 0); });
+    segs.forEach(function (sg) {
+      if (sg === 'day') foot.push({ v: '口味小計', s: 'b' });
+      else if (sg === 'est') footBlock(cE, function (r, j) { return j < nc ? r.est[j] : r.est.reduce(function (t, x) { return t + x; }, 0); });
+      else if (sg === 'act') footBlock(cA, function (r, j) { return j < nc ? r.act[j] : r.act.reduce(function (t, x) { return t + (x || 0); }, 0); });
+      else foot.push('');
+    });
     rows.push(foot);
-    var widths = [12, 16];
-    if (wantE) widths = widths.concat(d.cols.map(function () { return 14; }), [14]);
-    if (wantA) widths = widths.concat(d.cols.map(function () { return 16; }), [16]);
-    if (wantE) widths.push(40);
-    if (wantA) widths.push(34);
+    var widths = [];
+    segs.forEach(function (sg) {
+      if (sg === 'day') widths.push(12);
+      else if (sg === 'est') widths = widths.concat(d.cols.map(function () { return 14; }), [14]);
+      else if (sg === 'act') widths = widths.concat(d.cols.map(function () { return 16; }), [16]);
+      else if (sg === 'estnote') widths.push(40);
+      else if (sg === 'range') widths.push(16);
+      else widths.push(34);
+    });
     return { name: key === 'fee' ? '費雪交貨表' : '蛋捲交貨表', widths: widths, rows: rows };
   }
   function poSheet() {
@@ -280,8 +302,8 @@
   function mergeCount() { return Object.keys(st.mergeSel).filter(function (k) { return st.mergeSel[k]; }).length; }
   // 蛋捲：把「實際量備註」裡每個品項填的實際量（禮盒盒數 × 每盒各口味條數＋單支條數），拆解成各口味的實際下定量。
   // itemGroup／targetGroup：一般列 'item'→'egg'；合併列 'mitem'→'mact'（idPrefix 'egg|'）。只算有填的品項；有填任何一個品項才會動口味的實際下定量，回傳 true。
-  function decomposeActuals(itemGroup, targetGroup, week, idPrefix) {
-    var d = xpExp.egg;
+  function decomposeActuals(key, itemGroup, targetGroup, week, idPrefix) {
+    var d = xpExp[key];
     if (!d || !d.partsByItem) return false;
     var arr = X.ensure('deliveryActuals'), sid = seasonId(), tot = {}, any = false;
     arr.forEach(function (x) {
@@ -351,9 +373,9 @@
   function xpColgroup(n) {
     var rest = 100 - 10 - 8 - 30, w = rest / (2 * n + 2 * 1.2), f = function (v) { return '<col style="width:' + (Math.round(v * 100) / 100) + '%">'; }, o = '<colgroup>' + f(10), i;
     for (i = 0; i < n; i++) o += f(w);
-    o += f(w * 1.2);
+    o += f(w * 1.2) + f(15);
     for (i = 0; i < n; i++) o += f(w);
-    o += f(w * 1.2) + f(8) + f(15) + f(15) + '</colgroup>';
+    o += f(w * 1.2) + f(8) + f(15) + '</colgroup>';
     return o;
   }
   function poCard() {
@@ -532,7 +554,7 @@
     };
     var buildPiv = function (orig, cc) {
       cc = cc || c;
-      var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } }, eggTotals = {}, entries = [];
+      var piv = { fee: { rows: {}, cols: {} }, egg: { rows: {}, cols: {} } }, eggTotals = {}, feeTotals = {}, entries = [];
       cc.rows.forEach(function (r) {
         var code = String(r.p.code || r.p.id), fr = fo0 && fo0.rows && fo0.rows[code];
         if (!fr) return;
@@ -550,12 +572,19 @@
         }
       });
       // 這個到貨日所有蛋捲禮盒的總盒數（不補整箱，只告訴總數）
-      entries.forEach(function (e) { if (e.r.egg && !e.r.single && e.boxes > 0) eggTotals[e.g.start] = (eggTotals[e.g.start] || 0) + e.boxes; });
+      var partsOf = function (e, egg) { return e.ps.filter(function (pt) { return !!X.isEggGift(pt.single) === egg; }); };
+      entries.forEach(function (e) {
+        if (e.r.single || !(e.boxes > 0)) return;
+        if (e.r.egg) eggTotals[e.g.start] = (eggTotals[e.g.start] || 0) + e.boxes;
+        else if (partsOf(e, false).length) feeTotals[e.g.start] = (feeTotals[e.g.start] || 0) + e.boxes;
+      });
       entries.forEach(function (e) {
         var r = e.r, g = e.g, boxes = e.boxes;
-        if (r.egg) { // 蛋捲的禮盒（盒）與單賣單條（單支，條）：填進這個到貨日的備註
-          var er = piv.egg.rows[g.start] || (piv.egg.rows[g.start] = { start: g.start, end: g.end, v: {} });
-          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single, parts: e.ps.filter(function (pt) { return X.isEggGift(pt.single); }).map(function (pt) { return { id: String(pt.single.id), q: X.num(pt.qty) }; }) });
+        // 禮盒（盒）與單賣單條（單支，條）：蛋捲、費雪各自填進這個到貨日的備註；parts＝每盒（每條）含哪些口味、各幾條（實際量回算用）
+        var itParts = partsOf(e, !!r.egg);
+        if (r.egg || itParts.length) {
+          var tk = r.egg ? 'egg' : 'fee', er = piv[tk].rows[g.start] || (piv[tk].rows[g.start] = { start: g.start, end: g.end, v: {} });
+          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single, parts: itParts.map(function (pt) { return { id: String(pt.single.id), q: X.num(pt.qty) }; }) });
         }
         e.ps.forEach(function (pt) {
           var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
@@ -564,7 +593,7 @@
           P.cols[pt.single.id] = pt.single;
         });
       });
-      return { piv: piv, eggTotals: eggTotals };
+      return { piv: piv, eggTotals: eggTotals, feeTotals: feeTotals };
     };
     var nowP = buildPiv(false), orgP = buildPiv(true), piv = nowP.piv, eggTotals = nowP.eggTotals, pivDiff = false;
     var wdays = ['日', '一', '二', '三', '四', '五', '六'];
@@ -583,7 +612,7 @@
     var actualMap = {};
     X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === seasonId()) actualMap[a.group + '|' + a.week + '|' + a.singleId] = X.num(a.qty); });
     var pivotHtml = function (key, title) {
-      var P = nowP.piv[key], O = orgP.piv[key], colMap = {};
+      var P = nowP.piv[key], O = orgP.piv[key], colMap = {}, kp = key === 'fee' ? 'F' : '', totN = key === 'egg' ? nowP.eggTotals : nowP.feeTotals, totO = key === 'egg' ? orgP.eggTotals : orgP.feeTotals;
       Object.keys(P.cols).forEach(function (k) { colMap[k] = P.cols[k]; });
       Object.keys(O.cols).forEach(function (k) { colMap[k] = colMap[k] || O.cols[k]; });
       var cols = Object.keys(colMap).map(function (k) { return colMap[k]; }).sort(function (a, b) { return String(a.code || '').localeCompare(String(b.code || ''), 'zh-TW', { numeric: true }); });
@@ -609,20 +638,20 @@
         var days = g.map(function (s0) { return dayText(arrivalOf(s0)); }).join('＋');
         var ranges = g.map(function (s0) { var rr = P.rows[s0] || O.rows[s0]; return md(s0) + '-' + md(rr ? rr.end : ''); }).join('＋');
         var notes = g.map(function (s0) { return noteOf(key, s0); }).filter(Boolean).join('；'), notesA = g.map(function (s0) { return noteOf('ra' + key, s0); }).filter(Boolean).join('；');
-        var egT = key === 'egg' ? g.reduce(function (t, s0) { return t + (nowP.eggTotals[s0] || 0); }, 0) : 0, egO = key === 'egg' ? g.reduce(function (t, s0) { return t + (orgP.eggTotals[s0] || 0); }, 0) : 0;
+        var egT = g.reduce(function (t, s0) { return t + (totN[s0] || 0); }, 0), egO = g.reduce(function (t, s0) { return t + (totO[s0] || 0); }, 0);
         // 蛋捲的備註：每個禮盒、單支品項也跨列加總（預估；有填的實際也加總），一行一個品項
         var itemHtml = '', itemActHtml = '', itemActSum = 0, plainItems = [], plainAct = [], plainTotal = '', plainTotalA = '';
-        if (key === 'egg') {
+        {
           var agg = {}, ord = [], actHtmlArr = [];
           g.forEach(function (s0) {
             var r0 = P.rows[s0], o0 = O.rows[s0];
-            ((r0 && r0.items) || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.cur += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
-            ((o0 && o0.items) || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.org += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
+            ((r0 && r0.items) || []).forEach(function (it) { var k = kp + (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.cur += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
+            ((o0 && o0.items) || []).forEach(function (it) { var k = kp + (it.single ? 's:' : 'g:') + it.name, a = agg[k] || (agg[k] = { name: it.name, single: it.single, cur: 0, org: 0, act: null }); a.org += it.boxes; if (ord.indexOf(k) < 0) ord.push(k); });
             ord.forEach(function (k) { var ak = 'item|' + s0 + '|' + k; if (ak in actualMap) agg[k].act = (agg[k].act || 0) + actualMap[ak]; });
           });
           itemHtml = ord.map(function (k) { return agg[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || ((b.cur || b.org) - (a.cur || a.org)); }).map(function (a) {
             var unit = a.single ? '條' : '盒', nm = a.single ? a.name + '單支' : a.name;
-            var ik = (a.single ? 's:' : 'g:') + a.name, ov = ('mitem|' + g[0] + '|' + key + '|' + ik) in actualMap ? actualMap[('mitem|' + g[0] + '|' + key + '|' + ik)] : null, eff = ov != null ? ov : (a.act != null ? a.act : null);
+            var ik = kp + (a.single ? 's:' : 'g:') + a.name, ov = ('mitem|' + g[0] + '|' + key + '|' + ik) in actualMap ? actualMap[('mitem|' + g[0] + '|' + key + '|' + ik)] : null, eff = ov != null ? ov : (a.act != null ? a.act : null);
             if (eff != null && !a.single) itemActSum += eff;
             plainItems.push(nm + '（預估 ' + X.fmt(a.cur) + unit + '）');
             if (eff != null) plainAct.push(nm + '（實際 ' + X.fmt(eff) + unit + '）');
@@ -636,8 +665,8 @@
           if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '</div>';
           itemActHtml += '<div style="font-weight:700">實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
         }
-        if (key === 'egg' && (egT > 0 || egO > 0)) plainTotal = '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒';
-        if (key === 'egg' && plainAct.length) plainTotalA = '實際合計 ' + X.fmt(itemActSum) + ' 盒';
+        if (egT > 0 || egO > 0) plainTotal = '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒';
+        if (plainAct.length) plainTotalA = '實際合計 ' + X.fmt(itemActSum) + ' 盒';
         // 匯出 Excel 用：合併列的內容（預估加總、合併列填的實際量、品項加總＋實際、合併後的到貨日）
         mergedExp[g[0]] = { start: g[0], day: dayText(noteOf('md' + key, g[0]) || arrivalOf(g[0])) + '（合併：' + days + '）', range: ranges, est: sumV,
           act: cols.map(function (cp, j) { return mOv[j] != null ? mOv[j] : sumA[j]; }),
@@ -646,10 +675,10 @@
         return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal"><input type="date" data-dnote="md' + key + '" data-mday="1" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('md' + key, g[0]) || arrivalOf(g[0])) + '" aria-label="合併後的到貨日期（可以修改）" title="合併後的到貨日期，可以修改（只是這個畫面的日期，不連動叫貨）" style="width:100%;box-sizing:border-box;border:1px solid #cfd8c8;border-radius:5px;padding:1px;font:inherit;font-size:11.5px;font-weight:700;background:#fff"><div class="small" style="font-weight:400">合併：' + esc(days) + '</div><div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
+          '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<input type="text" data-dnote="m' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('m' + key, g[0])) + '" maxlength="100" placeholder="合併預估量備註" aria-label="合併預估量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td>' +
           cols.map(function (cp, j) { return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
           '<td data-masub style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="' + tdb + 'text-align:center">' + esc(ranges) + '</td>' +
-          '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<input type="text" data-dnote="m' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('m' + key, g[0])) + '" maxlength="100" placeholder="合併預估量備註" aria-label="合併預估量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td>' +
           '<td style="' + tdb + 'white-space:normal;background:#f4f9fd">' + (notesA ? '<div>' + esc(notesA) + '</div>' : '') + itemActHtml + '<input type="text" data-dnote="mra' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('mra' + key, g[0])) + '" maxlength="100" placeholder="合併實際量備註" aria-label="合併實際量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td></tr>';
       };
       var mergeSwap = function (st0, html) { var g = groupOf[st0]; if (!g) return html; return g[0] === st0 ? mergedRowHtml(g) : ''; };
@@ -671,17 +700,17 @@
         }).join('');
         grandA += subA;
         var autoNote = '', autoAct = '', plainArr = [], plainAct = [], totalPlain = '', totalPlainAct = '', actSum = 0, actLines = [];
-        if (key === 'egg') {
+        {
           // 一個品項一行，名稱後面括號才寫數量；改過的那一行紅字，寫現在和原本
           var names = {}, order = [];
-          (r.items || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: it, org: null }; order.push(k); } else names[k].cur = it; });
-          (o.items || []).forEach(function (it) { var k = (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: null, org: it }; order.push(k); } else names[k].org = it; });
+          (r.items || []).forEach(function (it) { var k = kp + (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: it, org: null }; order.push(k); } else names[k].cur = it; });
+          (o.items || []).forEach(function (it) { var k = kp + (it.single ? 's:' : 'g:') + it.name; if (!names[k]) { names[k] = { name: it.name, single: it.single, cur: null, org: it }; order.push(k); } else names[k].org = it; });
           var lines = order.map(function (k) { return names[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || (((b.cur || b.org).boxes) - ((a.cur || a.org).boxes)); }).map(function (x) {
             var cb = x.cur ? x.cur.boxes : 0, ob = x.org ? x.org.boxes : 0, unit = x.single ? '條' : '盒', nm = x.single ? x.name + '單支' : x.name;
             // 每個品項右邊有「實際」格子給採購填（db.deliveryActuals，group＝'item'，singleId＝'g:禮盒名'或's:單支名'，week＝這一列的預估區間起）
-            var ik = (x.single ? 's:' : 'g:') + x.name, iv = ('item|' + st0 + '|' + ik) in actualMap ? actualMap['item|' + st0 + '|' + ik] : null;
+            var ik = kp + (x.single ? 's:' : 'g:') + x.name, iv = ('item|' + st0 + '|' + ik) in actualMap ? actualMap['item|' + st0 + '|' + ik] : null;
             if (iv != null && !x.single) actSum += iv;
-            var inH = ' <input type="number" min="0" step="any" inputmode="numeric" data-iact="1" data-week="' + esc(st0) + '" data-item="' + esc(ik) + '" value="' + (iv != null ? esc(iv) : '') + '" placeholder="實際" aria-label="' + esc(nm + ' 實際' + unit + '數') + '" style="width:66px;text-align:right;padding:1px 4px;border:1px solid #cfd8c8;border-radius:5px;background:#eaf3fb;font:inherit;font-size:13px;font-weight:400"> <span class="small" style="font-weight:400">' + unit + '</span>';
+            var inH = ' <input type="number" min="0" step="any" inputmode="numeric" data-iact="1" data-xk="' + key + '" data-week="' + esc(st0) + '" data-item="' + esc(ik) + '" value="' + (iv != null ? esc(iv) : '') + '" placeholder="實際" aria-label="' + esc(nm + ' 實際' + unit + '數') + '" style="width:66px;text-align:right;padding:1px 4px;border:1px solid #cfd8c8;border-radius:5px;background:#eaf3fb;font:inherit;font-size:13px;font-weight:400"> <span class="small" style="font-weight:400">' + unit + '</span>';
             plainArr.push(nm + '（預估 ' + X.fmt(cb) + unit + '）');
             if (iv != null) plainAct.push(nm + '（實際 ' + X.fmt(iv) + unit + '）');
             actLines.push('<div style="white-space:normal">' + esc(nm) + inH + '</div>');
@@ -690,7 +719,7 @@
             return '<div style="white-space:normal"><span style="' + RED + '">' + esc(nm) + '（預估 現 ' + X.fmt(cb) + unit + '，原 ' + X.fmt(ob) + unit + '）</span></div>';
           });
           if (lines.length) {
-            var et = nowP.eggTotals[st0] || 0, eo = orgP.eggTotals[st0] || 0;
+            var et = totN[st0] || 0, eo = totO[st0] || 0;
             autoNote = lines.join('');
             if (et > 0 || eo > 0) {
               autoNote += '<div>' + (et === eo ? '<span style="font-weight:700">禮盒預估總盒數 ' + X.fmt(et) + ' 盒</span>' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(et) + ' 盒，原 ' + X.fmt(eo) + ' 盒</span>') + '</div>';
@@ -706,29 +735,29 @@
           noteA: [noteOf('ra' + key, r.start)].concat(plainAct, totalPlainAct && plainAct.length ? [totalPlainAct] : []).filter(Boolean).join('\n') });
         var rowHtml = '<tr><td style="padding:6px 10px;border:1px solid #cfd8c8;font-weight:700;text-align:center;white-space:nowrap;background:#e2efd9"><label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-merge="' + key + '|' + esc(r.start) + '"' + (st.mergeSel[key + '|' + r.start] ? ' checked' : '') + ' aria-label="勾選要合併出貨" title="勾選：合併出貨">' + esc(dayText(arrivalOf(r.start))) + '</label></td>' + tds +
           cell(sub, osub, yel, 'style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"') +
+          '<td style="padding:4px 6px;border:1px solid #cfd8c8">' + (autoNote ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;line-height:1.5">' + autoNote + '</div>' : '') + '<input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="預估量備註" aria-label="預估量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;background:transparent;font:inherit"></td>' +
           atds + '<td data-asub="1" style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">' + esc(md(r.start) + '-' + md(r.end)) + '</td>' +
-          '<td style="padding:4px 6px;border:1px solid #cfd8c8">' + (autoNote ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;line-height:1.5">' + autoNote + '</div>' : '') + '<input type="text" data-dnote="' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf(key, r.start)) + '" maxlength="100" placeholder="預估量備註" aria-label="預估量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;background:transparent;font:inherit"></td>' +
           '<td style="padding:4px 6px;border:1px solid #cfd8c8;background:#f4f9fd">' + (autoAct ? '<div style="white-space:normal;font-weight:700;margin:0 0 4px;line-height:1.5">' + autoAct + '</div>' : '') + '<input type="text" data-dnote="ra' + key + '" data-week="' + esc(r.start) + '" value="' + esc(noteOf('ra' + key, r.start)) + '" maxlength="100" placeholder="實際量備註（例：已交貨）" aria-label="實際量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;background:transparent;font:inherit"></td></tr>';
         return mergeSwap(st0, rowHtml);
       }).join('');
       var yb = 'style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap"';
       var foot = '<tr><td style="' + yel + 'padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap">口味小計</td>' +
         cols.map(function (cp) { return cell(colTot[cp.id] || 0, ocolTot[cp.id] || 0, yel, yb); }).join('') +
-        cell(grand, ogrand, yel, yb) +
-        cols.map(function (cp) { return '<td data-afoot="' + esc(cp.id) + '" ' + yb + '>' + X.fmt(colA[cp.id] || 0) + '</td>'; }).join('') + '<td data-agrand="1" ' + yb + '>' + X.fmt(grandA) + '</td><td colspan="3" style="border:1px solid #cfd8c8"></td></tr>';
+        cell(grand, ogrand, yel, yb) + '<td style="border:1px solid #cfd8c8"></td>' +
+        cols.map(function (cp) { return '<td data-afoot="' + esc(cp.id) + '" ' + yb + '>' + X.fmt(colA[cp.id] || 0) + '</td>'; }).join('') + '<td data-agrand="1" ' + yb + '>' + X.fmt(grandA) + '</td><td colspan="2" style="border:1px solid #cfd8c8"></td></tr>';
       // 合併出貨列（直接放在表格最下面）：勾選上面的到貨日，這一列就即時顯示加總；選好合併後的預計到貨日，按「建立合併叫貨」
       var mtd = 'style="background:#fff3cf;padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap;font-weight:700"';
       var mergeRow = '<tr data-mrow="' + key + '"><td style="background:#fff3cf;padding:6px 10px;border:1px solid #cfd8c8;text-align:center;white-space:nowrap;font-weight:700">合併出貨<div class="small" style="font-weight:400" data-mcount>勾選上面的到貨日</div></td>' +
-        cols.map(function (cp, j) { return '<td data-mest="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-msub ' + mtd + '>—</td>' +
+        cols.map(function (cp, j) { return '<td data-mest="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-msub ' + mtd + '>—</td><td style="background:#fff3cf;border:1px solid #cfd8c8"></td>' +
         cols.map(function (cp, j) { return '<td data-mact="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-masub ' + mtd + '>—</td>' +
-        '<td colspan="3" style="background:#fff3cf;padding:4px 8px;border:1px solid #cfd8c8"><button type="button" class="btn primary" data-act="merge-make" data-v="' + key + '" disabled style="min-height:30px;padding:2px 10px">合併成一列</button> <span class="small">（只合併顯示，不影響叫貨）</span></td></tr>';
+        '<td colspan="2" style="background:#fff3cf;padding:4px 8px;border:1px solid #cfd8c8"><button type="button" class="btn primary" data-act="merge-make" data-v="' + key + '" disabled style="min-height:30px;padding:2px 10px">合併成一列</button> <span class="small">（只合併顯示，不影響叫貨）</span></td></tr>';
       var view = []; // 匯出用：照畫面的順序，合併的列併成一列
       rows.forEach(function (st0) { var g = groupOf[st0]; if (g) { if (g[0] === st0 && mergedExp[st0]) view.push(mergedExp[st0]); } else { var xr = xrows.find(function (r) { return r.start === st0; }); if (xr) view.push(xr); } });
       var partsByItem = {};
-      if (key === 'egg') [P, O].forEach(function (PP) { Object.keys(PP.rows).forEach(function (s0) { ((PP.rows[s0] && PP.rows[s0].items) || []).forEach(function (it) { var k0 = (it.single ? 's:' : 'g:') + it.name; if (!partsByItem[k0] && it.parts) partsByItem[k0] = it.parts; }); }); });
+      [P, O].forEach(function (PP) { Object.keys(PP.rows).forEach(function (s0) { ((PP.rows[s0] && PP.rows[s0].items) || []).forEach(function (it) { var k0 = kp + (it.single ? 's:' : 'g:') + it.name; if (!partsByItem[k0] && it.parts) partsByItem[k0] = it.parts; }); }); });
       xpExp[key] = { partsByItem: partsByItem, view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
-      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">預估量備註</th><th ' + thS + ' rowspan="2">實際量備註</th></tr>' +
+      return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' rowspan="2">預估量備註</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">實際量備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
     };
@@ -800,7 +829,7 @@
     } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（蛋捲會自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（蛋捲每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物拆解成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>費雪、蛋捲兩張的預估量備註都會自動填入這一批的禮盒盒數和單支條數</b>。匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -900,7 +929,8 @@
           recM.qty = Math.max(0, Number(rawM) || 0); recM.by = X.userName(); recM.at = Date.now();
         }
         var trM = e.target.closest('tr'), effv = function (i) { return String(i.value).trim() !== '' ? (Number(i.value) || 0) : (Number(i.getAttribute('placeholder')) || 0); };
-        if (isItem && decomposeActuals('mitem', 'mact', dm.week, 'egg|')) {
+        var mk = String(dm.fid).split('|')[0];
+        if (isItem && decomposeActuals(mk, 'mitem', 'mact', dm.week, mk + '|')) {
           var arrM2 = X.get('deliveryActuals'), sidM2 = seasonId();
           trM.querySelectorAll('input[data-mact]').forEach(function (i) { var r2 = arrM2.find(function (x) { return x && x.group === 'mact' && x.week === dm.week && String(x.singleId) === String(i.dataset.fid) && (x.seasonId || '') === sidM2; }); i.value = r2 ? r2.qty : ''; });
           X.toast('已把品項實際量拆解到各口味的實際下定量');
@@ -908,7 +938,7 @@
         X.save({ silent: true });
         var sM = 0; trM.querySelectorAll('input[data-mact]').forEach(function (i) { sM += effv(i); });
         var sa = trM.querySelector('[data-masub]'); if (sa) sa.textContent = X.fmt(sM);
-        var gM = 0; trM.querySelectorAll('input[data-miact]').forEach(function (i) { if (String(i.dataset.item).indexOf('g:') === 0) gM += effv(i); });
+        var gM = 0; trM.querySelectorAll('input[data-miact]').forEach(function (i) { if (/^F?g:/.test(String(i.dataset.item))) gM += effv(i); });
         var gs = trM.querySelector('[data-misum]'); if (gs) gs.textContent = X.fmt(gM);
       }
       else if (e.target && e.target.dataset && e.target.dataset.iact) {
@@ -919,9 +949,10 @@
           if (!recI) { recI = { id: X.uid('da'), seasonId: sidI, group: 'item', week: di.week, singleId: String(di.item) }; arrI.push(recI); }
           recI.qty = Math.max(0, Number(rawI) || 0); recI.by = X.userName(); recI.at = Date.now();
         }
-        if (decomposeActuals('item', 'egg', di.week, '')) {
+        var xk = di.xk === 'fee' ? 'fee' : 'egg';
+        if (decomposeActuals(xk, 'item', xk, di.week, '')) {
           var arrI2 = X.get('deliveryActuals'), trI = e.target.closest('tr'), tblI = e.target.closest('table');
-          trI.querySelectorAll('input[data-dact="egg"]').forEach(function (i) { var r2 = arrI2.find(function (x) { return x && x.group === 'egg' && x.week === di.week && String(x.singleId) === String(i.dataset.single) && (x.seasonId || '') === sidI; }); i.value = r2 ? r2.qty : ''; });
+          trI.querySelectorAll('input[data-dact="' + xk + '"]').forEach(function (i) { var r2 = arrI2.find(function (x) { return x && x.group === xk && x.week === di.week && String(x.singleId) === String(i.dataset.single) && (x.seasonId || '') === sidI; }); i.value = r2 ? r2.qty : ''; });
           X.save({ silent: true });
           try { if (syncActualOrders()) { var lw2 = el.querySelector('#xpPoList'); if (lw2) lw2.innerHTML = poListHtml(); } } catch (e3) { console.warn(e3); }
           var colT2 = {}, gA2 = 0;
@@ -936,7 +967,7 @@
           X.toast('已把品項實際量拆解到各口味的實際下定量');
         }
         X.save({ silent: true });
-        var sumI = 0; el.querySelectorAll('input[data-iact][data-week="' + di.week + '"]').forEach(function (i) { if (String(i.dataset.item).indexOf('g:') === 0) sumI += Number(i.value) || 0; });
+        var sumI = 0; el.querySelectorAll('input[data-iact][data-week="' + di.week + '"]').forEach(function (i) { if (/^F?g:/.test(String(i.dataset.item))) sumI += Number(i.value) || 0; });
         var spI = el.querySelector('[data-isum="' + di.week + '"]'); if (spI) spI.textContent = X.fmt(sumI);
       }
       else if (e.target && e.target.dataset && e.target.dataset.poeta) {
