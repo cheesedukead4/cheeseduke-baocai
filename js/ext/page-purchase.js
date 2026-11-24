@@ -321,7 +321,7 @@
       var rec = arr.find(function (x) { return x && x.group === targetGroup && x.week === week && String(x.singleId) === fid && (x.seasonId || '') === sid; });
       if (qty > 0) {
         if (!rec) { rec = { id: X.uid('da'), seasonId: sid, group: targetGroup, week: week, singleId: fid }; arr.push(rec); }
-        rec.qty = qty; rec.by = X.userName(); rec.at = Date.now();
+        rec.qty = qty; rec.by = X.userName(); rec.at = Date.now(); rec.auto = 1;
       } else if (rec) arr.splice(arr.indexOf(rec), 1);
     });
     return true;
@@ -576,14 +576,13 @@
       entries.forEach(function (e) {
         if (e.r.single || !(e.boxes > 0)) return;
         if (e.r.egg) eggTotals[e.g.start] = (eggTotals[e.g.start] || 0) + e.boxes;
-        else if (partsOf(e, false).length) feeTotals[e.g.start] = (feeTotals[e.g.start] || 0) + e.boxes;
       });
       entries.forEach(function (e) {
         var r = e.r, g = e.g, boxes = e.boxes;
         // 禮盒（盒）與單賣單條（單支，條）：蛋捲、費雪各自填進這個到貨日的備註；parts＝每盒（每條）含哪些口味、各幾條（實際量回算用）
         var itParts = partsOf(e, !!r.egg);
-        if (r.egg || itParts.length) {
-          var tk = r.egg ? 'egg' : 'fee', er = piv[tk].rows[g.start] || (piv[tk].rows[g.start] = { start: g.start, end: g.end, v: {} });
+        if (r.egg) {
+          var tk = 'egg', er = piv[tk].rows[g.start] || (piv[tk].rows[g.start] = { start: g.start, end: g.end, v: {} });
           (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single, parts: itParts.map(function (pt) { return { id: String(pt.single.id), q: X.num(pt.qty) }; }) });
         }
         e.ps.forEach(function (pt) {
@@ -609,8 +608,10 @@
       return '<td style="padding:6px 10px;border:1px solid #cfd8c8;text-align:right;white-space:nowrap;' + (extraStyle || '') + REDBG + '"><span style="' + RED + '">' + X.fmt(cv) + '</span><div style="color:#c00000;font-size:.8em;font-weight:400">原 ' + X.fmt(ov) + '</div></td>';
     };
     // 實際下定量（db.deliveryActuals：{ seasonId, group, week（區間起）, singleId（口味）, qty }）：採購實際下訂的條數，直接填
-    var actualMap = {};
-    X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === seasonId()) actualMap[a.group + '|' + a.week + '|' + a.singleId] = X.num(a.qty); });
+    var actualMap = {}, autoAct = {}; // autoAct：由「實際量備註」的禮盒數回算出來的口味實際下定量（淡黃底）
+    var AUTO_TIP = '由實際量備註的禮盒數回算（可以手動再改）';
+    var autoTd = function (k) { return autoAct[k] ? ' title="' + AUTO_TIP + '" style="padding:2px 4px;border:1px solid #cfd8c8;background:#fff3cf"' : ' style="padding:2px 4px;border:1px solid #cfd8c8"'; };
+    X.get('deliveryActuals').forEach(function (a) { if (a && (a.seasonId || '') === seasonId()) { actualMap[a.group + '|' + a.week + '|' + a.singleId] = X.num(a.qty); if (a.auto) autoAct[a.group + '|' + a.week + '|' + a.singleId] = 1; } });
     var pivotHtml = function (key, title) {
       var P = nowP.piv[key], O = orgP.piv[key], colMap = {}, kp = key === 'fee' ? 'F' : '', totN = key === 'egg' ? nowP.eggTotals : nowP.feeTotals, totO = key === 'egg' ? orgP.eggTotals : orgP.feeTotals;
       Object.keys(P.cols).forEach(function (k) { colMap[k] = P.cols[k]; });
@@ -663,7 +664,7 @@
           }).join('');
           itemActHtml = actHtmlArr.join('');
           if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '</div>';
-          itemActHtml += '<div style="font-weight:700">實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
+          if (ord.length) itemActHtml += '<div style="font-weight:700">實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
         }
         if (egT > 0 || egO > 0) plainTotal = '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒';
         if (plainAct.length) plainTotalA = '實際合計 ' + X.fmt(itemActSum) + ' 盒';
@@ -676,7 +677,7 @@
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
           '<td style="' + tdb + 'white-space:normal">' + (notes ? '<div>' + esc(notes) + '</div>' : '') + itemHtml + '<input type="text" data-dnote="m' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('m' + key, g[0])) + '" maxlength="100" placeholder="合併預估量備註" aria-label="合併預估量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td>' +
-          cols.map(function (cp, j) { return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
+          cols.map(function (cp, j) { return '<td' + autoTd('mact|' + g0 + '|' + key + '|' + cp.id) + '><input type="number" min="0" step="any" inputmode="numeric" data-mact="1" data-week="' + esc(g0) + '" data-fid="' + esc(key + '|' + cp.id) + '" value="' + (mOv[j] != null ? esc(mOv[j]) : '') + '" placeholder="' + (sumA[j] != null ? esc(sumA[j]) : '實際') + '" aria-label="' + esc((cp.name || label(cp)) + ' 合併後實際下定量') + '" style="width:100%;min-width:46px;box-sizing:border-box;text-align:right;border:0;background:transparent;font:inherit"></td>'; }).join('') +
           '<td data-masub style="' + yel + tdb + 'text-align:right;white-space:nowrap">' + X.fmt(subA) + '</td>' +
           '<td style="' + tdb + 'text-align:center">' + esc(ranges) + '</td>' +
           '<td style="' + tdb + 'white-space:normal;background:#f4f9fd">' + (notesA ? '<div>' + esc(notesA) + '</div>' : '') + itemActHtml + '<input type="text" data-dnote="mra' + key + '" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('mra' + key, g[0])) + '" maxlength="100" placeholder="合併實際量備註" aria-label="合併實際量備註" style="width:100%;min-width:0;box-sizing:border-box;border:0;border-top:1px dashed #cfd8c8;background:transparent;font:inherit;margin-top:4px"></td></tr>';
@@ -696,7 +697,7 @@
         var atds = cols.map(function (cp) {
           var k = key + '|' + r.start + '|' + cp.id, av = k in actualMap ? actualMap[k] : null, est = r.v[cp.id] || 0;
           if (av != null) { subA += av; colA[cp.id] = (colA[cp.id] || 0) + av; }
-          return '<td style="padding:2px 4px;border:1px solid #cfd8c8"><input type="number" min="0" step="any" inputmode="numeric" data-dact="' + key + '" data-week="' + esc(r.start) + '" data-single="' + esc(cp.id) + '" value="' + (av != null ? esc(av) : '') + '" placeholder="' + esc(est) + '" aria-label="' + esc((cp.name || label(cp)) + ' 實際下定量') + '" style="width:92px;text-align:right;border:0;background:transparent;font:inherit"></td>';
+          return '<td' + autoTd(k) + '><input type="number" min="0" step="any" inputmode="numeric" data-dact="' + key + '" data-week="' + esc(r.start) + '" data-single="' + esc(cp.id) + '" value="' + (av != null ? esc(av) : '') + '" placeholder="' + esc(est) + '" aria-label="' + esc((cp.name || label(cp)) + ' 實際下定量') + '" style="width:92px;text-align:right;border:0;background:transparent;font:inherit"></td>';
         }).join('');
         grandA += subA;
         var autoNote = '', autoAct = '', plainArr = [], plainAct = [], totalPlain = '', totalPlainAct = '', actSum = 0, actLines = [];
@@ -829,7 +830,7 @@
     } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>費雪、蛋捲兩張的預估量備註都會自動填入這一批的禮盒盒數和單支條數</b>。匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -926,14 +927,15 @@
         if (rawM === '') { if (recM) arrM.splice(arrM.indexOf(recM), 1); }
         else {
           if (!recM) { recM = { id: X.uid('da'), seasonId: sidM, group: gname, week: dm.week, singleId: String(dm.fid) }; arrM.push(recM); }
-          recM.qty = Math.max(0, Number(rawM) || 0); recM.by = X.userName(); recM.at = Date.now();
+          recM.qty = Math.max(0, Number(rawM) || 0); recM.by = X.userName(); recM.at = Date.now(); if (!isItem) delete recM.auto;
         }
+        if (!isItem) { e.target.parentElement.style.background = ''; e.target.parentElement.title = ''; }
         var trM = e.target.closest('tr'), effv = function (i) { return String(i.value).trim() !== '' ? (Number(i.value) || 0) : (Number(i.getAttribute('placeholder')) || 0); };
         var mk = String(dm.fid).split('|')[0];
         if (isItem && decomposeActuals(mk, 'mitem', 'mact', dm.week, mk + '|')) {
           var arrM2 = X.get('deliveryActuals'), sidM2 = seasonId();
-          trM.querySelectorAll('input[data-mact]').forEach(function (i) { var r2 = arrM2.find(function (x) { return x && x.group === 'mact' && x.week === dm.week && String(x.singleId) === String(i.dataset.fid) && (x.seasonId || '') === sidM2; }); i.value = r2 ? r2.qty : ''; });
-          X.toast('已把品項實際量拆解到各口味的實際下定量');
+          trM.querySelectorAll('input[data-mact]').forEach(function (i) { var r2 = arrM2.find(function (x) { return x && x.group === 'mact' && x.week === dm.week && String(x.singleId) === String(i.dataset.fid) && (x.seasonId || '') === sidM2; }); i.value = r2 ? r2.qty : ''; i.parentElement.style.background = r2 && r2.auto ? '#fff3cf' : ''; i.parentElement.title = r2 && r2.auto ? AUTO_TIP : ''; });
+          X.toast('已把品項實際量回算到各口味的實際下定量（淡黃底）');
         }
         X.save({ silent: true });
         var sM = 0; trM.querySelectorAll('input[data-mact]').forEach(function (i) { sM += effv(i); });
@@ -952,7 +954,7 @@
         var xk = di.xk === 'fee' ? 'fee' : 'egg';
         if (decomposeActuals(xk, 'item', xk, di.week, '')) {
           var arrI2 = X.get('deliveryActuals'), trI = e.target.closest('tr'), tblI = e.target.closest('table');
-          trI.querySelectorAll('input[data-dact="' + xk + '"]').forEach(function (i) { var r2 = arrI2.find(function (x) { return x && x.group === xk && x.week === di.week && String(x.singleId) === String(i.dataset.single) && (x.seasonId || '') === sidI; }); i.value = r2 ? r2.qty : ''; });
+          trI.querySelectorAll('input[data-dact="' + xk + '"]').forEach(function (i) { var r2 = arrI2.find(function (x) { return x && x.group === xk && x.week === di.week && String(x.singleId) === String(i.dataset.single) && (x.seasonId || '') === sidI; }); i.value = r2 ? r2.qty : ''; i.parentElement.style.background = r2 && r2.auto ? '#fff3cf' : ''; i.parentElement.title = r2 && r2.auto ? AUTO_TIP : ''; });
           X.save({ silent: true });
           try { if (syncActualOrders()) { var lw2 = el.querySelector('#xpPoList'); if (lw2) lw2.innerHTML = poListHtml(); } } catch (e3) { console.warn(e3); }
           var colT2 = {}, gA2 = 0;
@@ -964,7 +966,7 @@
           });
           tblI.querySelectorAll('[data-afoot]').forEach(function (c0) { c0.textContent = X.fmt(colT2[c0.dataset.afoot] || 0); });
           var gc2 = tblI.querySelector('[data-agrand]'); if (gc2) gc2.textContent = X.fmt(gA2);
-          X.toast('已把品項實際量拆解到各口味的實際下定量');
+          X.toast('已把品項實際量回算到各口味的實際下定量（淡黃底）');
         }
         X.save({ silent: true });
         var sumI = 0; el.querySelectorAll('input[data-iact][data-week="' + di.week + '"]').forEach(function (i) { if (/^F?g:/.test(String(i.dataset.item))) sumI += Number(i.value) || 0; });
@@ -981,8 +983,9 @@
         else {
           var nv = Math.max(0, Number(raw) || 0);
           if (!recA) { recA = { id: X.uid('da'), seasonId: sidA, group: d.dact, week: d.week, singleId: String(d.single) }; arrA.push(recA); }
-          recA.qty = nv; recA.by = X.userName(); recA.at = Date.now();
+          recA.qty = nv; recA.by = X.userName(); recA.at = Date.now(); delete recA.auto;
         }
+        e.target.parentElement.style.background = ''; e.target.parentElement.title = '';
         X.save({ silent: true });
         try { if (syncActualOrders()) { var lw = el.querySelector('#xpPoList'); if (lw) lw.innerHTML = poListHtml(); } } catch (e1) { console.warn(e1); }
         var tbl = e.target.closest('table'), colT = {}, gA = 0;
