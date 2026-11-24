@@ -215,19 +215,19 @@
   function xpSheet(key) {
     var d = xpExp[key];
     if (!d) return null;
-    var nc = d.cols.length, H = function (t) { return { v: t, s: 'h' }; }, num = function (v) { return { v: v, s: 'i' }; };
+    var vrows = d.view || d.rows, nc = d.cols.length, H = function (t) { return { v: t, s: 'h' }; }, num = function (v) { return { v: v, s: 'i' }; };
     var cEst0 = 2, cSub = 2 + nc, cAct0 = 3 + nc, cSubA = 3 + 2 * nc, cNote = 4 + 2 * nc;
     var head = [H('到貨日'), H('販售區間')].concat(d.cols.map(function (n) { return H('預估量｜' + n); }), [H('預估量｜每周小計')], d.cols.map(function (n) { return H('實際下定量｜' + n); }), [H('實際下定量｜小計'), H('備註')]);
     var rows = [head];
-    d.rows.forEach(function (r, i) {
+    vrows.forEach(function (r, i) {
       var rr = i + 2, se = r.est.reduce(function (t, v) { return t + v; }, 0), sa = r.act.reduce(function (t, v) { return t + (v || 0); }, 0);
       rows.push([r.day, r.range].concat(r.est.map(num), [{ v: se, f: 'SUM(' + xlCol(cEst0) + rr + ':' + xlCol(cEst0 + nc - 1) + rr + ')', s: 'i' }],
         r.act.map(function (v) { return v == null ? '' : num(v); }), [{ v: sa, f: 'SUM(' + xlCol(cAct0) + rr + ':' + xlCol(cAct0 + nc - 1) + rr + ')', s: 'i' }, r.note ? { v: r.note, s: 'w' } : '']));
     });
-    var last = d.rows.length + 1, foot = [{ v: '口味小計', s: 'b' }, ''];
+    var last = vrows.length + 1, foot = [{ v: '口味小計', s: 'b' }, ''];
     for (var c = cEst0; c <= cSubA; c++) {
       var tot = 0, j = c - cEst0;
-      d.rows.forEach(function (r, i) {
+      vrows.forEach(function (r, i) {
         var v = c < cSub ? r.est[j] : (c === cSub ? r.est.reduce(function (t, x) { return t + x; }, 0) : (c < cSubA ? (r.act[c - cAct0] || 0) : r.act.reduce(function (t, x) { return t + (x || 0); }, 0)));
         tot += v || 0;
       });
@@ -554,7 +554,7 @@
       var colTot = {}, ocolTot = {}, grand = 0, ogrand = 0, colA = {}, grandA = 0;
       var xrows = [];
       // 合併顯示：勾選幾列後按「合併成一列」，這幾列在表上併成一列（預估、實際、小計加總；備註接在一起），按「分開」就還原。只是畫面上的合併，不動叫貨、不動交貨日、不動任何資料。
-      var groupOf = {};
+      var groupOf = {}, mergedExp = {};
       (st.merged[key] || []).forEach(function (g0) { var g1 = g0.filter(function (s0) { return starts[s0]; }).sort(); if (g1.length >= 2) g1.forEach(function (s0) { groupOf[s0] = g1; }); });
       var mergedRowHtml = function (g) {
         var tdb = 'padding:6px 10px;border:1px solid #cfd8c8;', gold = 'background:#fff3cf;';
@@ -570,7 +570,7 @@
         var notes = g.map(function (s0) { return noteOf(key, s0); }).filter(Boolean).join('；');
         var egT = key === 'egg' ? g.reduce(function (t, s0) { return t + (nowP.eggTotals[s0] || 0); }, 0) : 0, egO = key === 'egg' ? g.reduce(function (t, s0) { return t + (orgP.eggTotals[s0] || 0); }, 0) : 0;
         // 蛋捲的備註：每個禮盒、單支品項也跨列加總（預估；有填的實際也加總），一行一個品項
-        var itemHtml = '', itemActSum = 0;
+        var itemHtml = '', itemActSum = 0, plainItems = [], plainTotal = '';
         if (key === 'egg') {
           var agg = {}, ord = [];
           g.forEach(function (s0) {
@@ -581,9 +581,9 @@
           });
           itemHtml = ord.map(function (k) { return agg[k]; }).sort(function (a, b) { return ((a.single ? 1 : 0) - (b.single ? 1 : 0)) || ((b.cur || b.org) - (a.cur || a.org)); }).map(function (a) {
             var unit = a.single ? '條' : '盒', nm = a.single ? a.name + '單支' : a.name;
-            if (a.act != null && !a.single) itemActSum += a.act;
             var ik = (a.single ? 's:' : 'g:') + a.name, ov = ('mitem|' + g[0] + '|' + key + '|' + ik) in actualMap ? actualMap[('mitem|' + g[0] + '|' + key + '|' + ik)] : null, eff = ov != null ? ov : (a.act != null ? a.act : null);
             if (eff != null && !a.single) itemActSum += eff;
+            plainItems.push(nm + '（預估 ' + X.fmt(a.cur) + unit + (eff != null ? '，實際 ' + X.fmt(eff) + unit : '') + '）');
             var act = ' <input type="number" min="0" step="any" inputmode="numeric" data-miact="1" data-week="' + esc(g[0]) + '" data-fid="' + esc(key + '|' + ik) + '" data-item="' + esc(ik) + '" value="' + (ov != null ? esc(ov) : '') + '" placeholder="' + (a.act != null ? esc(a.act) : '實際') + '" aria-label="' + esc(nm + ' 合併後實際' + unit + '數') + '" style="width:66px;text-align:right;padding:1px 4px;border:1px solid #cfd8c8;border-radius:5px;background:#eaf3fb;font:inherit;font-size:13px;font-weight:400"> <span class="small" style="font-weight:400">' + unit + '</span>';
             if (a.cur === a.org) return '<div>' + esc(nm) + '（預估 ' + X.fmt(a.cur) + unit + '）' + act + '</div>';
             pivDiff = true;
@@ -591,6 +591,11 @@
           }).join('');
           if (egT > 0 || egO > 0) itemHtml += '<div style="font-weight:700">' + (egT === egO ? '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒' : '<span style="' + RED + '">禮盒預估總盒數 現 ' + X.fmt(egT) + ' 盒，原 ' + X.fmt(egO) + ' 盒</span>') + '　實際合計 <span data-misum>' + X.fmt(itemActSum) + '</span> 盒</div>';
         }
+        if (key === 'egg' && (egT > 0 || egO > 0)) plainTotal = '禮盒預估總盒數 ' + X.fmt(egT) + ' 盒，實際合計 ' + X.fmt(itemActSum) + ' 盒';
+        // 匯出 Excel 用：合併列的內容（預估加總、合併列填的實際量、品項加總＋實際、合併後的到貨日）
+        mergedExp[g[0]] = { start: g[0], day: dayText(noteOf('md' + key, g[0]) || arrivalOf(g[0])) + '（合併：' + days + '）', range: ranges, est: sumV,
+          act: cols.map(function (cp, j) { return mOv[j] != null ? mOv[j] : sumA[j]; }),
+          note: [notes, noteOf('m' + key, g[0])].concat(plainItems, plainTotal ? [plainTotal] : []).filter(Boolean).join('\n') };
         return '<tr data-mgroup="' + esc(g[0]) + '"><td style="' + gold + tdb + 'font-weight:700;text-align:center;white-space:normal"><input type="date" data-dnote="md' + key + '" data-mday="1" data-week="' + esc(g[0]) + '" value="' + esc(noteOf('md' + key, g[0]) || arrivalOf(g[0])) + '" aria-label="合併後的到貨日期（可以修改）" title="合併後的到貨日期，可以修改（只是這個畫面的日期，不連動叫貨）" style="width:100%;box-sizing:border-box;border:1px solid #cfd8c8;border-radius:5px;padding:1px;font:inherit;font-size:11.5px;font-weight:700;background:#fff"><div class="small" style="font-weight:400">合併：' + esc(days) + '</div><div style="font-weight:400"><span class="small">已合併 ' + g.length + ' 列</span> <button type="button" class="btn gray" data-act="merge-split" data-v="' + key + '|' + esc(g[0]) + '" style="min-height:26px;padding:1px 8px;font-size:12px">分開</button></div></td>' +
           cols.map(function (cp, j) { return cell(sumV[j], sumO[j], '', 'style="background:#fff9e6;' + tdb + 'text-align:right;white-space:nowrap"'); }).join('') +
           cell(sub, osub, yel, 'style="' + yel + tdb + 'text-align:right;white-space:nowrap"') +
@@ -665,7 +670,9 @@
         cols.map(function (cp, j) { return '<td data-mest="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-msub ' + mtd + '>—</td>' +
         cols.map(function (cp, j) { return '<td data-mact="' + j + '" ' + mtd + '>—</td>'; }).join('') + '<td data-masub ' + mtd + '>—</td>' +
         '<td colspan="2" style="background:#fff3cf;padding:4px 8px;border:1px solid #cfd8c8"><button type="button" class="btn primary" data-act="merge-make" data-v="' + key + '" disabled style="min-height:30px;padding:2px 10px">合併成一列</button> <span class="small">（只合併顯示，不影響叫貨）</span></td></tr>';
-      xpExp[key] = { title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
+      var view = []; // 匯出用：照畫面的順序，合併的列併成一列
+      rows.forEach(function (st0) { var g = groupOf[st0]; if (g) { if (g[0] === st0 && mergedExp[st0]) view.push(mergedExp[st0]); } else { var xr = xrows.find(function (r) { return r.start === st0; }); if (xr) view.push(xr); } });
+      xpExp[key] = { view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
       return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
@@ -1043,7 +1050,7 @@
     else if (a === 'detail-clear') { st.dWeek = ''; st.dItem = ''; st.dDept = ''; render(el); }
     else if (a === 'batch') batchDialog();
     else if (a === 'adj') { var row = c.rows.find(function (r) { return String(r.id) === id; }); if (row) adjustDialog(row); }
-    else if (a === 'xp-export') xpExport(b.dataset.v);
+    else if (a === 'xp-export') { render(el); xpExport(b.dataset.v); } // 先重畫一次，匯出才會是剛填完的最新內容（填實際量、備註時畫面只局部更新，不重畫整頁）
     else if (a === 'merge-make') mergeMake(el, b.dataset.v);
     else if (a === 'merge-split') {
       var ms = b.dataset.v.split('|'), sidS = seasonId(), da = X.ensure('deliveryActuals'), dn = X.ensure('deliveryNotes');
