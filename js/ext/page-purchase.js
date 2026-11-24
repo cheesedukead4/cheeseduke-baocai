@@ -263,6 +263,32 @@
   // （叫貨量＝那格填的實際下定量，沒填就用預估量），預計到貨日都改成合併後的那一天，首頁「預計進貨」就會顯示合併後的日期與加總量。
   // 這些叫貨紀錄有 autoKey（同交貨表帶入）和 mergeEta、mergeNote；「取消合併」會拿掉 mergeEta（沒有實際下定量的那筆會一併刪掉）。
   function mergeCount() { return Object.keys(st.mergeSel).filter(function (k) { return st.mergeSel[k]; }).length; }
+  // 蛋捲：把「實際量備註」裡每個品項填的實際量（禮盒盒數 × 每盒各口味條數＋單支條數），拆解成各口味的實際下定量。
+  // itemGroup／targetGroup：一般列 'item'→'egg'；合併列 'mitem'→'mact'（idPrefix 'egg|'）。只算有填的品項；有填任何一個品項才會動口味的實際下定量，回傳 true。
+  function decomposeActuals(itemGroup, targetGroup, week, idPrefix) {
+    var d = xpExp.egg;
+    if (!d || !d.partsByItem) return false;
+    var arr = X.ensure('deliveryActuals'), sid = seasonId(), tot = {}, any = false;
+    arr.forEach(function (x) {
+      if (!x || x.group !== itemGroup || x.week !== week || (x.seasonId || '') !== sid) return;
+      var ik = String(x.singleId);
+      if (idPrefix) { if (ik.indexOf(idPrefix) !== 0) return; ik = ik.slice(idPrefix.length); }
+      var ps = d.partsByItem[ik];
+      if (!ps) return;
+      any = true;
+      ps.forEach(function (p) { tot[p.id] = (tot[p.id] || 0) + X.num(x.qty) * p.q; });
+    });
+    if (!any) return false;
+    d.ids.forEach(function (id) {
+      var fid = (idPrefix || '') + String(id), qty = Math.round((tot[String(id)] || 0) * 100) / 100;
+      var rec = arr.find(function (x) { return x && x.group === targetGroup && x.week === week && String(x.singleId) === fid && (x.seasonId || '') === sid; });
+      if (qty > 0) {
+        if (!rec) { rec = { id: X.uid('da'), seasonId: sid, group: targetGroup, week: week, singleId: fid }; arr.push(rec); }
+        rec.qty = qty; rec.by = X.userName(); rec.at = Date.now();
+      } else if (rec) arr.splice(arr.indexOf(rec), 1);
+    });
+    return true;
+  }
   function mergeBarHtml() {
     return '<div id="xpMergeBar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0"><span class="small" style="min-width:64px;font-weight:700">合併顯示</span>' +
       '<span class="small">勾選表格裡的到貨日（同一張表內），按表格最下面「合併出貨」列的「合併成一列」，這幾列就併成一列顯示加總；按那一列的「分開」就還原。<b>只是畫面合併，不影響叫貨</b></span>' +
@@ -514,7 +540,7 @@
         var r = e.r, g = e.g, boxes = e.boxes;
         if (r.egg) { // 蛋捲的禮盒（盒）與單賣單條（單支，條）：填進這個到貨日的備註
           var er = piv.egg.rows[g.start] || (piv.egg.rows[g.start] = { start: g.start, end: g.end, v: {} });
-          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single });
+          (er.items = er.items || []).push({ name: r.p.name || label(r.p), boxes: boxes, extra: e.extra, single: r.single, parts: e.ps.filter(function (pt) { return X.isEggGift(pt.single); }).map(function (pt) { return { id: String(pt.single.id), q: X.num(pt.qty) }; }) });
         }
         e.ps.forEach(function (pt) {
           var P = piv[X.isEggGift(pt.single) ? 'egg' : 'fee'];
@@ -684,7 +710,9 @@
         '<td colspan="3" style="background:#fff3cf;padding:4px 8px;border:1px solid #cfd8c8"><button type="button" class="btn primary" data-act="merge-make" data-v="' + key + '" disabled style="min-height:30px;padding:2px 10px">合併成一列</button> <span class="small">（只合併顯示，不影響叫貨）</span></td></tr>';
       var view = []; // 匯出用：照畫面的順序，合併的列併成一列
       rows.forEach(function (st0) { var g = groupOf[st0]; if (g) { if (g[0] === st0 && mergedExp[st0]) view.push(mergedExp[st0]); } else { var xr = xrows.find(function (r) { return r.start === st0; }); if (xr) view.push(xr); } });
-      xpExp[key] = { view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
+      var partsByItem = {};
+      if (key === 'egg') [P, O].forEach(function (PP) { Object.keys(PP.rows).forEach(function (s0) { ((PP.rows[s0] && PP.rows[s0].items) || []).forEach(function (it) { var k0 = (it.single ? 's:' : 'g:') + it.name; if (!partsByItem[k0] && it.parts) partsByItem[k0] = it.parts; }); }); });
+      xpExp[key] = { partsByItem: partsByItem, view: view, title: title, cols: cols.map(function (cp) { return cp.name || label(cp); }), ids: cols.map(function (cp) { return cp.id; }), rows: xrows };
       return '<p style="margin:14px 0 6px"><b>' + title + '</b> <button type="button" class="btn gray" data-act="xp-export" data-v="' + key + '" style="min-height:28px;padding:1px 10px;font-size:13px;margin-left:8px">匯出 Excel</button></p><div class="tablewrap" style="overflow-x:auto"><table class="xp-pivot" style="border-collapse:collapse;min-width:100%;font-size:inherit;table-layout:fixed">' + xpColgroup(cols.length) + '<thead><tr><th ' + thS + ' rowspan="2">到貨日</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">預估量</th><th ' + thS + ' colspan="' + (cols.length + 1) + '">實際下定量</th><th ' + thS + ' rowspan="2">販售區間</th><th ' + thS + ' rowspan="2">預估量備註</th><th ' + thS + ' rowspan="2">實際量備註</th></tr>' +
         '<tr>' + cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>每周小計</th>' +
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
@@ -756,7 +784,7 @@
     } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（蛋捲會自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（蛋捲每個禮盒、單支可以填實際盒數／條數，自動加總；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（蛋捲會自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（蛋捲每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物拆解成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -854,8 +882,13 @@
           if (!recM) { recM = { id: X.uid('da'), seasonId: sidM, group: gname, week: dm.week, singleId: String(dm.fid) }; arrM.push(recM); }
           recM.qty = Math.max(0, Number(rawM) || 0); recM.by = X.userName(); recM.at = Date.now();
         }
-        X.save({ silent: true });
         var trM = e.target.closest('tr'), effv = function (i) { return String(i.value).trim() !== '' ? (Number(i.value) || 0) : (Number(i.getAttribute('placeholder')) || 0); };
+        if (isItem && decomposeActuals('mitem', 'mact', dm.week, 'egg|')) {
+          var arrM2 = X.get('deliveryActuals'), sidM2 = seasonId();
+          trM.querySelectorAll('input[data-mact]').forEach(function (i) { var r2 = arrM2.find(function (x) { return x && x.group === 'mact' && x.week === dm.week && String(x.singleId) === String(i.dataset.fid) && (x.seasonId || '') === sidM2; }); i.value = r2 ? r2.qty : ''; });
+          X.toast('已把品項實際量拆解到各口味的實際下定量');
+        }
+        X.save({ silent: true });
         var sM = 0; trM.querySelectorAll('input[data-mact]').forEach(function (i) { sM += effv(i); });
         var sa = trM.querySelector('[data-masub]'); if (sa) sa.textContent = X.fmt(sM);
         var gM = 0; trM.querySelectorAll('input[data-miact]').forEach(function (i) { if (String(i.dataset.item).indexOf('g:') === 0) gM += effv(i); });
@@ -868,6 +901,22 @@
         else {
           if (!recI) { recI = { id: X.uid('da'), seasonId: sidI, group: 'item', week: di.week, singleId: String(di.item) }; arrI.push(recI); }
           recI.qty = Math.max(0, Number(rawI) || 0); recI.by = X.userName(); recI.at = Date.now();
+        }
+        if (decomposeActuals('item', 'egg', di.week, '')) {
+          var arrI2 = X.get('deliveryActuals'), trI = e.target.closest('tr'), tblI = e.target.closest('table');
+          trI.querySelectorAll('input[data-dact="egg"]').forEach(function (i) { var r2 = arrI2.find(function (x) { return x && x.group === 'egg' && x.week === di.week && String(x.singleId) === String(i.dataset.single) && (x.seasonId || '') === sidI; }); i.value = r2 ? r2.qty : ''; });
+          X.save({ silent: true });
+          try { if (syncActualOrders()) { var lw2 = el.querySelector('#xpPoList'); if (lw2) lw2.innerHTML = poListHtml(); } } catch (e3) { console.warn(e3); }
+          var colT2 = {}, gA2 = 0;
+          tblI.querySelectorAll('tbody tr').forEach(function (tr) {
+            var sub2 = 0;
+            tr.querySelectorAll('input[data-dact]').forEach(function (i) { var v = Number(i.value) || 0; sub2 += v; colT2[i.dataset.single] = (colT2[i.dataset.single] || 0) + v; });
+            gA2 += sub2;
+            var sc2 = tr.querySelector('[data-asub]'); if (sc2) sc2.textContent = X.fmt(sub2);
+          });
+          tblI.querySelectorAll('[data-afoot]').forEach(function (c0) { c0.textContent = X.fmt(colT2[c0.dataset.afoot] || 0); });
+          var gc2 = tblI.querySelector('[data-agrand]'); if (gc2) gc2.textContent = X.fmt(gA2);
+          X.toast('已把品項實際量拆解到各口味的實際下定量');
         }
         X.save({ silent: true });
         var sumI = 0; el.querySelectorAll('input[data-iact][data-week="' + di.week + '"]').forEach(function (i) { if (String(i.dataset.item).indexOf('g:') === 0) sumI += Number(i.value) || 0; });
