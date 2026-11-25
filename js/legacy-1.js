@@ -1109,13 +1109,19 @@ function renderDashboard(){
 
  // 預計進貨：取「採購叫貨」裡還沒到貨的叫貨紀錄（最近的預計到貨日與數量），單條、包材都有；沒有叫貨就顯示「—」
  let etaAll={product:{},material:{}};try{if(typeof window.cmsPurchaseEta==='function')etaAll=window.cmsPurchaseEta()||etaAll;}catch(e){}
- const etaCell=(id,kind)=>{const e=(etaAll[kind]||{})[String(id)];if(!e)return '<td class="manual-cell" title="'+(kind==='gift'?'採購叫貨交貨表「實際量備註」沒有填這個禮盒的實際盒數（或到貨日都已經過了）':'採購叫貨裡沒有還沒到貨的叫貨')+'">—</td>';
-   const fd=x=>{const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(x||'');return m?Number(m[1])+'/'+Number(m[2]):x;};
+ const etaCell=(id,kind)=>{const e=(etaAll[kind]||{})[String(id)];if(!e)return '<td class="manual-cell eta-td" title="'+(kind==='gift'?'採購叫貨交貨表「實際量備註」沒有填這個禮盒的實際盒數（或到貨日都已經過了）':'採購叫貨裡沒有還沒到貨的叫貨')+'">—</td>';
+   // 日期一律「月/日(星期)」，數量靠右對齊；多個到貨日先收起，點一下展開成小表格
+   const WD=['日','一','二','三','四','五','六'];
+   const fd=x=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(x||'');return m?Number(m[2])+'/'+Number(m[3])+'('+WD[new Date(Date.UTC(+m[1],+m[2]-1,+m[3])).getUTCDay()]+')':(x||'');};
+   const fq=n=>Number(n).toLocaleString();
    const list=(e.list&&e.list.length)?e.list:[{date:e.date,qty:e.qty,overdue:e.overdue}];
-   const one=x=>fd(x.date)+'（'+Number(x.qty).toLocaleString()+'）'+(x.overdue?' <span class="small" style="color:var(--bad)">逾期</span>':'');
-   if(list.length<2)return '<td style="white-space:nowrap" title="'+(kind==='gift'?'採購叫貨「實際量備註」填的實際盒數，到貨日同交貨表':'採購叫貨：預計到貨日與叫貨量')+'">'+one(list[0])+'</td>';
-   // 多個到貨日：先只顯示最近一個，點開才列出全部（日期（數量））與合計
-   return '<td style="white-space:nowrap"><details class="eta-details"><summary style="cursor:pointer" title="點一下展開全部到貨日">'+one(list[0])+' <span class="small">＋'+(list.length-1)+'</span></summary><div style="margin-top:4px;line-height:1.7">'+list.map(x=>'<div>'+one(x)+'</div>').join('')+'<div class="small" style="border-top:1px solid var(--line);margin-top:2px;padding-top:2px">共 '+list.length+' 個到貨日，合計 '+Number(e.total!=null?e.total:list.reduce((t,x)=>t+x.qty,0)).toLocaleString()+'</div></div></details></td>';};
+   const tag=x=>x.overdue?'<span class="eta-late">逾期</span>':'';
+   const head=x=>'<span class="eta-d">'+fd(x.date)+'</span><span class="eta-q">'+fq(x.qty)+'</span>'+tag(x);
+   const tip=kind==='gift'?'採購叫貨「實際量備註」填的實際盒數，到貨日同交貨表':'採購叫貨：預計到貨日與叫貨量';
+   if(list.length<2)return '<td class="eta-td" title="'+tip+'"><div class="eta-row">'+head(list[0])+'</div></td>';
+   const total=e.total!=null?e.total:list.reduce((t,x)=>t+x.qty,0);
+   return '<td class="eta-td"><details class="eta-details"><summary class="eta-sum" title="點一下展開全部到貨日（'+tip+'）"><span class="eta-row">'+head(list[0])+'</span><span class="eta-more">＋'+(list.length-1)+'</span></summary>'+
+     '<table class="eta-table"><thead><tr><th>到貨日</th><th>數量</th></tr></thead><tbody>'+list.map(x=>'<tr'+(x.overdue?' class="late"':'')+'><td class="d">'+fd(x.date)+(x.overdue?' <span class="eta-late">逾期</span>':'')+'</td><td class="q">'+fq(x.qty)+'</td></tr>').join('')+'</tbody><tfoot><tr><td>合計（'+list.length+' 批）</td><td class="q">'+fq(total)+'</td></tr></tfoot></table></details></td>';};
  matBody.innerHTML=materials.length?materials.map((m,i)=>{
    const live=materialLiveInventory(m.id);
    const stock=live.total, demand=matDemand(m.id), safety=Number(m.safety)||0;

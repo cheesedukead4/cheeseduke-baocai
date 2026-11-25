@@ -395,3 +395,24 @@ table.home-t-gift th#gift-th-pre,table.home-t-gift th#gift-th-fc{min-width:140px
 .xp-pivot{table-layout:fixed!important}
 .xp-pivot td{vertical-align:middle}
 .xp-pivot input[data-mday]{width:100%!important;min-width:0!important;font-size:11.5px!important}
+
+
+/* 首頁「預計進貨」：日期＋數量對齊，多個到貨日收起、點一下展開成小表格 */
+td.eta-td{white-space:nowrap;vertical-align:middle;min-width:132px}
+.eta-row{display:inline-flex;align-items:baseline;gap:8px}
+.eta-d{display:inline-block;min-width:4.6em;text-align:left;font-variant-numeric:tabular-nums}
+.eta-q{display:inline-block;min-width:3em;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.eta-late{color:var(--bad,#c00000);font-size:.8em;margin-left:4px}
+.eta-details>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:nowrap;white-space:nowrap;align-items:center;gap:8px}
+.eta-details>summary::-webkit-details-marker{display:none}
+.eta-more{white-space:nowrap;flex:none;font-size:.78em;background:var(--cd-gold-soft,#f6ecd2);color:var(--cd-green,#0F3F25);border-radius:999px;padding:0 7px;line-height:1.6}
+.eta-details>summary::after{content:'▾';flex:none;font-size:.9em;color:var(--muted,#667)}
+.eta-details[open]>summary::after{content:'▴'}
+.eta-table{border-collapse:collapse;margin-top:6px;width:auto;min-width:150px;font-size:.92em;border:1px solid var(--line,#e3e7ef);border-radius:6px;overflow:hidden;background:#fff}
+.eta-table th{white-space:nowrap;background:var(--cd-green,#0F3F25);color:#fff;font-weight:600;padding:3px 8px;text-align:left;font-size:.9em}
+.eta-table th:last-child{text-align:right}
+.eta-table td{padding:3px 10px;border-top:1px solid var(--line,#e3e7ef);text-align:left;white-space:nowrap}
+.eta-table td.d{text-align:left!important}
+.eta-table td.q{text-align:right!important;font-weight:700;font-variant-numeric:tabular-nums}
+.eta-table tr.late td{background:#fff1f1}
+.eta-table tfoot td{background:#f6f1e3;font-weight:700}
