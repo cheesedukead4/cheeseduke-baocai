@@ -1109,7 +1109,13 @@ function renderDashboard(){
 
  // 預計進貨：取「採購叫貨」裡還沒到貨的叫貨紀錄（最近的預計到貨日與數量），單條、包材都有；沒有叫貨就顯示「—」
  let etaAll={product:{},material:{}};try{if(typeof window.cmsPurchaseEta==='function')etaAll=window.cmsPurchaseEta()||etaAll;}catch(e){}
- const etaCell=(id,kind)=>{const e=(etaAll[kind]||{})[String(id)];if(!e)return '<td class="manual-cell" title="採購叫貨裡沒有還沒到貨的叫貨">—</td>';const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(e.date||'');const d=m?Number(m[1])+'/'+Number(m[2]):e.date;return '<td style="white-space:nowrap" title="採購叫貨：預計到貨日與叫貨量'+(e.more?'；之後還有 '+e.more+' 個到貨日（看採購叫貨）':'')+'">'+d+'（'+Number(e.qty).toLocaleString()+'）'+(e.overdue?' <span class="small" style="color:var(--bad)">逾期</span>':'')+(e.more?' <span class="small">＋'+e.more+'</span>':'')+'</td>';};
+ const etaCell=(id,kind)=>{const e=(etaAll[kind]||{})[String(id)];if(!e)return '<td class="manual-cell" title="'+(kind==='gift'?'採購叫貨交貨表「實際量備註」沒有填這個禮盒的實際盒數（或到貨日都已經過了）':'採購叫貨裡沒有還沒到貨的叫貨')+'">—</td>';
+   const fd=x=>{const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(x||'');return m?Number(m[1])+'/'+Number(m[2]):x;};
+   const list=(e.list&&e.list.length)?e.list:[{date:e.date,qty:e.qty,overdue:e.overdue}];
+   const one=x=>fd(x.date)+'（'+Number(x.qty).toLocaleString()+'）'+(x.overdue?' <span class="small" style="color:var(--bad)">逾期</span>':'');
+   if(list.length<2)return '<td style="white-space:nowrap" title="'+(kind==='gift'?'採購叫貨「實際量備註」填的實際盒數，到貨日同交貨表':'採購叫貨：預計到貨日與叫貨量')+'">'+one(list[0])+'</td>';
+   // 多個到貨日：先只顯示最近一個，點開才列出全部（日期（數量））與合計
+   return '<td style="white-space:nowrap"><details class="eta-details"><summary style="cursor:pointer" title="點一下展開全部到貨日">'+one(list[0])+' <span class="small">＋'+(list.length-1)+'</span></summary><div style="margin-top:4px;line-height:1.7">'+list.map(x=>'<div>'+one(x)+'</div>').join('')+'<div class="small" style="border-top:1px solid var(--line);margin-top:2px;padding-top:2px">共 '+list.length+' 個到貨日，合計 '+Number(e.total!=null?e.total:list.reduce((t,x)=>t+x.qty,0)).toLocaleString()+'</div></div></details></td>';};
  matBody.innerHTML=materials.length?materials.map((m,i)=>{
    const live=materialLiveInventory(m.id);
    const stock=live.total, demand=matDemand(m.id), safety=Number(m.safety)||0;
@@ -1153,13 +1159,13 @@ function renderDashboard(){
      return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="${stockG==null?'manual-cell':''}" title="${stockG==null?'總表沒有這個品號，或還沒同步現貨，先當 0':'入口網站總表的剩餘庫存現貨'}">${stockG==null?'—':stockG}</td><td>${incoming}</td><td class="${preo==null?'manual-cell':''}" title="${preo==null?'還沒同步入口網站訂單，沒辦法依時間區間算':(gr?'入口網站訂單，預訂交貨日在選的區間內':'')}">${preo==null?'—':preo}</td>
-    ${fcCell}<td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td></tr>`;
+    ${fcCell}<td class="manual-cell">—</td><td class="${need<0?'neg':''}">${need}</td><td class="manual-cell">—</td>${etaCell(p.id,'gift')}</tr>`;
    }
    return `<tr><td class="sort-action-col">${dragHandle('gift',p.id)}</td>
     <td class="code-col">${p.code||''}</td><td class="name-cell">${p.name||''}</td>
     <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td>
-    <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td><td class="manual-cell">—</td></tr>`;
- }).join(''):'<tr><td colspan="9" class="empty">尚無禮盒資料</td></tr>';
+    <td class="manual-cell">—</td><td class="manual-cell">—</td><td>${preorder}</td><td class="manual-cell">—</td>${etaCell(p.id,'gift')}</tr>`;
+ }).join(''):'<tr><td colspan="11" class="empty">尚無禮盒資料</td></tr>';
  try{if(typeof window.renderGiftAdjust==='function')window.renderGiftAdjust();}catch(e){console.warn('銷售預估調整顯示失敗',e);}
 
  renderFoldingRecords();

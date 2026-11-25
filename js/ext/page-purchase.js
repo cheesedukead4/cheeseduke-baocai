@@ -1254,12 +1254,14 @@
     _fn: { compute: compute }
   });
   // ---------- 首頁「預計進貨」：取「叫貨」裡還沒到貨的紀錄 ----------
-  // 每個單條、每個包材：最近的預計到貨日與當天的叫貨量（同一天的加總）；已過期還沒到的也列（標逾期）。回傳 { product: { 單條 id: info }, material: { 包材 id: info } }
-  // info＝{ date, qty, more（之後還有幾個到貨日）, overdue }
+  // 每個單條、每個包材：所有還沒到貨的預計到貨日與當天的叫貨量（同一天的加總，依日期排）；已過期還沒到的也列（標逾期）。
+  // 蛋捲禮盒（gift）：取交貨表「實際量備註」每個禮盒填的實際盒數，到貨日＝那一列的到貨日；只列今天（含）以後的。
+  // 回傳 { product: { 單條 id: info }, material: { 包材 id: info }, gift: { 禮盒 id: info } }
+  // info＝{ date, qty, more（之後還有幾個到貨日）, overdue, list: [{ date, qty, overdue }]（全部到貨日）, total }
   window.cmsPurchaseEta = function () {
-    var out = { product: {}, material: {} };
+    var out = { product: {}, material: {}, gift: {} };
     try {
-      var today = X.today(), g = { product: {}, material: {} };
+      var today = X.today(), g = { product: {}, material: {}, gift: {} };
       X.get('purchaseOrders').forEach(function (o) {
         if (!o || o.status === 'received' || !o.eta || !(X.num(o.qty) > 0)) return;
         var t = poTarget(o), box = g[t.kind === 'm' ? 'material' : 'product'];
@@ -1267,10 +1269,22 @@
         var d = box[t.id] || (box[t.id] = {});
         d[o.eta] = (d[o.eta] || 0) + X.num(o.qty);
       });
-      ['product', 'material'].forEach(function (k) {
+      // 蛋捲禮盒：實際量備註（db.deliveryActuals，group＝'item'，singleId＝'g:禮盒名'，week＝預估區間起）
+      var sid = seasonId(), giftByName = {};
+      X.products().forEach(function (p) { if (p && !isSingle(p) && p.name && !giftByName[p.name]) giftByName[p.name] = p; });
+      X.get('deliveryActuals').forEach(function (a) {
+        if (!a || a.group !== 'item' || (a.seasonId || '') !== sid || String(a.singleId).indexOf('g:') !== 0 || !(X.num(a.qty) > 0)) return;
+        var p = giftByName[String(a.singleId).slice(2)], day = arrivalOf(a.week);
+        if (!p || !day || day < today) return;
+        var d = g.gift[p.id] || (g.gift[p.id] = {});
+        d[day] = (d[day] || 0) + X.num(a.qty);
+      });
+      ['product', 'material', 'gift'].forEach(function (k) {
         Object.keys(g[k]).forEach(function (id) {
           var ds = Object.keys(g[k][id]).sort();
-          out[k][id] = { date: ds[0], qty: g[k][id][ds[0]], more: ds.length - 1, overdue: ds[0] < today };
+          out[k][id] = { date: ds[0], qty: g[k][id][ds[0]], more: ds.length - 1, overdue: ds[0] < today,
+            list: ds.map(function (dd) { return { date: dd, qty: g[k][id][dd], overdue: dd < today }; }),
+            total: ds.reduce(function (t, dd) { return t + g[k][id][dd]; }, 0) };
         });
       });
     } catch (e) { console.warn('預計進貨計算失敗', e); }
