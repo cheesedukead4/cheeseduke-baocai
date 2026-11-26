@@ -30,7 +30,7 @@
   var esc = X.esc;
   var xpExp = {}; // 目前畫面上交貨表（費雪、蛋捲）的內容，匯出 Excel 用
   var poSug = {}; // 叫貨表單自動帶入：'YYYY-MM-DD（到貨日）|單條 id' → { qty, est, actual }
-  var st = { week: '', logPid: '', item: '', basis: 'target', dWeek: '', dItem: '', dDept: '', dOpen: false, mergeSel: {}, xpWhat: 'both' }; // basis：採購交貨表顯示哪一種數量（target 目標叫貨｜u100｜u70） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
+  var st = { week: '', logPid: '', item: '', basis: 'u100', pct: 90, dWeek: '', dItem: '', dDept: '', dOpen: false, mergeSel: {}, xpWhat: 'both' }; // basis：採購交貨表顯示哪一種數量（u100 100%＝預設｜custom 自訂 %（st.pct）｜target 目標叫貨） // week：預估期間／到貨日篩選（選到的那一週的區間起，空＝全部；兩個下拉選單選的是同一週）；item：只看某個品項；logPid：異動歷程只看哪個品項
 
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, '').toUpperCase(); }
   function isSingle(p) { return String((p && p.category) || '').trim() === '單條'; }
@@ -569,7 +569,7 @@
           sdepts.forEach(function (k) { est += deptEst(code, n, k, orig); });
           if (!(est > 0)) continue;
           var g = { start: start, end: (fr.ends && fr.ends[n]) || (typeof sfAddDays === 'function' ? sfAddDays(start, 6) : ''), est: est };
-          var boxes = st.basis === 'u100' ? est : (st.basis === 'u70' ? Math.ceil(est * (fee / 100) - 1e-9) : X.buyBoxes(r.p, est));
+          var boxes = st.basis === 'u100' ? est : (st.basis === 'custom' ? Math.ceil(est * (st.pct / 100) - 1e-9) : X.buyBoxes(r.p, est));
           entries.push({ r: r, g: g, ps: ps, boxes: boxes, extra: 0 });
         }
       });
@@ -766,7 +766,7 @@
         cols.map(function (cp) { return '<th ' + thS + '>' + esc(cp.name || label(cp)) + '</th>'; }).join('') + '<th ' + thS + '>小計</th></tr></thead><tbody>' + body + foot + mergeRow + '</tbody></table></div>';
     };
     var basisChips = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px"><span class="small" style="min-width:64px;font-weight:700">顯示數量</span>' +
-      chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + chip('basis', 'u70', fee + '%', st.basis === 'u70') + '<label style="display:inline-flex;gap:6px;align-items:center;margin-left:12px"><span class="small" style="font-weight:700">Excel 匯出內容</span><select id="xpExpWhat" aria-label="Excel 匯出內容" style="padding:4px 6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><option value="both"' + (st.xpWhat === 'both' ? ' selected' : '') + '>預估量＋實際量</option><option value="est"' + (st.xpWhat === 'est' ? ' selected' : '') + '>只要預估量</option><option value="act"' + (st.xpWhat === 'act' ? ' selected' : '') + '>只要實際量</option></select></label>' +
+      chip('basis', 'target', '目標叫貨（費雪 ' + fee + '%、蛋捲 ' + egg + '%）', st.basis === 'target') + chip('basis', 'u100', '100%', st.basis === 'u100') + '<label style="display:inline-flex;gap:4px;align-items:center;padding:2px 8px;border-radius:8px;border:1px solid ' + (st.basis === 'custom' ? 'var(--cd-green,#0F3F25)' : 'var(--line-strong,#cfd8c8)') + ';background:' + (st.basis === 'custom' ? 'var(--cd-green,#0F3F25);color:#fff' : 'transparent') + '"><span style="font-size:15px">自訂</span><input id="xpPct" type="number" min="1" max="300" step="1" inputmode="numeric" value="' + esc(st.pct) + '" aria-label="自訂顯示數量百分比" title="輸入百分比，按 Enter 或離開格子就套用" style="width:60px;text-align:right;padding:2px 4px;border:1px solid #cfd8c8;border-radius:6px;font:inherit;color:#222"><span style="font-size:15px">%</span></label>' + '<label style="display:inline-flex;gap:6px;align-items:center;margin-left:12px"><span class="small" style="font-weight:700">Excel 匯出內容</span><select id="xpExpWhat" aria-label="Excel 匯出內容" style="padding:4px 6px;border:1px solid var(--line-strong);border-radius:8px;font:inherit"><option value="both"' + (st.xpWhat === 'both' ? ' selected' : '') + '>預估量＋實際量</option><option value="est"' + (st.xpWhat === 'est' ? ' selected' : '') + '>只要預估量</option><option value="act"' + (st.xpWhat === 'act' ? ' selected' : '') + '>只要實際量</option></select></label>' +
       '<button type="button" class="btn gray" data-act="xp-export" data-v="all" style="min-height:30px;padding:3px 11px;font-size:15px;margin-left:8px">匯出 Excel（費雪＋蛋捲＋叫貨紀錄）</button></div>';
     basisChips += mergeBarHtml();
     xpExp = {};
@@ -833,7 +833,7 @@
     } catch (e0) { console.warn('叫貨帶入量計算失敗', e0); }
     html += X.ui.card('採購交貨（叫貨、到貨日、口味，單位：條）', poCard() + filterHtml + filterBanner + redLegend + basisChips +
       (pivots || X.ui.empty(filtered || st.item ? '符合篩選的預估區間沒有預估量。' : '「業績預估」頁還沒有填預估量。')) +
-      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。<span style="color:var(--muted)">（程式版本 v181）</span>匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
+      '<p class="small" style="margin:10px 0 0">每一列是一個到貨日（＝預估區間起往前推一週的星期三，例如 1/4～1/11 → 12/30），「販售區間」是這批貨對應的預估區間。每個口味的預估量＝禮盒依單條內容物換算成條，加上單賣的單條；右邊「實際下定量」是採購實際下訂的條數，直接填（格子裡的淺灰字是預估量，方便照著填；留空＝還沒填），每周小計、最下面的小計會自動加總）；最下面「口味小計」是整個檔期這個口味的合計，「每周小計」是那一週所有口味加起來。<b>顯示數量</b>預設 <b>100%</b>（照預估量），採購可以改選「目標叫貨」，或在「自訂」格子輸入想要的 %（例如 90，進位到整盒）。備註分兩欄：<b>預估量備註</b>（接在預估量後面；自動列出每個禮盒、單支的預估量和總盒數）和<b>實際量備註</b>（在販售區間後面；每個禮盒、單支可以填實際盒數／條數，自動加總，<b>並依每盒內容物回算成各口味的「實際下定量」</b>；也可以另外打字，例如已交貨），填完離開格子就會儲存，大家看到的一樣。上面的篩選（預估期間、到貨日、品項）會一起篩這張表。<b>蛋捲那張的預估量備註會自動填入這一批的禮盒盒數和單支條數</b>（費雪沒有）。<span style="color:var(--muted)">（程式版本 v185）</span>匯出 Excel 前可以用「Excel 匯出內容」選<b>只要預估量、只要實際量，或兩個都要</b>（每張表的「匯出 Excel」也照這個選擇）。</p>' + detail);
 
 
     // 業績異動（業績預估頁鎖定日期之後的預估量異動；db.forecastChanges，只讀）：採購看這張就知道預估改了多少、要多叫或少叫幾條
@@ -915,6 +915,7 @@
     el.onchange = function (e) {
       var id = e.target && e.target.id;
       if (id === 'xpPoItem' || id === 'xpPoEta') { poSync(el, id); return; }
+      if (id === 'xpPct') { var pv = Math.round(Number(e.target.value)); if (!(pv >= 1)) { X.toast('請輸入 1～300 的百分比'); e.target.value = st.pct; return; } st.pct = Math.min(300, pv); st.basis = 'custom'; render(el); return; }
       if (id === 'xpExpWhat') { st.xpWhat = e.target.value === 'est' || e.target.value === 'act' ? e.target.value : 'both'; return; }
       if (id === 'xpLogItem') { st.logPid = e.target.value; render(el); }
       else if (id === 'xpItem') { st.item = e.target.value; render(el); }
